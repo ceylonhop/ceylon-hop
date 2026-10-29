@@ -501,10 +501,10 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(got.input.seats).toBe(2);
   });
 
-  // Owner 2026-10-16: a shared seat's hotel pick-up & drop-off is recorded as an `extra` line in
+  // Owner 2026-10-16: a shared seat's hotel pick-up and drop-off are recorded as `extra` lines in
   // pricing_snapshot_json, the same record a website private transfer's add-ons live in.
-  it('a shared booking names the hotel pick-up & drop-off it was priced with', async () => {
-    const priced = priceShared(2, 3500, 0, ['hotel-transfer']);
+  it('a shared booking names the hotel pick-up and drop-off it was priced with', async () => {
+    const priced = priceShared(2, 3500, 0, ['hotel-pickup', 'hotel-dropoff']);
     const shared: NewBooking = {
       mode: 'shared',
       input: {
@@ -515,9 +515,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     };
     const snapshot = sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priced, RATE_CARD.version);
     const b = await bookings.create(shared, { pricingSnapshot: snapshot });
-    expect(b.total).toBe(7500);
-    expect(b.addOns).toEqual(['Hotel pick-up & drop-off']);
-    expect((await bookings.get(b.id))?.addOns).toEqual(['Hotel pick-up & drop-off']);
+    expect(b.total).toBe(8000);
+    expect(b.addOns).toEqual(['Hotel pick-up', 'Hotel drop-off']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Hotel pick-up', 'Hotel drop-off']);
     const plain = await bookings.create({ ...shared, total: 7000, amountDueNow: 7000 }, {
       pricingSnapshot: sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priceShared(2, 3500), RATE_CARD.version),
     });

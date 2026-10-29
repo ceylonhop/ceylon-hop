@@ -304,3 +304,24 @@ describe('pay-return token legs', () => {
     expect(verifyBookingToken(signPayReturnToken(ID, S, 'cancel'), S)).toBeNull();
   });
 });
+
+// Security review 2026-10-25: the signature length was checked in UTF-16 characters, then
+// timingSafeEqual compared UTF-8 bytes. A same-length signature with one multibyte character
+// passed the first check and made the second THROW — a 500 and a critical alert per request,
+// from anyone. A forged token must simply fail.
+describe('a signature with a multibyte character is refused, not thrown on', () => {
+  const forge = (token: string) => {
+    const [body, sig] = token.split('.');
+    return `${body}.é${sig!.slice(1)}`;
+  };
+  it('booking token', () => {
+    expect(verifyBookingToken(forge(signBookingToken('abc-123', S)), S)).toBeNull();
+  });
+  it('quote pay token', () => {
+    const t = signQuotePayToken('11111111-2222-3333-4444-555555555555', 1, S);
+    expect(verifyQuotePayToken(forge(t), S)).toBeNull();
+  });
+  it('quote view token', () => {
+    expect(verifyQuoteViewToken(forge(signQuoteViewToken('11111111-2222-3333-4444-555555555555', S)), S)).toBeNull();
+  });
+});

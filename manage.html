@@ -3,6 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
+<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
+<script>
+// The ?t= link token authorises viewing this booking AND minting a checkout token for it, so it
+// must leave the address bar BEFORE the tag snippet below: GTM loads async and can run while the
+// parser waits on the synchronous scripts after it, and GA4 page_location, Clarity and the pixels
+// all read location.href (security review 2026-10-25 — pay.html does the same). `rt` and `c`, the
+// PayHere return leg, go too. The page script reads all three from window.CH_MANAGE_LINK.
+// checkout-handoff.js loads just above so the key name stays the shared one.
+(function(){
+  var link = { t: null, rt: null, c: false };
+  try {
+    var u = new URL(location.href), q = u.searchParams;
+    link.t = q.get('t'); link.rt = q.get('rt'); link.c = q.get('c') === '1';
+    var strip = [];
+    if (link.rt !== null) strip.push('rt');
+    if (q.has('c')) strip.push('c');
+    // If storage throws, `t` stays in the URL: a customer who cannot reload their own booking is
+    // a broken page. Function first, privacy wherever it is free.
+    if (link.t) {
+      try { sessionStorage.setItem(window.CH_MANAGE_TOKEN_KEY, link.t); strip.push('t'); } catch (e) {}
+    }
+    if (strip.length) {
+      strip.forEach(function(k){ q.delete(k); });
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  } catch (e) {}
+  window.CH_MANAGE_LINK = link;
+})();
+</script>
 <title>Your booking · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#63BFD6">
@@ -88,8 +118,6 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
-<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
-<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
 <script src="datepicker.js?v=dffb97f9e8"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
@@ -125,44 +153,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // a customer following either link should not be able to tell they landed on a different
   // system. Everything here is derived from the booking; nothing is typed on this page.
   var app = document.getElementById('app');
-  // The ?t= link token authorises viewing this booking AND minting a checkout token for it.
-  // Left in the address bar it flows into GA4's page_location, Clarity's recording and this
-  // page's own error beacon (which posts location.href), so anyone with analytics access could
-  // open a customer's booking and start its payment flow. Read it once, hand it to
-  // sessionStorage, and take it out of the URL.
-  //
-  // sessionStorage is what keeps reload working after the strip — and it can throw (private
-  // mode, storage disabled). If it does, we DON'T strip: a token in the URL is a privacy
-  // problem, but a customer who cannot reload their own booking is a broken page. Function
-  // first, privacy wherever it is free.
+  // The ?t= link token authorises viewing this booking AND minting a checkout token for it. The
+  // first script in <head> read it (with `rt` and `c`), stashed it in sessionStorage and took it
+  // out of the URL before any tag could see it; on a reload it comes back from storage.
   // The key's name is shared with booking.html, which hands a website customer's token over here.
   var TOKEN_KEY = window.CH_MANAGE_TOKEN_KEY;
-  var q = new URLSearchParams(location.search);
-  var t = q.get('t');
+  var link = window.CH_MANAGE_LINK || {};
+  var t = link.t;
   // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
   // `rt` is a status-only token for /bookings/pay-return; `c=1` means the gateway used cancel_url,
   // a display hint and NEVER an outcome. Both are read once and taken out of the address bar with
   // `t`, so a reload after the return simply shows the booking as it now stands. That address
   // carries NO `t`: this page (or booking.html, for a website checkout) stashes it right before
   // the hand-off, and it is read back below like any reload.
-  var rt = q.get('rt');
-  var cameFromCancel = q.get('c') === '1';
-  var strip = [];
-  if (rt !== null) strip.push('rt');
-  if (q.has('c')) strip.push('c');
-  if (t) {
-    var stashed = false;
-    try { sessionStorage.setItem(TOKEN_KEY, t); stashed = true; } catch (e) {}
-    if (stashed) strip.push('t');
-  } else {
+  var rt = link.rt;
+  var cameFromCancel = link.c === true;
+  if (!t) {
     try { t = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
-  }
-  if (strip.length) {
-    try {
-      var url = new URL(location.href);
-      strip.forEach(function(k){ url.searchParams.delete(k); });
-      history.replaceState(null, '', url.pathname + url.search + url.hash);
-    } catch (e) {}
   }
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
 

@@ -1375,7 +1375,8 @@ window.toggleAddon=function(el){
 // api/src/quote/rateCard.ts) so they can never drift from the backend. The flow only offers
 // the keys in addonNames; EXTRAS carrying additional codes (safari-wait, waiting) is harmless.
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
-const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket','hotel-transfer':'Hotel pick-up & drop-off'};
+const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket','hotel-pickup':'Hotel pick-up','hotel-dropoff':'Hotel drop-off'};
+const SHARED_ADDONS=['hotel-pickup','hotel-dropoff'];
 
 /* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
    "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
@@ -2641,11 +2642,11 @@ function render(){
   const n4=document.getElementById('n4');
   if(n4){ n4.disabled = overCap; }
   // "sightseeing stops" extra only makes sense on a single point-to-point private transfer; a
-  // shared seat offers hotel pick-up & drop-off instead (once per booking, owner 2026-10-16).
+  // shared seat offers hotel pick-up and hotel drop-off instead (each once per booking, owner 2026-10-16).
   const extras=document.getElementById('extras-block');
   if(extras){
     extras.style.display = ((!isTrip && perVehicle) || isShared) ? 'block' : 'none';
-    extras.querySelectorAll('.addon').forEach(function(b){ b.hidden = (b.dataset.addon==='hotel-transfer') !== isShared; });
+    extras.querySelectorAll('.addon').forEach(function(b){ b.hidden = SHARED_ADDONS.includes(b.dataset.addon) !== isShared; });
   }
   syncExperiences(); // no-op unless step 3 is showing and the drop-off changed since the last ask
   const chrow=document.getElementById('sum-chrow');

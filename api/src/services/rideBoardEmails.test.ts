@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideJoined } from './rideBoardEmails';
+import { sendRideConfirmed, sendRideCancelled, sendRideAtRisk, sendRideJoined, sendRideFillTip } from './rideBoardEmails';
+import { FACEBOOK_GROUPS, WHATSAPP_GROUPS, SUBREDDITS } from './rideBoardShareTargets';
 import { FakeEmailAdapter } from '../adapters/email';
 import type { RideList } from '../domain/rideList';
 
@@ -301,4 +302,157 @@ it.fails('includes the public ride code a traveller could quote back to us', asy
   const email = new FakeEmailAdapter();
   await sendRideConfirmed(email, { to: 'maya@example.com', firstName: 'Maya', list, lockedTime: '08:00' });
   expect(email.sent[0].html).toContain('EM-4821');
+});
+
+// ============================================================================
+// sendRideFillTip — "how to fill your van" (owner ask 2026-10-27). A traveller on a
+// ride still short of its minimum gets, a day after joining, the places that fill vans
+// with the post already written and their link already inside every button. The
+// assertions pin what makes it work: the ask (how many more), the ranked channels with
+// REAL destinations, a pre-filled WhatsApp message that differs for the starter, tagged
+// links so GA4 can say which channel filled the seat, and the $0 safety net.
+// ============================================================================
+
+describe('sendRideFillTip', () => {
+  const base = {
+    to: 'maya@example.com', firstName: 'Maya', list: gathering, committed: 1, isStarter: true,
+    boardBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+  };
+
+  it('tells the traveller how many more names the van needs and where to post, once', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.to).toBe('maya@example.com');
+    expect(m.subject).toContain('Ella');
+    expect(m.subject).toContain('Mirissa');
+    expect(m.html).toContain('Maya');
+    // minSeats 3, 1 committed → "2 more"
+    expect(m.html).toMatch(/2 more/);
+    expect(m.text).toMatch(/2 more/);
+    expect(m.html).toContain('EM-4821');
+    expect(m.html).not.toContain('2026-08-14');
+  });
+
+  it('links the real Facebook groups, the WhatsApp group and the subreddits', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html, text } = email.sent[0];
+    // Names are escaped in the html ("&" → "&amp;"); the links are plain.
+    const unesc = (s: string) => s.replace(/&amp;/g, '&').replace(/&#39;/g, "'");
+    for (const g of FACEBOOK_GROUPS) {
+      expect(html).toContain(g.url);
+      expect(unesc(html)).toContain(g.name);
+      expect(text).toContain(g.url);
+    }
+    for (const g of WHATSAPP_GROUPS) {
+      expect(html).toContain(g.url);
+      expect(text).toContain(g.url);
+    }
+    // Reddit: the first sub is a button in the html; every sub is listed in the text version.
+    expect(html).toContain(`reddit.com/r/${SUBREDDITS[0].name}/submit`);
+    for (const s of SUBREDDITS) {
+      expect(text).toContain(`reddit.com/r/${s.name}/submit`);
+    }
+    expect(html).toContain('@ceylonhop');
+  });
+
+  it('pre-fills the WhatsApp message with the tagged ride link; a starter says "started", a joiner "join me"', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    await sendRideFillTip(email, { ...base, isStarter: false, firstName: 'Ben' });
+    const [starter, joiner] = email.sent.map((m) => m.html);
+    // The href is html-escaped on top of url-encoded: undo both.
+    const wa = (html: string) =>
+      decodeURIComponent(html.match(/https:\/\/wa\.me\/\?text=([^"]+)/)![1].replace(/&amp;/g, '&').replace(/&#39;/g, "'"));
+    expect(wa(starter)).toContain("I've started a shared taxi");
+    expect(wa(starter)).toContain('https://ride.ceylonhop.com/r/EM-4821?utm_source=whatsapp');
+    expect(wa(starter)).toContain('utm_campaign=ride_fill_tip');
+    expect(wa(joiner)).toMatch(/join me/i);
+    expect(wa(joiner)).toContain("I'm on a shared taxi");
+    expect(wa(joiner)).not.toContain("I've started");
+  });
+
+  it('tags the channels that carry the link inside a button, so GA4 can say which one filled the seat', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html } = email.sent[0];
+    const tagged = (source: string) => `/r/EM-4821?utm_source=${source}&utm_medium=social&utm_campaign=ride_fill_tip`;
+    const prefilled = (href: RegExp) => decodeURIComponent(html.match(href)![1].replace(/&amp;/g, '&'));
+    expect(prefilled(/https:\/\/wa\.me\/\?text=([^"]+)/)).toContain(tagged('whatsapp'));
+    expect(prefilled(/reddit\.com\/r\/srilanka\/submit\?selftext=true&amp;title=[^&]+&amp;text=([^"]+)/)).toContain(tagged('reddit'));
+    // The story image for Instagram, and the way back to the ride page.
+    expect(html).toContain('https://ride.ceylonhop.com/r/EM-4821/story.png');
+    expect(html).toContain('https://ceylonhop.com/board.html?utm_source=email&amp;utm_medium=email&amp;utm_campaign=ride_fill_tip#/EM-4821');
+  });
+
+  // Owner, 2026-10-28, on the first version in Gmail: "looks like a hacker sent it". The
+  // cause was a raw tracking URL (…?utm_source=facebook&utm_medium=…) printed in the post.
+  it('never prints a tracking tag as text: the post a traveller copies carries the clean ride link', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html } = email.sent[0];
+    const visible = html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ');
+    expect(visible).not.toContain('utm_');
+    expect(visible).toContain('Join me: https://ride.ceylonhop.com/r/EM-4821');
+  });
+
+  // Owner, 2026-10-28: "can't it follow our existing designs?" It wears the customer letter,
+  // the same pieces as the join receipt it follows: blue rule, monogram masthead, code chip,
+  // the From/To journey line, hairline facts, the cream box. Not a one-off teal band.
+  it('wears the customer letter, the same masthead, chip and journey line as the join receipt', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    await sendRideJoined(email, { to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' });
+    const [tip, receipt] = email.sent.map((m) => m.html);
+    for (const piece of ['Ride Board · Shared rides', 'background:#63BFD6', '>EM-4821</span>', 'Gathering names', '>From</td>', '>To</td>', 'background:#faf5ea']) {
+      expect(receipt).toContain(piece);
+      expect(tip).toContain(piece);
+    }
+  });
+
+  // Owner, 2026-10-28: an email cannot run a copy button, so the main action needs no copying.
+  // "Share on Facebook" opens Facebook's own share window with the ride link (tagged for
+  // Facebook) already in it; the traveller picks "Share to a group". The groups are rows.
+  it('the main action is Facebook\'s share window with the tagged ride link, and each group is a row', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html } = email.sent[0];
+    const sharer = html.match(/href="(https:\/\/www\.facebook\.com\/sharer\/sharer\.php\?u=[^"]+)"/);
+    expect(sharer).not.toBeNull();
+    expect(decodeURIComponent(sharer![1].replace(/&amp;/g, '&'))).toContain(
+      'u=https://ride.ceylonhop.com/r/EM-4821?utm_source=facebook&utm_medium=social&utm_campaign=ride_fill_tip');
+    expect(html).toContain('Share on Facebook');
+    expect(html.match(/Open group &rarr;/g)?.length).toBe(FACEBOOK_GROUPS.length);
+  });
+
+  it('leads with the ask, not the route: the headline is how many more people it needs', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    expect(email.sent[0].subject).toBe('2 more people and your Ella → Mirissa ride runs');
+    expect(email.sent[0].html).toContain('2 more people and it runs.');
+  });
+  it('keeps the $0 promise and names the cutoff in Sri Lanka time', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html, text } = email.sent[0];
+    expect(html).toContain('$0');
+    expect(text).toContain('$0');
+    // cutoffAt 2026-08-12T01:30Z = 07:00 Colombo
+    expect(html).toContain('07:00');
+    expect(html).not.toContain('2400');
+  });
+
+  it('renders a hostile first name and place name as text, not markup', async () => {
+    const email = new FakeEmailAdapter();
+    const hostile: RideList = { ...gathering, fromPlace: 'Ella<script>alert(1)</script>' };
+    await sendRideFillTip(email, { ...base, list: hostile, firstName: '<img src=x onerror=alert(1)>Maya' });
+    const html = email.sent[0].html;
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('null');
+    expect(html).not.toContain('undefined');
+  });
 });

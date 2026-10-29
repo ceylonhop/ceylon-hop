@@ -100,6 +100,44 @@ async function setUp(page, p) {
   return apiTokens;
 }
 
+// manage.html (security review 2026-10-25): its ?t= token opens the booking AND mints a checkout
+// token for it, but the page stripped it in a body script — after the GTM loader, which is async
+// and can run while the parser waits on the synchronous scripts in between. It sends the token as
+// a Bearer header rather than a query parameter, and has no per-token share tags.
+const MANAGE_VIEW = {
+  reference: 'CH-ABC12', status: 'paid', mode: 'single', firstName: 'Maya',
+  from: 'Colombo Airport (CMB)', to: 'Kandy', date: '2099-01-10', time: '09:00',
+  travellers: 2, bags: 1, vehicleType: 'car',
+  currency: 'USD', totalCents: 6000, amountDueNowCents: 6000, balanceDueCents: 0,
+};
+
+test('manage.html: the link token is gone from the URL before any tag runs', async ({ page }) => {
+  const sent = [];
+  await page.route('**/bookings/view*', (r) => {
+    sent.push(r.request().headers().authorization || new URL(r.request().url()).searchParams.get('t'));
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MANAGE_VIEW) });
+  });
+  await page.route('**/errors/client', (r) => r.fulfill({ status: 204, body: '' }));
+  await page.route('https://www.googletagmanager.com/**', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.addInitScript(() => {
+    let dl;
+    Object.defineProperty(window, 'dataLayer', {
+      configurable: true,
+      get() { return dl; },
+      set(v) { if (window.__seenByTags === undefined) window.__seenByTags = { href: location.href }; dl = v; },
+    });
+  });
+  await page.goto(`/manage.html?t=${TOKEN}`);
+  await expect(page.locator('body')).toContainText('CH-ABC12');
+
+  const seen = await page.evaluate(() => window.__seenByTags);
+  expect(seen, 'the consent/GTM snippet never ran').toBeTruthy();
+  expect(seen.href).not.toContain(TOKEN);
+  expect(page.url()).not.toContain(TOKEN);
+  // …and the page still used it.
+  expect(sent.join(' ')).toContain(TOKEN);
+});
+
 for (const p of PAGES) {
   test(`${p.name}: the link token is gone from the URL and share tags before any tag runs`, async ({ page }) => {
     const apiTokens = await setUp(page, p);

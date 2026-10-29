@@ -114,3 +114,18 @@ describe('booking.html and manage.html use the shared hand-off', () => {
     expect(code).not.toMatch(/'chManageToken'/);
   });
 });
+
+// manage.html strips its link token in a <head> script, before the tag snippet (security review
+// 2026-10-25). That script stores the token under the shared key, so checkout-handoff.js must load
+// ahead of it, and the strip ahead of GTM.
+describe("manage.html's early token strip", () => {
+  it('loads the shared key, then strips, then loads the tags', () => {
+    const html = read('manage.html');
+    const iHandoff = html.indexOf('<script src="checkout-handoff.js');
+    const iStrip = html.indexOf('sessionStorage.setItem(window.CH_MANAGE_TOKEN_KEY, link.t)');
+    const iGtm = html.indexOf('googletagmanager.com/gtm.js');
+    expect(iHandoff).toBeGreaterThan(-1);
+    expect(iStrip).toBeGreaterThan(iHandoff);
+    expect(iGtm).toBeGreaterThan(iStrip);
+  });
+});

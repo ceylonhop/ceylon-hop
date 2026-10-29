@@ -330,6 +330,14 @@ export function bookingRoutes(deps: {
   const checkoutNow = deps.checkoutNow ?? Date.now;
   const promoNow = deps.promoNow ?? (() => new Date());
 
+  // The server's own idempotency keys are namespaced with ':' (book:quote:<id>, pay:quote:…,
+  // checkout:…). A client key in that namespace could pre-claim one — e.g. attach a cheap booking
+  // to a quote (review 2026-10-25). The website sends 'ch-<base36>', so ':' is never legitimate.
+  r.use('*', async (c, next) => {
+    if (c.req.header('Idempotency-Key')?.includes(':')) return c.json({ error: 'invalid_idempotency_key' }, 400);
+    return next();
+  });
+
   // §6.1 step 1 — a sent code resolved to a working PromoCode, or the error to answer with. Runs
   // before any Maps call, so a bad code costs nothing. The use count is taken later, under the lock.
   async function lookupPromo(
@@ -924,7 +932,7 @@ function invalidRequest(error: ZodError) {
     try {
       booking = await bookings.create(
         { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
-        // The priced lines are the booking's record of its add-ons (hotel pick-up & drop-off).
+        // The priced lines are the booking's record of its add-ons (hotel pick-up, hotel drop-off).
         { idempotencyKey: key, pricingSnapshot: sharedPricingSnapshot({ routeId: product.id, seats: req.seats, seatPriceCents: product.seatPrice }, priced, RATE_CARD.version) },
       );
     } catch (err) {
