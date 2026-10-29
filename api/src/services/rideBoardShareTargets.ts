@@ -104,6 +104,12 @@ export function sharePost(list: RideList, need: number, isStarter: boolean, link
   return `${opener} ${ask} Join me: ${link}`;
 }
 
+/** Facebook's own share window with the ride link in it; the traveller picks "Share to a group".
+ *  Facebook ignores any pre-filled text here, so the link's ride card carries the details. */
+export function facebookShareLink(link: string): string {
+  return `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`;
+}
+
 export function whatsappShareLink(post: string): string {
   return `https://wa.me/?text=${encodeURIComponent(post)}`;
 }

@@ -335,6 +335,7 @@ export async function sendRideJoined(
 import {
   FACEBOOK_GROUPS, WHATSAPP_GROUPS, SUBREDDITS, INSTAGRAM_HANDLE,
   taggedRideLink, cleanRideLink, storyImageLink, boardRideLink, sharePost, whatsappShareLink, redditSubmitLink,
+  facebookShareLink,
 } from './rideBoardShareTargets';
 
 // A pill button in the letter's teal, the same shape as the receipt's "View your ride".
@@ -408,7 +409,7 @@ export async function sendRideFillTip(
     <tr><td style="padding:26px 34px 0">
       <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Fill your ride</div>
       <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">${esc(headline)}</h1>
-      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">Hi ${esc(firstName)}, the quickest way to find them is to post your ride in the groups below. We've written the post for you.</p>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">Hi ${esc(firstName)}, the quickest way to find them is to share your ride in the Facebook groups below. It takes a minute.</p>
     </td></tr>
 
     <tr><td style="padding:20px 34px 0">
@@ -447,10 +448,14 @@ export async function sendRideFillTip(
 
     <tr><td style="padding:26px 34px 0">
       <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:20px 22px">
-        <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">Post it in these groups</div>
-        <p style="margin:0 0 12px;color:${MUTED};font-size:14px;line-height:1.6">This is how most vans fill. Copy the post, open a group, paste.</p>
+        <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">Share it in the Facebook groups</div>
+        <p style="margin:0;color:${MUTED};font-size:14px;line-height:1.6">This is how most vans fill. Tap Share, choose <b style="color:${INK}">Share to a group</b>, and pick one of the groups below. Your ride card shows up on its own.</p>
+        ${pillButton(facebookShareLink(taggedRideLink(args.shareBaseUrl, list.code, 'facebook')), 'Share on Facebook')}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:16px">
+          ${FACEBOOK_GROUPS.map((g) => linkRow(g.name, 'Facebook group', g.url, 'Open group')).join('')}
+        </table>
+        <p style="margin:16px 0 6px;color:${FAINT};font-size:12px;line-height:1.5">Want to add a few words? Press and hold to copy:</p>
         <div style="background:${CARD};border:1px solid #efe6d6;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.55;color:${INK}">${esc(fbPost)}</div>
-        ${FACEBOOK_GROUPS.map((g) => pillButton(g.url, g.name)).join('')}
       </div>
     </td></tr>
 
@@ -481,10 +486,12 @@ export async function sendRideFillTip(
   const text = [
     `${headline} ${routeText}, ${fmtDate(list.date)}. $${seat} a seat, names close ${cutoff} (Sri Lanka time).`,
     '',
-    `Post it in these Facebook groups. Copy this:`,
-    fbPost,
-    '',
+    `Share it in the Facebook groups. Tap Share, choose "Share to a group", pick one below:`,
+    `Share on Facebook: ${facebookShareLink(taggedRideLink(args.shareBaseUrl, list.code, 'facebook'))}`,
     ...FACEBOOK_GROUPS.map((g) => `${g.name}: ${g.url}`),
+    '',
+    `Want to add a few words? Copy this:`,
+    fbPost,
     '',
     `More ways to fill it:`,
     `WhatsApp group (${wa.name}): ${wa.url}`,

@@ -412,6 +412,21 @@ describe('sendRideFillTip', () => {
     }
   });
 
+  // Owner, 2026-10-28: an email cannot run a copy button, so the main action needs no copying.
+  // "Share on Facebook" opens Facebook's own share window with the ride link (tagged for
+  // Facebook) already in it; the traveller picks "Share to a group". The groups are rows.
+  it('the main action is Facebook\'s share window with the tagged ride link, and each group is a row', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    const { html } = email.sent[0];
+    const sharer = html.match(/href="(https:\/\/www\.facebook\.com\/sharer\/sharer\.php\?u=[^"]+)"/);
+    expect(sharer).not.toBeNull();
+    expect(decodeURIComponent(sharer![1].replace(/&amp;/g, '&'))).toContain(
+      'u=https://ride.ceylonhop.com/r/EM-4821?utm_source=facebook&utm_medium=social&utm_campaign=ride_fill_tip');
+    expect(html).toContain('Share on Facebook');
+    expect(html.match(/Open group &rarr;/g)?.length).toBe(FACEBOOK_GROUPS.length);
+  });
+
   it('leads with the ask, not the route: the headline is how many more people it needs', async () => {
     const email = new FakeEmailAdapter();
     await sendRideFillTip(email, base);
