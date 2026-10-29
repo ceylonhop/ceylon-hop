@@ -19,6 +19,8 @@ import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
+import { runRideBoardFillTips, type FillTipSender } from '../services/rideBoardFillTips';
+import { committedSeats, countsForSeat, isSeedMember, type RideList, type RideMember } from '../domain/rideList';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
@@ -78,6 +80,9 @@ export function adminRoutes(deps: {
   // callers work; when wired, the notifications tick also confirms/expires due lists.
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
+  // "How to fill your van" (2026-10-27): the customer mail the fill-tip sweep sends. Unset →
+  // the sweep does not run (the tick reports fillTips: null, the manual job 409s).
+  rideFillTip?: FillTipSender;
   refunds: RefundRepo;
   // The gateway itself, for API refunds. Optional: without it (or without an adapter that
   // implements refund()) the execute route 409s and ops uses the manual dashboard flow, which
@@ -674,6 +679,18 @@ export function adminRoutes(deps: {
         console.error('ride-board cutoff sweep failed:', err);
       }
     }
+    // "How to fill your van" rides the same tick, best-effort, on the same budget: one mail per
+    // traveller on a ride still short of its minimum, a day after they joined, never twice.
+    let fillTips: Awaited<ReturnType<typeof runRideBoardFillTips>> | null = null;
+    if (deps.rideLists && deps.rideFillTip) {
+      try {
+        fillTips = await runRideBoardFillTips(new Date(), {
+          rideLists: deps.rideLists, send: deps.rideFillTip, alertLog: deps.alertLog, budget,
+        });
+      } catch (err) {
+        console.error('ride-board fill-tip sweep failed:', err);
+      }
+    }
     // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
     // past the idle TTL. Idempotent (an expired quote no longer matches), and a failure here
     // must never block the customer notifications the caller asked for.
@@ -758,7 +775,7 @@ export function adminRoutes(deps: {
     // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
     await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, fillTips, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
@@ -779,6 +796,62 @@ export function adminRoutes(deps: {
       dryRun: !!c.req.query('dryRun'),
     });
     return c.json(result, 200);
+  });
+
+  // The fill-tip sweep by hand (2026-10-27). The daily tick runs the same sweep; this exists
+  // so a human can POST ?dryRun=1 with the system key and read who the FIRST real run would
+  // mail — that run is the backfill for everyone already on the board — before letting the
+  // tick (or a plain POST here) send it. Idempotent via the alert ledger. 409 rather than a
+  // silent no-op when no sender is wired: "ran fine, sent nothing" would hide that.
+  r.post('/jobs/board-fill-tips', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideLists || !deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const result = await runRideBoardFillTips(new Date(), {
+      rideLists: deps.rideLists,
+      send: deps.rideFillTip,
+      alertLog: deps.alertLog,
+      dryRun: !!c.req.query('dryRun'),
+    });
+    return c.json(result, 200);
+  });
+
+  // One real "how to fill your van" email to one named inbox (owner ask 2026-10-28: see it in a
+  // mail client on staging). ?code= sends it for that REAL ride — its route, date, seat count,
+  // cutoff and links, addressed as to its starter — the way the sweep will; without a code, a
+  // sample ride. Either way it goes through the wired sender and the real provider and touches
+  // no ledger, so the sweep still owes every member their own email when it is due. The dev
+  // preview only renders in the browser and the sweep would mail whoever is in the database.
+  r.post('/jobs/board-fill-tips/test', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const to = (c.req.query('to') ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return c.json({ error: 'to_required' }, 400);
+    const code = (c.req.query('code') ?? '').trim();
+    if (code) {
+      const found = deps.rideLists ? await deps.rideLists.getByCode(code) : null;
+      if (!found) return c.json({ error: 'ride_not_found' }, 404);
+      const live = found.members.filter((m) => countsForSeat(m) && !isSeedMember(m)).sort((a, b) => a.position - b.position);
+      const starter = live.find((m) => m.sub === found.list.createdBy) ?? live[0];
+      if (!starter) return c.json({ error: 'ride_has_no_members' }, 409);
+      await deps.rideFillTip({
+        to, firstName: starter.firstName, list: found.list, member: starter,
+        committed: committedSeats(found.members), isStarter: starter.sub === found.list.createdBy,
+      });
+      return c.json({ sent: true, to, ride: found.list.code }, 200);
+    }
+    const now = new Date();
+    const inDays = (d: number) => new Date(now.getTime() + d * 86_400_000);
+    const list: RideList = {
+      id: '00000000-0000-4000-8000-00000000f111', code: 'EL-0000', corridorId: 'ella-mirissa',
+      fromPlace: 'Ella', toPlace: 'Mirissa', date: inDays(10).toISOString().slice(0, 10), slot: 'morning',
+      lockedTime: null, minSeats: 4, capacity: 6, seatPrice: 2300, status: 'gathering', note: null,
+      cutoffAt: inDays(8), createdBy: 'test-starter', createdAt: now, updatedAt: now,
+    };
+    const member: RideMember = {
+      id: '00000000-0000-4000-8000-00000000f112', listId: list.id, position: 1, sub: 'test-starter',
+      firstName: 'Mia', country: 'DE', email: to, phone: null, photoUrl: null, preferredTime: null, seats: 1,
+      preapprovalRef: null, preapprovalOrderId: null, preapprovalExpiresAt: null, status: 'held', joinedAt: now,
+    };
+    await deps.rideFillTip({ to, firstName: member.firstName, list, member, committed: 1, isStarter: true });
+    return c.json({ sent: true, to, sample: list.code }, 200);
   });
 
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their

@@ -463,6 +463,139 @@ describe('POST /admin/jobs/board-ops-backfill', () => {
   });
 });
 
+// "How to fill your van" (2026-10-27): the sweep rides the daily tick and has its own endpoint
+// for the ?dryRun=1 look before the first real run (which is the backfill).
+describe('ride board fill tips', () => {
+  const DAY = 86_400_000;
+  async function shortRide() {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList({
+      corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: futureIsoDate(10), slot: 'morning',
+      minSeats: 4, capacity: 6, seatPrice: 2300, note: null, cutoffAt: new Date(Date.now() + 8 * DAY), createdBy: 'mia-sub',
+    }, new Date(Date.now() - 2 * DAY));
+    await rideLists.addMember(l.id, { sub: 'mia-sub', firstName: 'Mia', country: 'DE', email: 'mia@x.com', seats: 1 }, new Date(Date.now() - 2 * DAY));
+    return rideLists;
+  }
+
+  it('POST /admin/jobs/board-fill-tips: 403 for an ops session, 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const forbidden = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const unwired = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(unwired.status).toBe(409);
+    expect((await unwired.json()).error).toBe('not_configured');
+  });
+
+  it('POST /admin/jobs/board-fill-tips honours ?dryRun and sends through the wired sender', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+
+    const dry = await app.request('/admin/jobs/board-fill-tips?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(dry.status).toBe(200);
+    expect(await dry.json()).toMatchObject({ dryRun: true, due: 1, sent: 0 });
+    expect(sent).toEqual([]);
+
+    const real = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await real.json()).toMatchObject({ due: 1, sent: 1 });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('the notifications tick runs the sweep and reports it, once', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+    const first = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ fillTips: { due: 1, sent: 1, skipped: 0 } });
+    const second = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await second.json()).toMatchObject({ fillTips: { due: 1, sent: 0, skipped: 1 } });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test mails the real template, on a sample ride, to one named address', async () => {
+    const email = new FakeEmailAdapter();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const forbidden = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const noAddress = await app.request('/admin/jobs/board-fill-tips/test', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(noAddress.status).toBe(400);
+    const notAnAddress = await app.request('/admin/jobs/board-fill-tips/test?to=nope', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(notAnAddress.status).toBe(400);
+
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com' });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    expect(email.sent[0].subject).toMatch(/more people and your .+ ride runs$/);
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
+    // A sample, never a real ride: nothing touched the ledger, so the real sweep is unaffected.
+    expect(email.sent[0].html).toContain('ride-board-fill.jpg');
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test?code= sends a REAL ride\'s email to the named inbox, ledger untouched', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog,
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const code = (await rideLists.listOpen({ when: 'all' }))[0].list.code;
+    const missing = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com&code=ZZ-0000', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(missing.status).toBe(404);
+
+    const res = await app.request(`/admin/jobs/board-fill-tips/test?to=me@x.com&code=${code}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com', ride: code });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    // The real ride: its code in the link, its starter's name, its seat count (4 needed, 1 held → 3 more).
+    expect(email.sent[0].html).toContain(`https://ride.ceylonhop.com/r/${code}`);
+    expect(email.sent[0].html).toContain('Mia');
+    expect(email.sent[0].html).toMatch(/3 more/);
+    // Nothing claimed: the sweep still owes Mia her real email when it is due.
+    const sweep = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await sweep.json()).toMatchObject({ due: 1, sent: 1, skipped: 0 });
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test is 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(409);
+  });
+
+  it('the notifications tick skips the sweep when there is no share origin to build links on', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: null });
+  });
+
+  it('with a share origin the real template is wired: the tick mails the traveller the guide', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: { due: 1, sent: 1 } });
+    expect(email.sent.map((m) => m.to)).toEqual(['mia@x.com']);
+    expect(email.sent[0].subject).toBe('3 more people and your Ella → Mirissa ride runs');
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
+  });
+});
+
 describe('POST /admin/jobs/watchdog', () => {
   it('403 for a finance session (no admin:jobs)', async () => {
     const { app } = makeApp();

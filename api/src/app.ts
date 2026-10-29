@@ -10,6 +10,8 @@ import { InMemoryRideListRepo, type RideListRepo } from './db/rideListRepo';
 import { FakeTokenizedPaymentAdapter, type TokenizedPaymentAdapter } from './adapters/tokenizedPayments';
 import { rideBoardRoutes } from './routes/rideBoard';
 import type { RideBoardEventRepo } from './db/rideBoardEventRepo';
+import type { FillTipSender } from './services/rideBoardFillTips';
+import { sendRideFillTip } from './services/rideBoardEmails';
 import type { BookingCheckoutEventRepo } from './db/bookingCheckoutEventRepo';
 import type { Ga4EventLogRepo, GaIdentityRepo } from './db/ga4Repo';
 import type { Ga4Adapter } from './adapters/ga4';
@@ -97,6 +99,8 @@ export interface AppDeps {
   rideLists?: RideListRepo;
   // Ride Board attempt log. Unset → attempts are not recorded (tests opt in).
   rideBoardEvents?: RideBoardEventRepo;
+  // "How to fill your van" sender (2026-10-27). Unset → the fill-tip sweep does not run.
+  rideFillTip?: FillTipSender;
   // Booking checkout attempt log (0055). Unset → attempts are not recorded (tests opt in).
   checkoutEvents?: BookingCheckoutEventRepo;
   paygw?: TokenizedPaymentAdapter; // Ride Board card-on-file preapproval/charge (fake by default)
@@ -599,6 +603,7 @@ export function createApp(deps: AppDeps = {}) {
     shareBaseUrl: deps.shareBaseUrl ?? (config.SHARE_BASE_URL || undefined),
   };
   app.route('/r', shareCardRoutes(shareDeps));
+  const fillTipShareBase = shareDeps.shareBaseUrl;
   app.route('/quote', quoteRoutes({
     internalKey: config.INTERNAL_QUOTE_KEY,
     quotes,
@@ -758,6 +763,11 @@ export function createApp(deps: AppDeps = {}) {
       linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
       rideLists,
       ridePaygw: paygw,
+      // The "how to fill your van" mail. The share origin is where the ride link and story
+      // image live; without one the links would point at the API host, so the sweep stays off.
+      rideFillTip: deps.rideFillTip ?? (fillTipShareBase
+        ? (a) => sendRideFillTip(email, { ...a, boardBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL, shareBaseUrl: fillTipShareBase })
+        : undefined),
       refunds,
       notifyMaxPerRun: deps.notifyMaxPerRun ?? config.NOTIFY_MAX_PER_RUN,
       ...(usage ? { emailQuota: { usage, dailyLimit: deps.emailDailyLimit ?? config.EMAIL_DAILY_LIMIT } } : {}),
