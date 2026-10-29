@@ -1027,7 +1027,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div id="extras-block">
         <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
         <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small><small class="addon-note">Stops must be on your route — no detours off it.</small></span><span class="pr">+$10</span></button>
-        <button type="button" class="addon" data-addon="hotel-transfer" data-price="5" aria-pressed="false" onclick="toggleAddon(this)" hidden><span class="box" aria-hidden="true"></span><span><b>Hotel pick-up &amp; drop-off</b><small>We collect you from your hotel and drop you at your hotel, if each is within 2 km of the meeting point. Our team confirms it with you after you book.</small></span><span class="pr">+$5</span></button>
+        <button type="button" class="addon" data-addon="hotel-pickup" data-price="5" aria-pressed="false" onclick="toggleAddon(this)" hidden><span class="box" aria-hidden="true"></span><span><b>Hotel pick-up</b><small>We collect you from your hotel, if it's within 5 km of the pick-up point. Our team confirms it with you after you book.</small></span><span class="pr">+$5</span></button>
+        <button type="button" class="addon" data-addon="hotel-dropoff" data-price="5" aria-pressed="false" onclick="toggleAddon(this)" hidden><span class="box" aria-hidden="true"></span><span><b>Hotel drop-off</b><small>We drop you at your hotel, if it's within 5 km of the drop-off point. Our team confirms it with you after you book.</small></span><span class="pr">+$5</span></button>
       </div>
       <!-- Partner experiences near the drop-off (spec docs/superpowers/specs/2026-10-06-partner-experiences-design.md).
            Hidden until booking.js syncExperiences() gets a non-empty answer from GET /experiences/near; an
@@ -1249,7 +1250,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=2d0f2657ea"></script>
+<script src="transfers-data.js?v=01d72bf1b3"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4,
      §10). It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two
      website payments that day were declined "3ds Authentication Failed" with no notify ever
@@ -1263,6 +1264,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=f7e3bf8960"></script>
+<script src="booking.js?v=f18d8d32f1"></script>
 </body>
 </html>
