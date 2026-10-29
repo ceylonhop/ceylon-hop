@@ -398,6 +398,20 @@ describe('sendRideFillTip', () => {
     expect(visible).toContain('Join me: https://ride.ceylonhop.com/r/EM-4821');
   });
 
+  // Owner, 2026-10-28: "can't it follow our existing designs?" It wears the customer letter,
+  // the same pieces as the join receipt it follows: blue rule, monogram masthead, code chip,
+  // the From/To journey line, hairline facts, the cream box. Not a one-off teal band.
+  it('wears the customer letter, the same masthead, chip and journey line as the join receipt', async () => {
+    const email = new FakeEmailAdapter();
+    await sendRideFillTip(email, base);
+    await sendRideJoined(email, { to: 'maya@example.com', firstName: 'Maya', list: gathering, seats: 1, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' });
+    const [tip, receipt] = email.sent.map((m) => m.html);
+    for (const piece of ['Ride Board · Shared rides', 'background:#63BFD6', '>EM-4821</span>', 'Gathering names', '>From</td>', '>To</td>', 'background:#faf5ea']) {
+      expect(receipt).toContain(piece);
+      expect(tip).toContain(piece);
+    }
+  });
+
   it('leads with the ask, not the route: the headline is how many more people it needs', async () => {
     const email = new FakeEmailAdapter();
     await sendRideFillTip(email, base);

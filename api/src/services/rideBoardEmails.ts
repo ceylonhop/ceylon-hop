@@ -337,24 +337,24 @@ import {
   taggedRideLink, cleanRideLink, storyImageLink, boardRideLink, sharePost, whatsappShareLink, redditSubmitLink,
 } from './rideBoardShareTargets';
 
-const FB_BLUE = '#1877F2';
-
-// A full-width button: a table cell, so Outlook keeps the fill and the whole bar is tappable.
-const bigButton = (href: string, label: string, bg: string) => `
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
-    <td bgcolor="${bg}" style="border-radius:12px">
-      <a href="${esc(href)}" style="display:block;padding:15px 18px;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px">${esc(label)}</a>
+// A pill button in the letter's teal, the same shape as the receipt's "View your ride".
+const pillButton = (href: string, label: string) => `
+  <table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:10px"><tr>
+    <td bgcolor="${BAND}" style="border-radius:999px">
+      <a href="${esc(href)}" style="display:inline-block;padding:11px 22px;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px">${esc(label)}</a>
     </td>
   </tr></table>`;
 
-// A quiet tile for the extras: one bold line that is the link, one small line under it.
-const tile = (href: string, label: string, sub: string) => `
-  <td width="50%" valign="top" style="padding:5px">
-    <a href="${esc(href)}" style="display:block;border:1px solid ${LINE};border-radius:12px;padding:13px 14px;text-decoration:none">
-      <span style="display:block;font-weight:700;font-size:14px;color:${BAND}">${esc(label)}</span>
-      <span style="display:block;font-size:12px;color:${FAINT};margin-top:2px">${esc(sub)}</span>
-    </a>
-  </td>`;
+// A hairline row, the receipt's factRow with a link on the right instead of a value.
+const linkRow = (label: string, sub: string, href: string, action: string) => `<tr>
+  <td style="padding:12px 12px 12px 0;border-top:1px solid ${LINE}">
+    <div style="color:${INK};font-size:14px;font-weight:600">${esc(label)}</div>
+    <div style="color:${FAINT};font-size:12px;margin-top:2px">${esc(sub)}</div>
+  </td>
+  <td align="right" style="padding:12px 0;border-top:1px solid ${LINE};white-space:nowrap">
+    <a href="${esc(href)}" style="color:${BAND};font-size:14px;font-weight:700;text-decoration:none">${esc(action)} &rarr;</a>
+  </td>
+</tr>`;
 
 export async function sendRideFillTip(
   email: EmailAdapter,
@@ -390,45 +390,92 @@ export async function sendRideFillTip(
   const [sub1, sub2] = SUBREDDITS;
 
   const html = letter(`
-    <tr><td style="padding:0;background:${BAND}">
-      <img src="${esc(hero)}" width="600" alt="" style="width:100%;max-width:600px;height:auto;display:block;border:0">
-    </td></tr>
-    <tr><td style="padding:26px 30px 28px;background:${BAND};color:#ffffff">
-      <div style="font-size:11px;letter-spacing:.18em;text-transform:uppercase;font-weight:700;color:#bfe6ef">Your shared ride &middot; ${esc(fmtDate(list.date))}</div>
-      <div style="margin-top:10px;font-family:${SERIF};font-size:34px;line-height:1.1;font-weight:600">${esc(headline)}</div>
-      <div style="margin-top:10px;font-size:15px;line-height:1.45;color:#ffffff">${routeHtml(list)}</div>
-      <div style="margin-top:4px;font-size:13px;color:#cfeaf1">$${seat} a seat &middot; names close ${esc(cutoff)}</div>
-    </td></tr>
-
-    <tr><td style="padding:28px 30px 0">
-      <div style="font-family:${SERIF};font-size:21px;font-weight:600;color:${INK}">Post it in these groups</div>
-      <p style="margin:6px 0 0;font-size:15px;line-height:1.5;color:${MUTED}">Hi ${esc(firstName)}, this is how most vans fill. Copy the post, tap a group, paste.</p>
-      <div style="margin:16px 0 4px;padding:14px 16px;background:${PAPER};border-radius:12px;font-size:14px;line-height:1.55;color:${INK}">${esc(fbPost)}</div>
-      ${FACEBOOK_GROUPS.map((g) => bigButton(g.url, g.name, FB_BLUE)).join('')}
+    <tr><td style="padding:0"><div style="height:5px;line-height:5px;font-size:0;background:${BLUE}">&nbsp;</div></td></tr>
+    <tr><td style="padding:26px 34px 0">
+      <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle" style="padding-right:11px">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            <td width="34" height="34" align="center" valign="middle" style="background:${BAND};border-radius:50%;color:#ffffff;font-family:${SERIF};font-size:19px;font-weight:600">C</td>
+          </tr></table>
+        </td>
+        <td valign="middle">
+          <div style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};letter-spacing:.01em">Ceylon Hop</div>
+          <div style="font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:${FAINT};margin-top:1px">Ride Board · Shared rides</div>
+        </td>
+      </tr></table>
     </td></tr>
 
-    <tr><td style="padding:30px 25px 0">
-      <div style="padding:0 5px 4px;${EYEBROW}">More ways to fill it</div>
+    <tr><td style="padding:26px 34px 0">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:${BAND}">Fill your ride</div>
+      <h1 style="margin:9px 0 0;font-family:${SERIF};font-size:31px;line-height:1.12;font-weight:500;color:${INK}">${esc(headline)}</h1>
+      <p style="margin:10px 0 0;color:${MUTED};font-size:15px;line-height:1.6">Hi ${esc(firstName)}, the quickest way to find them is to post your ride in the groups below. We've written the post for you.</p>
+    </td></tr>
+
+    <tr><td style="padding:20px 34px 0">
+      <img src="${esc(hero)}" width="532" alt="" style="width:100%;max-width:532px;height:auto;display:block;border:0;border-radius:14px">
+    </td></tr>
+
+    <tr><td style="padding:18px 34px 0">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+        <td valign="middle">
+          <span style="display:inline-block;font-family:${MONO};font-size:13px;letter-spacing:.16em;color:${BAND};border:1px solid #d7ece7;background:#f3faf8;border-radius:7px;padding:6px 12px">${esc(list.code)}</span>
+        </td>
+        <td valign="middle" align="right"><span style="display:inline-block;background:#fff6e8;color:#8a5a12;border-radius:999px;padding:5px 12px;font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase">Gathering names</span></td>
+      </tr></table>
+    </td></tr>
+
+    <tr><td style="padding:24px 34px 0">
+      <div style="border-top:1px solid ${LINE};padding-top:22px">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="left" style="${EYEBROW}">From</td><td align="right" style="${EYEBROW}">To</td></tr>
+          <tr>
+            <td align="left" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.fromPlace)}</td>
+            <td align="right" style="font-family:${SERIF};font-size:19px;font-weight:600;color:${INK};padding-top:2px">${esc(list.toPlace)}</td>
+          </tr>
+          <tr><td colspan="2" style="padding-top:13px">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr valign="middle">
+              <td width="12">${dot(TEAL)}</td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td align="center" width="1" style="padding:0 2px"><div style="display:inline-block;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:${MUTED};background:${CARD};border:1px solid #e7dcc7;border-radius:999px;padding:4px 12px;white-space:nowrap">Shared ride</div></td>
+              <td width="50%"><div style="height:2px;background:${ROUTE_LINE};font-size:0;line-height:0">&nbsp;</div></td>
+              <td width="12" align="right">${dot(TOMATO)}</td>
+            </tr></table>
+          </td></tr>
+        </table>
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="background:#faf5ea;border:1px solid #efe6d6;border-radius:14px;padding:20px 22px">
+        <div style="font-family:${SERIF};font-size:16px;font-weight:600;color:${INK};margin-bottom:6px">Post it in these groups</div>
+        <p style="margin:0 0 12px;color:${MUTED};font-size:14px;line-height:1.6">This is how most vans fill. Copy the post, open a group, paste.</p>
+        <div style="background:${CARD};border:1px solid #efe6d6;border-radius:10px;padding:12px 14px;font-size:14px;line-height:1.55;color:${INK}">${esc(fbPost)}</div>
+        ${FACEBOOK_GROUPS.map((g) => pillButton(g.url, g.name)).join('')}
+      </div>
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 0">
+      <div style="${EYEBROW};margin-bottom:6px">More ways to fill it</div>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
-        <tr>
-          ${tile(wa.url, 'WhatsApp group', wa.name)}
-          ${tile(whatsappShareLink(waPost), 'Send to friends', 'Message ready on WhatsApp')}
-        </tr>
-        <tr>
-          ${tile(storyImageLink(args.shareBaseUrl, list.code), 'Instagram story', `Tag @${INSTAGRAM_HANDLE}, we reshare it`)}
-          ${tile(redditSubmitLink(sub1.name, list, rdPost), 'Reddit', `r/${sub1.name}`)}
-        </tr>
+        ${linkRow('WhatsApp group', wa.name, wa.url, 'Join')}
+        ${linkRow('Your own chats', 'The message is ready', whatsappShareLink(waPost), 'Send')}
+        ${linkRow('Instagram story', `Tag @${INSTAGRAM_HANDLE} and we reshare it`, storyImageLink(args.shareBaseUrl, list.code), 'Save image')}
+        ${linkRow('Reddit', `r/${sub1.name}`, redditSubmitLink(sub1.name, list, rdPost), 'Post')}
       </table>
     </td></tr>
 
-    <tr><td style="padding:28px 30px 30px">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};border-radius:12px"><tr>
-        <td style="padding:16px 18px;font-size:14px;line-height:1.5;color:${INK}">Not full by ${esc(cutoff)}? It's called off and you pay <b>$0</b>.</td>
-        <td align="right" style="padding:12px 14px 12px 0;white-space:nowrap">
-          <a href="${esc(ride)}" style="display:inline-block;background:${BAND};color:#ffffff;border-radius:999px;padding:10px 18px;font-weight:700;font-size:14px;text-decoration:none">Open my ride</a>
-        </td>
-      </tr></table>
-      <p style="margin:18px 0 0;font-size:12px;line-height:1.6;color:${FAINT}">Ceylon Hop &middot; Questions? Just reply, a real person answers.</p>
+    <tr><td style="padding:0 34px">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #eadfce">
+        <tr><td style="padding:15px 0 0;color:${FAINT};font-size:13px;line-height:1.6">Not full by ${esc(cutoff)} (Sri Lanka time)? The ride is called off and you pay <b style="color:${INK}">$0</b>.</td></tr>
+      </table>
+      ${pillButton(ride, 'View your ride')}
+    </td></tr>
+
+    <tr><td style="padding:26px 34px 32px">
+      <div style="border-top:1px solid ${LINE};padding-top:18px;font-size:13px;line-height:1.6;color:${FAINT}">
+        <span style="font-family:${SERIF};color:${MUTED}">Ceylon Hop</span> &middot; Ground transport across Sri Lanka.<br>
+        Just reply to this email, or message us on WhatsApp &mdash; a real person answers.
+      </div>
     </td></tr>`);
 
   const text = [
