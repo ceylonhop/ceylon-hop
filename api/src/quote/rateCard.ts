@@ -62,9 +62,10 @@ export const RATE_CARD = {
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 },
   fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   // Extras are FINAL prices with NO markup (owner 2026-07-11).
-  // 'hotel-transfer' is for SHARED seats only — once per booking, hotel within 2 km of the meeting
-  // points (owner 2026-10-16). It is not in EXTRA_CODES, so a private quote can't buy it.
-  extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000, 'hotel-transfer': 500 },
+  // 'hotel-pickup' / 'hotel-dropoff' are for SHARED seats only — each once per booking, hotel within
+  // 5 km of the meeting point (owner 2026-10-16; split into $5 each and 5 km on 2026-10-29). They
+  // are not in EXTRA_CODES, so a private quote can't buy them.
+  extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000, 'hotel-pickup': 500, 'hotel-dropoff': 500 },
   shared: { colomboPickupCents: 300, extraBagCents: 1000 },
 } as const;
 
