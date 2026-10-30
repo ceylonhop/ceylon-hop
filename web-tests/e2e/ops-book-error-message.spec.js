@@ -36,15 +36,14 @@ const SENT_QUOTE = {
   payOptions: null,
 };
 
-// Open the sent quote, press Mark booked, fill the modal and Confirm — with /book answering `answer`.
-async function markBooked(page, answer) {
-  const posts = [];
+// Open `quote` (sent) in the builder, with /book answering `answer` and its POST bodies kept in `posts`.
+async function openSentQuote(page, quote, answer, posts) {
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
   });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await routeOpsEstimate(page);
-  await page.route('**/admin/quote/q1', (r) => r.fulfill(json(SENT_QUOTE)));
+  await page.route('**/admin/quote/q1', (r) => r.fulfill(json(quote)));
   await page.route('**/admin/quote/list**', (r) => r.fulfill(json({ quotes: [{
     id: 'q1', reference: 'Q-Q1', customerName: 'Maya Silva', product: 'private', vehicle: 'car', totalCents: 14900, currency: 'USD', status: 'sent',
   }] })));
@@ -64,7 +63,12 @@ async function markBooked(page, answer) {
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
   await expect(page.locator('.ch-status-pill')).toHaveText('Sent', { timeout: 10000 });
   await page.waitForLoadState('networkidle');
+}
 
+// Open the sent quote, press Mark booked, fill the modal and Confirm — with /book answering `answer`.
+async function markBooked(page, answer) {
+  const posts = [];
+  await openSentQuote(page, SENT_QUOTE, answer, posts);
   await page.locator('.ch-actionbar [data-action="markWon"]').click();
   await page.locator('#bk-first').fill('Maya');
   await page.locator('#bk-last').fill('Silva');
@@ -110,4 +114,30 @@ test('a non-JSON 500 still falls back to the status code', async ({ page }) => {
   await markBooked(page, { status: 500, contentType: 'text/html', body: '<html><body>Internal Server Error</body></html>' });
   await expect(toast(page)).toHaveClass(/bad/);
   await expect(toastMsg(page)).toHaveText('Could not book — HTTP 500');
+});
+
+// The customer already tapped the pay link (2026-10-29): that made a booking
+// holding their full details, and the modal used to ignore it and open with blanks for ops to retype.
+test('a quote with a pay-page booking: the modal opens filled in from what the customer typed', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  // after the open: the newest route wins, and openSentQuote's **/admin/** catch-all would shadow it
+  await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json({ booking: { id: 'b1', status: 'payment_pending', input: { customer: {
+    firstName: 'Lena', lastName: 'Weber', email: 'lena.weber@example.com', whatsapp: '+4915100000000', country: 'Germany',
+  } } } })));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await expect(page.locator('#bk-last')).toHaveValue('Weber');
+  await expect(page.locator('#bk-country')).toHaveValue('Germany');
+  await expect(page.locator('#bk-email')).toHaveValue('lena.weber@example.com');
+  await expect(page.locator('.ch-book-prefill-hint')).toHaveText('Filled in from what Lena entered on the pay page. Check before confirming.');
+});
+
+test('the pay-page booking fetch fails: the modal still opens, from the quote alone', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  // after the open: the newest route wins, and openSentQuote's **/admin/** catch-all would shadow it
+  await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill({ status: 500, contentType: 'text/html', body: 'boom' }));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await expect(page.locator('#bk-first')).toHaveValue('Maya');
+  await expect(page.locator('#bk-last')).toHaveValue('Silva');
+  await expect(page.locator('#bk-country')).toHaveValue('');
+  await expect(page.locator('.ch-book-prefill-hint')).toHaveCount(0);
 });
