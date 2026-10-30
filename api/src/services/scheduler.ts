@@ -5,6 +5,7 @@ import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
 import { sendTripReminder, sendReviewRequest, sendDetailsReminder, needsDetails, manageUrl } from './notifications';
 import { detailsReminderDue, DETAILS_REMINDER_EPOCH } from '../domain/detailsReminder';
+import { balanceDueCents } from '../domain/balance';
 import { isoToday } from '../domain/dateRules';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 
@@ -88,7 +89,7 @@ export async function runScheduledNotifications(
     // Dateless capture Phase 2: both are needed to send details reminders; without them the
     // tick behaves exactly as before. payments gives the settle time (the reminder clock),
     // rideOps the "Customer contacted · pickup confirmed" pause.
-    payments?: { findByBookingId(id: string): Promise<Array<{ status: string; settledAt: Date | null }>> };
+    payments?: { findByBookingId(id: string): Promise<Array<{ status: string; amount: number; purpose: string; settledAt: Date | null }>> };
     rideOps?: { get(id: string): Promise<{ customerUpdated: boolean } | null> };
     // Test seam; production uses the code constant.
     detailsReminderEpoch?: Date;
@@ -174,7 +175,11 @@ export async function runScheduledNotifications(
 
     // Pre-trip reminder: trip STARTS within the lead window, and still active.
     if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
-      if (await dispatch(b, 'trip_reminder', () => sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) }))) {
+      // Pay on the day: the reminder's badge and cash line come from the ledger, not the status.
+      const cashOpts = b.paymentArrangement && deps.payments
+        ? { cashDueCents: balanceDueCents(b, await deps.payments.findByBookingId(b.id)) }
+        : undefined;
+      if (await dispatch(b, 'trip_reminder', () => sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) }, cashOpts))) {
         reminders++;
       }
     }

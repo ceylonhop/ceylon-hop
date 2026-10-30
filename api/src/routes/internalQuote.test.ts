@@ -16,6 +16,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { InMemoryZonesRepo } from '../db/zonesRepo';
 import { futureIsoDate } from '../testSupport/dates';
 import { depositFor } from '../quote/extrasDeposit';
+import { quoteToBooking } from '../quote/quoteToBooking';
 
 // Fixture auth: 3 allowlisted staff, one per role, over a fixed test secret.
 // AUTH matches AppDeps.auth's shape (createApp() overrides); OPS_AUTH_CFG matches the raw
@@ -2013,6 +2014,275 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
     const q = await quotes.get(id);
     expect(q?.status).toBe('won');
     expect(q?.convertedBookingId).toBeTruthy();
+  });
+
+  // Pay on the day (owner 2026-10-29): a WhatsApp customer whose card fails. Ops tick "Customer
+  // pays cash on the day" on Mark booked; the booking is confirmed with no payment, and the
+  // customer is told so — once, however many times the button is pressed.
+  describe('pay on the day', () => {
+    const PAY_ON_DAY = { ...BODY, paymentArrangement: 'on_the_day' };
+
+    function setup() {
+      const quotes = new InMemoryQuoteRepo();
+      const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
+      const payments = new InMemoryPaymentRepo();
+      const email = new FakeEmailAdapter();
+      // Two different origins, so the manage-link test proves which one the email uses.
+      const app = createApp({ quotes, bookings, payments, email, payBaseUrl: 'https://pay.example', bookingBaseUrl: 'https://site.example' });
+      return { quotes, bookings, payments, email, app };
+    }
+    const payOnDayMails = (email: FakeEmailAdapter) => email.sent.filter((m) => m.subject.startsWith('You’re confirmed'));
+
+    it('confirms a new booking without payment and emails the customer once', async () => {
+      const { quotes, bookings, payments, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(201);
+      const b = await res.json();
+      expect(b.status).toBe('confirmed');
+      expect(b.paymentArrangement).toBe('on_the_day');
+      expect(await payments.findByBookingId(b.id)).toEqual([]);
+      const events = await bookings.listStatusEvents(b.id);
+      expect(events.map((e) => [e.fromStatus, e.toStatus, e.source, e.reason])).toEqual([
+        ['draft', 'payment_pending', 'quote_conversion', null],
+        ['payment_pending', 'confirmed', 'quote_conversion', 'pay_on_the_day'],
+      ]);
+      expect(events[1]).toMatchObject({ actorType: 'staff', actorId: 'f@x.com', relatedEntityType: 'quote', relatedEntityId: id });
+      expect(email.sent).toHaveLength(1);
+      expect(email.sent[0]).toMatchObject({ to: 'a@b.com', subject: `You’re confirmed — ${b.reference}` });
+      const q = await quotes.get(id);
+      expect(q?.status).toBe('won');
+      expect(q?.convertedBookingId).toBe(b.id);
+    });
+
+    // app.ts wires the notification log and the manage-link base into this router. The base is
+    // the paid confirmation's (bookingBaseUrl / APP_BASE_URL), never the pay domain.
+    it('the email carries the customer’s manage link on the confirmation emails’ origin', async () => {
+      const { quotes, email, app } = setup();
+      await book(app, await sentQuote(quotes), PAY_ON_DAY);
+      expect(email.sent[0]?.text).toContain('https://site.example/manage.html?t=');
+      expect(email.sent[0]?.text).not.toContain('https://pay.example');
+    });
+
+    it('confirms the customer’s own pay-link booking on a re-book', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      // What quotePay leaves behind when the customer's card fails: a payment_pending booking
+      // linked to the quote, the quote itself still `sent`.
+      const mapped = quoteToBooking((await quotes.get(id))!, {
+        ...BODY, vehicleType: 'car', customer: { firstName: 'Old', lastName: 'Payer', email: 'old@x.com', whatsapp: '+94123456', country: 'LK' },
+      });
+      if (mapped.mode !== 'single') throw new Error('fixture is a single transfer');
+      const prior = await bookings.create(
+        { mode: 'single', input: mapped.input, total: 21900, amountDueNow: 21900, currency: 'USD',
+          distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' },
+        { idempotencyKey: `quote-pay:${id}` },
+      );
+      await bookings.setStatus(prior.id, 'payment_pending', undefined, { source: 'quote_conversion', actorType: 'customer', actorId: 'old@x.com' });
+      await quotes.patch(id, { convertedBookingId: prior.id });
+
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(200);
+      const b = await res.json();
+      expect(b.id).toBe(prior.id);
+      expect(b.status).toBe('confirmed');
+      expect(b.paymentArrangement).toBe('on_the_day');
+      expect(b.input.customer.email).toBe('a@b.com'); // payer refreshed from the form
+      expect((await bookings.list()).length).toBe(1);
+      expect(payOnDayMails(email)).toHaveLength(1);
+      expect(email.sent[0]?.to).toBe('a@b.com');
+      expect((await quotes.get(id))?.status).toBe('won');
+    });
+
+    it('a second press returns the same booking and sends no second email', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const first = await (await book(app, id, PAY_ON_DAY)).json();
+      const res2 = await book(app, id, PAY_ON_DAY);
+      expect(res2.status).toBe(200);
+      const again = await res2.json();
+      expect(again.id).toBe(first.id);
+      expect(again.status).toBe('confirmed');
+      expect((await bookings.list()).length).toBe(1);
+      expect(email.sent).toHaveLength(1);
+      expect((await bookings.listStatusEvents(first.id)).length).toBe(2);
+    });
+
+    it('a concurrent double press confirms once and emails once', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const [r1, r2] = await Promise.all([book(app, id, PAY_ON_DAY), book(app, id, PAY_ON_DAY)]);
+      expect([200, 201]).toContain(r1.status);
+      expect([200, 201]).toContain(r2.status);
+      const [b] = await bookings.list();
+      expect((await bookings.list()).length).toBe(1);
+      expect(b?.status).toBe('confirmed');
+      expect(email.sent).toHaveLength(1);
+    });
+
+    it('a failed email never fails the booking', async () => {
+      const { quotes, bookings } = setup();
+      const throwing = { send: async () => { throw new Error('provider down'); } };
+      const app = createApp({ quotes, bookings, email: throwing });
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const res = await book(app, await sentQuote(quotes), PAY_ON_DAY);
+      err.mockRestore();
+      expect(res.status).toBe(201);
+      const b = await res.json();
+      expect(b.status).toBe('confirmed');
+      expect((await bookings.get(b.id))?.status).toBe('confirmed');
+    });
+
+    // A booking the customer's pay attempt left in draft (a mid-failure before payment_pending).
+    async function draftPrior(quotes: InMemoryQuoteRepo, bookings: InMemoryBookingRepo, id: string) {
+      const mapped = quoteToBooking((await quotes.get(id))!, { ...BODY, vehicleType: 'car' });
+      if (mapped.mode !== 'single') throw new Error('fixture is a single transfer');
+      const prior = await bookings.create(
+        { mode: 'single', input: mapped.input, total: 21900, amountDueNow: 21900, currency: 'USD',
+          distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' },
+        { idempotencyKey: `quote-pay:${id}` },
+      );
+      await quotes.patch(id, { convertedBookingId: prior.id });
+      return prior;
+    }
+
+    it('confirms a draft prior: draft → payment_pending → confirmed, one email', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(200);
+      const b = await res.json();
+      expect(b.id).toBe(prior.id);
+      expect(b.status).toBe('confirmed');
+      const events = await bookings.listStatusEvents(prior.id);
+      expect(events.map((e) => [e.fromStatus, e.toStatus, e.source, e.actorType, e.reason])).toEqual([
+        ['draft', 'payment_pending', 'quote_conversion', 'staff', null],
+        ['payment_pending', 'confirmed', 'quote_conversion', 'staff', 'pay_on_the_day'],
+      ]);
+      expect(email.sent).toHaveLength(1);
+    });
+
+    // The ledger, not the status, says whether money moved: a prior that already holds a captured
+    // gateway payment must never be told to bring cash.
+    it('sends no pay-cash email when the prior booking already holds a succeeded payment', async () => {
+      const { quotes, bookings, payments, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      await bookings.setStatus(prior.id, 'payment_pending', undefined, { source: 'quote_conversion', actorType: 'customer', actorId: 'a@b.com' });
+      const p = await payments.create({ bookingId: prior.id, provider: 'payhere', orderId: prior.reference, amount: 21900, currency: 'USD', idempotencyKey: `pay:${prior.id}` });
+      await payments.markSucceeded(p.id);
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(prior.id);
+      expect(email.sent).toHaveLength(0);
+    });
+
+    // Owner 2026-10-30: only a founder (or finance) may book cash on the day.
+    it('an ops-role session cannot book cash on the day: 403, nothing written, no email', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const res = await book(app, id, PAY_ON_DAY, cookie('op@x.com'));
+      expect(res.status).toBe(403);
+      const out = await res.json();
+      expect(out).toMatchObject({ error: 'forbidden', reason: 'pay_on_day_founder_only' });
+      expect(out.message).toBe('Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.');
+      expect(await bookings.list()).toEqual([]);
+      const q = await quotes.get(id);
+      expect(q?.status).toBe('sent');
+      expect(q?.convertedBookingId ?? null).toBeNull();
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('an ops-role session still Mark-books without the field', async () => {
+      const { quotes, app } = setup();
+      const res = await book(app, await sentQuote(quotes), BODY, cookie('op@x.com'));
+      expect(res.status).toBe(201);
+      expect((await res.json()).status).toBe('payment_pending');
+    });
+
+    it('a draft prior WITHOUT the field is re-booked exactly as before', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      const res = await book(app, id, BODY);
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe('draft');
+      expect(await bookings.listStatusEvents(prior.id)).toEqual([]);
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('a confirm that fails answers 409, leaves the quote unwon and sends nothing', async () => {
+      class NoConfirmRepo extends InMemoryBookingRepo {
+        override async setStatus(...args: Parameters<InMemoryBookingRepo['setStatus']>) {
+          if (args[1] === 'confirmed') throw new Error('db down');
+          return super.setStatus(...args);
+        }
+      }
+      const quotes = new InMemoryQuoteRepo();
+      const bookings = new NoConfirmRepo({ transitionTrackingEnabled: true });
+      const email = new FakeEmailAdapter();
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const res = await book(app, id, PAY_ON_DAY);
+      err.mockRestore();
+      expect(res.status).toBe(409);
+      const out = await res.json();
+      expect(out.error).toBe('pay_on_day_not_confirmed');
+      expect(out.message).toBe('The booking could not be confirmed as pay on the day. Open it from the Bookings queue.');
+      expect((await quotes.get(id))?.status).toBe('sent');
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('a suppressed first send is retried by the next press, once', async () => {
+      const { quotes, bookings } = setup();
+      const fake = new FakeEmailAdapter();
+      let calls = 0;
+      const email = {
+        send: async (m: Parameters<FakeEmailAdapter['send']>[0]) =>
+          ++calls === 1 ? { delivered: false as const, reason: 'suppressed_allowlist' as const } : fake.send(m),
+      };
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(0);
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(200);
+      expect(fake.sent).toHaveLength(1);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(1);
+    });
+
+    it('a send that throws releases the claim, so the next press sends once', async () => {
+      const { quotes, bookings } = setup();
+      const fake = new FakeEmailAdapter();
+      let calls = 0;
+      const email = {
+        send: async (m: Parameters<FakeEmailAdapter['send']>[0]) => {
+          if (++calls === 1) throw new Error('provider down');
+          return fake.send(m);
+        },
+      };
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(201);
+      err.mockRestore();
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(200);
+      expect(fake.sent).toHaveLength(1);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(1);
+    });
+
+    it('without the field nothing changes: payment_pending and no email', async () => {
+      const { quotes, email, app } = setup();
+      const res = await book(app, await sentQuote(quotes), BODY);
+      expect(res.status).toBe(201);
+      const b = await res.json();
+      expect(b.status).toBe('payment_pending');
+      expect(b.paymentArrangement ?? null).toBeNull();
+      expect(email.sent).toHaveLength(0);
+    });
   });
 });
 
