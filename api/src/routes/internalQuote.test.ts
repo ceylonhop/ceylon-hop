@@ -2027,7 +2027,8 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
       const payments = new InMemoryPaymentRepo();
       const email = new FakeEmailAdapter();
-      const app = createApp({ quotes, bookings, payments, email, payBaseUrl: 'https://pay.example' });
+      // Two different origins, so the manage-link test proves which one the email uses.
+      const app = createApp({ quotes, bookings, payments, email, payBaseUrl: 'https://pay.example', bookingBaseUrl: 'https://site.example' });
       return { quotes, bookings, payments, email, app };
     }
     const payOnDayMails = (email: FakeEmailAdapter) => email.sent.filter((m) => m.subject.startsWith('You’re confirmed'));
@@ -2054,11 +2055,13 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       expect(q?.convertedBookingId).toBe(b.id);
     });
 
-    // app.ts wires the notification log and the manage-link base into this router.
-    it('the email carries the customer’s manage link', async () => {
+    // app.ts wires the notification log and the manage-link base into this router. The base is
+    // the paid confirmation's (bookingBaseUrl / APP_BASE_URL), never the pay domain.
+    it('the email carries the customer’s manage link on the confirmation emails’ origin', async () => {
       const { quotes, email, app } = setup();
       await book(app, await sentQuote(quotes), PAY_ON_DAY);
-      expect(email.sent[0]?.text).toContain('https://pay.example/manage.html?t=');
+      expect(email.sent[0]?.text).toContain('https://site.example/manage.html?t=');
+      expect(email.sent[0]?.text).not.toContain('https://pay.example');
     });
 
     it('confirms the customer’s own pay-link booking on a re-book', async () => {
@@ -2128,6 +2131,109 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       const b = await res.json();
       expect(b.status).toBe('confirmed');
       expect((await bookings.get(b.id))?.status).toBe('confirmed');
+    });
+
+    // A booking the customer's pay attempt left in draft (a mid-failure before payment_pending).
+    async function draftPrior(quotes: InMemoryQuoteRepo, bookings: InMemoryBookingRepo, id: string) {
+      const mapped = quoteToBooking((await quotes.get(id))!, { ...BODY, vehicleType: 'car' });
+      if (mapped.mode !== 'single') throw new Error('fixture is a single transfer');
+      const prior = await bookings.create(
+        { mode: 'single', input: mapped.input, total: 21900, amountDueNow: 21900, currency: 'USD',
+          distanceKm: mapped.distanceKm, durationMin: null, channel: 'whatsapp' },
+        { idempotencyKey: `quote-pay:${id}` },
+      );
+      await quotes.patch(id, { convertedBookingId: prior.id });
+      return prior;
+    }
+
+    it('confirms a draft prior: draft → payment_pending → confirmed, one email', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(200);
+      const b = await res.json();
+      expect(b.id).toBe(prior.id);
+      expect(b.status).toBe('confirmed');
+      const events = await bookings.listStatusEvents(prior.id);
+      expect(events.map((e) => [e.fromStatus, e.toStatus, e.source, e.actorType, e.reason])).toEqual([
+        ['draft', 'payment_pending', 'quote_conversion', 'staff', null],
+        ['payment_pending', 'confirmed', 'quote_conversion', 'staff', 'pay_on_the_day'],
+      ]);
+      expect(email.sent).toHaveLength(1);
+    });
+
+    it('a draft prior WITHOUT the field is re-booked exactly as before', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      const res = await book(app, id, BODY);
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe('draft');
+      expect(await bookings.listStatusEvents(prior.id)).toEqual([]);
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('a confirm that fails answers 409, leaves the quote unwon and sends nothing', async () => {
+      class NoConfirmRepo extends InMemoryBookingRepo {
+        override async setStatus(...args: Parameters<InMemoryBookingRepo['setStatus']>) {
+          if (args[1] === 'confirmed') throw new Error('db down');
+          return super.setStatus(...args);
+        }
+      }
+      const quotes = new InMemoryQuoteRepo();
+      const bookings = new NoConfirmRepo({ transitionTrackingEnabled: true });
+      const email = new FakeEmailAdapter();
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const res = await book(app, id, PAY_ON_DAY);
+      err.mockRestore();
+      expect(res.status).toBe(409);
+      const out = await res.json();
+      expect(out.error).toBe('pay_on_day_not_confirmed');
+      expect(out.message).toContain('could not be confirmed as pay on the day');
+      expect((await quotes.get(id))?.status).toBe('sent');
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('a suppressed first send is retried by the next press, once', async () => {
+      const { quotes, bookings } = setup();
+      const fake = new FakeEmailAdapter();
+      let calls = 0;
+      const email = {
+        send: async (m: Parameters<FakeEmailAdapter['send']>[0]) =>
+          ++calls === 1 ? { delivered: false as const, reason: 'suppressed_allowlist' as const } : fake.send(m),
+      };
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(0);
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(200);
+      expect(fake.sent).toHaveLength(1);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(1);
+    });
+
+    it('a send that throws releases the claim, so the next press sends once', async () => {
+      const { quotes, bookings } = setup();
+      const fake = new FakeEmailAdapter();
+      let calls = 0;
+      const email = {
+        send: async (m: Parameters<FakeEmailAdapter['send']>[0]) => {
+          if (++calls === 1) throw new Error('provider down');
+          return fake.send(m);
+        },
+      };
+      const app = createApp({ quotes, bookings, email });
+      const id = await sentQuote(quotes);
+      const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(201);
+      err.mockRestore();
+      expect((await book(app, id, PAY_ON_DAY)).status).toBe(200);
+      expect(fake.sent).toHaveLength(1);
+      await book(app, id, PAY_ON_DAY);
+      expect(fake.sent).toHaveLength(1);
     });
 
     it('without the field nothing changes: payment_pending and no email', async () => {

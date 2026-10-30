@@ -1138,11 +1138,31 @@ export function internalQuoteRoutes(deps: {
     }
     const arrangement = parsed.data.paymentArrangement;
 
+    // draft → payment_pending, staff-attributed to this quote. Shared by the create path and a
+    // pay-on-the-day re-book of a booking the customer's pay attempt left in draft.
+    const toPaymentPending = async (b: Booking): Promise<Booking> => {
+      try {
+        return await deps.bookings.setStatus(b.id, 'payment_pending', undefined, {
+          source: 'quote_conversion',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
+      } catch {
+        // A concurrent double-submit already moved this booking out of draft — re-read it
+        // rather than surface a 500 on a booking that was, in fact, created.
+        return (await deps.bookings.get(b.id)) ?? b;
+      }
+    };
     // Pay on the day: payment_pending → confirmed with no payment. The arrangement goes on FIRST —
-    // the state machine allows this move only for a booking that carries one. Anything not
-    // payment_pending (a retry that already confirmed it) is left alone.
+    // the state machine allows this move only for a booking that carries one. A draft is moved to
+    // payment_pending first; anything else (a retry that already confirmed it) is left alone.
     const confirmPayOnDay = async (b: Booking): Promise<Booking> => {
-      if (!arrangement || b.status !== 'payment_pending') return b;
+      if (!arrangement) return b;
+      if (b.status === 'draft') b = await toPaymentPending(b);
+      if (b.status !== 'payment_pending') return b;
       await deps.bookings.setPaymentArrangement(b.id, arrangement);
       try {
         await deps.bookings.setStatus(b.id, 'confirmed', undefined, {
@@ -1154,10 +1174,27 @@ export function internalQuoteRoutes(deps: {
           relatedEntityType: 'quote',
           relatedEntityId: quote.id,
         });
-      } catch {
-        // A concurrent double-submit confirmed it first — the re-read below is the answer.
+      } catch (err) {
+        // A concurrent double-submit confirmed it first — the re-read is the answer. Still not
+        // confirmed means a real failure: log its cause, and notConfirmed() refuses the request.
+        const now = (await deps.bookings.get(b.id)) ?? b;
+        if (now.status !== 'confirmed') console.error(`pay-on-the-day confirm failed for ${b.reference}:`, err);
+        return now;
       }
       return (await deps.bookings.get(b.id)) ?? b;
+    };
+    // A pay-on-the-day request whose booking did not end up confirmed must not answer success —
+    // checked BEFORE the quote is stamped won and before any email.
+    const notConfirmed = (b: Booking) => {
+      if (!arrangement || b.status === 'confirmed') return null;
+      console.error(`pay-on-the-day booking ${b.reference} left ${b.status}, not confirmed`);
+      return c.json(
+        {
+          error: 'pay_on_day_not_confirmed',
+          message: 'The booking was created but could not be confirmed as pay on the day. Open it from the Bookings queue.',
+        },
+        409,
+      );
     };
     // The customer's confirmation, LAST and best-effort: the booking is already confirmed, so a
     // mail failure must never fail the request. Claimed before sending so a double-click or a
@@ -1226,6 +1263,8 @@ export function internalQuoteRoutes(deps: {
       const updated = await confirmPayOnDay(
         payOnDayRetry ? prior : await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer }),
       );
+      const refused = notConfirmed(updated);
+      if (refused) return refused;
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
       await deps.quotes.patch(id, {
@@ -1285,23 +1324,10 @@ export function internalQuoteRoutes(deps: {
     // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
     // returns the existing payment_pending booking) never attempts an illegal self-transition.
     let booking = created;
-    if (created.status === 'draft') {
-      try {
-        booking = await deps.bookings.setStatus(created.id, 'payment_pending', undefined, {
-          source: 'quote_conversion',
-          actorType: 'staff',
-          actorId: c.get('identity').email,
-          requestId: c.get('requestId'),
-          relatedEntityType: 'quote',
-          relatedEntityId: quote.id,
-        });
-      } catch {
-        // A concurrent double-submit already moved this booking out of draft — re-read it
-        // rather than surface a 500 on a booking that was, in fact, created.
-        booking = (await deps.bookings.get(created.id)) ?? created;
-      }
-    }
+    if (created.status === 'draft') booking = await toPaymentPending(created);
     booking = await confirmPayOnDay(booking);
+    const refused = notConfirmed(booking);
+    if (refused) return refused;
     await deps.quotes.patch(id, {
       convertedBookingId: booking.id,
       status: 'won',
