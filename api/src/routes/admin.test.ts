@@ -829,6 +829,21 @@ describe('POST /admin/bookings/:id/no-show', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('tells a pay-on-the-day customer nothing was charged (nothing on the ledger)', async () => {
+    const { app, bookings, email } = makeApp();
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/no-show`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(200);
+    const sent = email.sent.filter((m) => m.to === 'maya@example.com' && /Nothing was charged/.test(m.text ?? ''));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).not.toMatch(/refundable/i);
+  });
+
   it('403 for an ops session (no payments:act)', async () => {
     const { app, bookings } = makeApp();
     const b = await book(app);
