@@ -890,16 +890,29 @@ if(!isTrip && r.type==='shared'){
   const pvtNote=document.getElementById('pvt-note'); if(pvtNote) pvtNote.style.display='none';
   const s1t=document.getElementById('s1-title'); if(s1t) s1t.textContent='Your shared ride';
   const s1s=document.getElementById('s1-sub'); if(s1s) s1s.textContent='A reserved seat on our scheduled service ('+sharedDaysLabel+') along this route. Pick-up and drop-off are at set meeting points.';
+  // The leg's published meeting points (departureRepo SHARED_PRODUCTS). Customers could not
+  // tell where to stand or where they would be set down from the town names alone (owner,
+  // 2026-10-29), so each end names its point with a map link; the town stays as the sub-line.
+  const sharedLeg=(window.TRANSFERS&&routeFromId&&routeToId)?window.TRANSFERS.sharedOption(routeFromId,routeToId):null;
+  const ICO_EXT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+  const srEnd=function(pin,label,town,point){
+    if(!point) return '<div class="sr-line"><span class="sr-pin '+pin+'"></span><div><span class="sr-lbl">'+label+'</span><b>'+town+'</b></div></div>';
+    const href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(point+', Sri Lanka');
+    return '<div class="sr-line"><span class="sr-pin '+pin+'"></span><div><span class="sr-lbl">'+label+'</span><b>'+point+'</b>'+
+      '<span class="sr-sub">'+town+' \u00b7 <a class="sr-map" href="'+href+'" target="_blank" rel="noopener">Open in Maps'+ICO_EXT+'</a></span></div></div>';
+  };
   const card=document.createElement('div'); card.className='shared-route';
   card.innerHTML=
-    '<div class="sr-line"><span class="sr-pin from"></span><div><span class="sr-lbl">Board at</span><b>'+r.stops[0]+'</b></div></div>'+
+    srEnd('from','Board at',r.stops[0],sharedLeg&&sharedLeg.pickup)+
     '<div class="sr-wire"></div>'+
-    '<div class="sr-line"><span class="sr-pin to"></span><div><span class="sr-lbl">Drop-off</span><b>'+r.stops[r.stops.length-1]+'</b></div></div>'+
+    srEnd('to','Get out at',r.stops[r.stops.length-1],sharedLeg&&sharedLeg.dropoff)+
     '<div class="sr-foot">'+
       '<span class="sr-fact">'+ICO_CLOCK+'<span>Departs <b>'+timesTxt+'</b> \u00b7 '+sharedDaysLabel+'</span></span>'+
       '<span class="sr-fact">'+ICO_SEAT+'<span><b>'+money(r.price)+'</b> per seat</span></span>'+
     '</div>'+
-    '<p class="sr-note">'+ICO_INFO+'Exact pick-up &amp; drop-off are set meeting points along the route \u2014 our team confirms them with you after you book.</p>';
+    '<p class="sr-note">'+ICO_INFO+((sharedLeg&&sharedLeg.pickup&&sharedLeg.dropoff)
+      ? 'Staying elsewhere? Hotel pick-up or drop-off within 5 km of these points is +$5 each \u2014 add it under Extras.'
+      : 'Exact pick-up &amp; drop-off are set meeting points along the route \u2014 our team confirms them with you after you book.')+'</p>';
   if(locWrap) locWrap.after(card);
 
   // STEP 2 — pick a date + a SCHEDULED departure (no "any time", no decide-later time)
