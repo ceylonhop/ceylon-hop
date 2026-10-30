@@ -39,6 +39,28 @@ describe('balanceDueCents', () => {
   });
 });
 
+describe('pay on the day', () => {
+  // Cash owed to the team on the day: the ledger is the only source of what has been paid.
+  const onTheDay = (status: string, total: number) => ({ status, total, amountDueNow: total, paymentArrangement: 'on_the_day' as const });
+
+  it('a confirmed booking with no payment yet owes the whole total', () => {
+    expect(balanceDueCents(onTheDay('confirmed', 20000), [])).toBe(20000);
+  });
+  it('a confirmed booking owes nothing once the cash equals the total', () => {
+    expect(balanceDueCents(onTheDay('confirmed', 20000), [ok(20000)])).toBe(0);
+  });
+  it('a completed or in-progress trip still owes the total until the cash is recorded', () => {
+    expect(balanceDueCents(onTheDay('completed', 20000), [])).toBe(20000);
+    expect(balanceDueCents(onTheDay('in_progress', 20000), [])).toBe(20000);
+  });
+  it('a cancelled booking owes nothing', () => {
+    expect(balanceDueCents(onTheDay('cancelled', 20000), [])).toBe(0);
+  });
+  it('a failed payment does not count as paid', () => {
+    expect(balanceDueCents(onTheDay('confirmed', 20000), [{ status: 'failed', amount: 20000, purpose: 'full' }])).toBe(20000);
+  });
+});
+
 describe('isBalanceOpen', () => {
   it('only for a secured booking with a settled deposit and money left to pay', () => {
     expect(isBalanceOpen(booking('confirmed', 20000, 5000), [ok(5000, 'deposit')])).toBe(true);
