@@ -5131,6 +5131,7 @@ function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
+  window.opsCan=(cap)=>!!(state.caps&&state.caps.includes(cap)); /* the quote module asks about a capability (Mark booked → cash on the day) */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
   /* The Experiences page (QuoteView) opens a lead's booking or quote through these. The queue only
      holds open bookings, so a booking it does not carry is fetched once; if it is still absent
@@ -5409,6 +5410,7 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 // from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var bookCashOnDay = false; // "Customer pays cash on the day" ticked in the Mark booked modal (payments:act only)
 var bookPrefillBooking = null; // the quote's converted booking (the customer's pay-page entry), fetched when the modal opens
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
@@ -7685,6 +7687,8 @@ async function bookQuote() {
     date: val('bk-date') || undefined,
     time: val('bk-time') || undefined,
   };
+  var cashOnDay = bookCashOnDay && canBookCashOnDay();
+  if (cashOnDay) b.paymentArrangement = 'on_the_day';
   // Client-side required-field guard (server re-validates via Zod).
   if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
     showToast('Fill in name, email, WhatsApp, country, date and time', 'error');
@@ -7712,7 +7716,9 @@ async function bookQuote() {
   _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
-    showToast('Booked · ' + res.reference);
+    showToast(cashOnDay
+      ? 'Booked ' + res.reference + ': confirmed, cash on the day. Confirmation emailed to ' + (b.customer.firstName || 'the customer') + '.'
+      : 'Booked · ' + res.reference);
     if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     render();
   } finally {
@@ -11765,6 +11771,7 @@ function bookPrefill(st, booking) {
 // booking holding what they typed there — fetch it so the modal starts from that, not blanks.
 async function openBookModal() {
   bookPrefillBooking = null;
+  bookCashOnDay = false; // never carried over from a previous open
   if (state.convertedBookingId) {
     var seq = _openSeq;
     var body = null;
@@ -11784,6 +11791,14 @@ async function openBookModal() {
 // f-contact field split back into email/whatsapp where it recognizably is one or the other;
 // pax, bags and the first leg's date come from the quote. Time has no safe default, so the
 // operator always types it (required fields guarded client-side in bookQuote()).
+// Booking a customer as cash-on-the-day is founder/finance only (the server enforces it; this hides the box).
+function canBookCashOnDay() { return !!(window.opsCan && window.opsCan('payments:act')); }
+function bookCashHelp() {
+  if (!bookCashOnDay) return 'Leave unticked if they’ll still pay by card. The booking stays “Awaiting payment”, as today.';
+  var first = val('bk-first') || 'The customer';
+  var total = lastEstimate && lastEstimate.total ? fmtUsd(lastEstimate.total.cents) : 'the quote total';
+  return 'Confirms the booking now. ' + first + ' is emailed to pay ' + total + ' in US dollars, cash, to the Ceylon Hop team at the first pickup. You record the cash when it’s collected.';
+}
 function renderBookModal() {
   var st = state;
   var p = bookPrefill(st, bookPrefillBooking);
@@ -11812,6 +11827,10 @@ function renderBookModal() {
     field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(p.date) + '" />'),
     field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
     '</div>',
+    canBookCashOnDay() ? '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">'
+      + '<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="bk-cash-on-day"' + (bookCashOnDay ? ' checked' : '') + ' /> Customer pays cash on the day</label>'
+      + '<p id="bk-cash-help" style="margin:6px 0 0;font-size:13px;color:var(--muted)">' + esc(bookCashHelp()) + '</p>'
+      + '</div>' : '',
   ].join('');
 }
 
@@ -12396,7 +12415,7 @@ function render() {
       renderBookModal(),
       '      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">',
       '        <button class="ch-btn ch-btn-outline" data-action="cancelBook">Cancel</button>',
-      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">Confirm booking</button>',
+      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">' + (bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking') + '</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -12997,6 +13016,12 @@ function attachEventListeners() {
     // artifact 'change': the typing-flicker loop (docs/bug-ops-quote-typing-flicker.md).
     if (_renderSwapping) return;
     var el = e.target;
+    if (el.id === 'bk-cash-on-day') { // update the two nodes in place: a re-render would wipe the typed fields
+      bookCashOnDay = el.checked;
+      var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp();
+      var cb = document.querySelector('.ch-modal [data-action="confirmBook"]'); if (cb) cb.textContent = bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking';
+      return;
+    }
     if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
@@ -13109,6 +13134,7 @@ function attachEventListeners() {
 
   app.addEventListener('input', function(e) {
     var el = e.target;
+    if (el && el.id === 'bk-first' && bookCashOnDay) { var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp(); }
     if (!el || !el.matches || !el.matches('.ch-output-editor[data-output-tab]')) return;
     var tab = el.getAttribute('data-output-tab');
     if (tab === 'whatsapp' || tab === 'email') outputDrafts[tab] = el.value;
