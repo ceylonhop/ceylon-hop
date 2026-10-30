@@ -183,6 +183,9 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // 'on_the_day' = the customer pays USD cash to the team at the first pickup; absent otherwise. The
+  // manage page words the balance row from it.
+  paymentArrangement?: 'on_the_day';
   // Money actually received (Σ succeeded payments) and whether the manage page may offer the
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
@@ -216,6 +219,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: balanceDueCents(b, payments),
+    ...(b.paymentArrangement ? { paymentArrangement: b.paymentArrangement } : {}),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
     needsPricing: !!b.needsPricing,
