@@ -34,7 +34,7 @@ import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
 import type { Booking, BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
-import { balanceDueCents, isBalanceOpen } from '../domain/balance';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import {
   payLines,
@@ -1191,7 +1191,7 @@ export function internalQuoteRoutes(deps: {
       return c.json(
         {
           error: 'pay_on_day_not_confirmed',
-          message: 'The booking was created but could not be confirmed as pay on the day. Open it from the Bookings queue.',
+          message: 'The booking could not be confirmed as pay on the day. Open it from the Bookings queue.',
         },
         409,
       );
@@ -1203,6 +1203,9 @@ export function internalQuoteRoutes(deps: {
       const log = deps.notificationLog;
       if (!arrangement || !deps.email || !log || b.status !== 'confirmed' || !b.paymentArrangement) return;
       try {
+        // Money already on the ledger (a capture that landed mid-confirm, or a gateway payment the
+        // prior already held) — never tell a customer who has paid to bring cash.
+        if (deps.payments && paidCents(await deps.payments.findByBookingId(b.id)) > 0) return;
         if (!(await log.claim(b.id, 'pay_on_day_confirmed'))) return;
         try {
           const links = deps.manageBaseUrl && deps.linkSecret

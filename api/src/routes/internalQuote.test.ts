@@ -2163,6 +2163,21 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       expect(email.sent).toHaveLength(1);
     });
 
+    // The ledger, not the status, says whether money moved: a prior that already holds a captured
+    // gateway payment must never be told to bring cash.
+    it('sends no pay-cash email when the prior booking already holds a succeeded payment', async () => {
+      const { quotes, bookings, payments, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const prior = await draftPrior(quotes, bookings, id);
+      await bookings.setStatus(prior.id, 'payment_pending', undefined, { source: 'quote_conversion', actorType: 'customer', actorId: 'a@b.com' });
+      const p = await payments.create({ bookingId: prior.id, provider: 'payhere', orderId: prior.reference, amount: 21900, currency: 'USD', idempotencyKey: `pay:${prior.id}` });
+      await payments.markSucceeded(p.id);
+      const res = await book(app, id, PAY_ON_DAY);
+      expect(res.status).toBe(200);
+      expect((await res.json()).id).toBe(prior.id);
+      expect(email.sent).toHaveLength(0);
+    });
+
     it('a draft prior WITHOUT the field is re-booked exactly as before', async () => {
       const { quotes, bookings, email, app } = setup();
       const id = await sentQuote(quotes);
@@ -2192,7 +2207,7 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       expect(res.status).toBe(409);
       const out = await res.json();
       expect(out.error).toBe('pay_on_day_not_confirmed');
-      expect(out.message).toContain('could not be confirmed as pay on the day');
+      expect(out.message).toBe('The booking could not be confirmed as pay on the day. Open it from the Bookings queue.');
       expect((await quotes.get(id))?.status).toBe('sent');
       expect(email.sent).toHaveLength(0);
     });
