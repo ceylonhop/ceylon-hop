@@ -24,12 +24,15 @@ import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { depositFor } from '../quote/extrasDeposit';
 import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
-import type { EmailAdapter } from '../adapters/email';
+import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
+import { sendPayOnDayConfirmed, manageUrl } from '../services/notifications';
+import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import { PAYMENT_ARRANGEMENTS } from '../domain/paymentMethod';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
-import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import type { Booking, BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import { balanceDueCents, isBalanceOpen } from '../domain/balance';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
@@ -157,6 +160,9 @@ const BookingDetailsSchema = z.object({
   bags: z.number().int().min(0),
   date: z.string().optional(),
   time: z.string().optional(),
+  // "Customer pays cash on the day" (owner 2026-10-29): confirm with no payment. Absent = the
+  // booking lands in payment_pending exactly as before.
+  paymentArrangement: z.enum(PAYMENT_ARRANGEMENTS).optional(),
 });
 
 function customerNameFor(body: ToolRequest): string | null {
@@ -724,6 +730,10 @@ export function internalQuoteRoutes(deps: {
   shortLinksEnabled?: boolean;
   // Partner experiences (spec 2026-10-06 D12): a quote's interests move onto its booking.
   experienceInterests?: ExperienceInterestRepo;
+  // Pay on the day (owner 2026-10-29): the log that makes its confirmation email send once, and
+  // the origin of the email's manage link. Absent = the booking still confirms, unannounced.
+  notificationLog?: NotificationLogRepo;
+  manageBaseUrl?: string;
 }) {
   const r = new Hono();
 
@@ -1126,6 +1136,51 @@ export function internalQuoteRoutes(deps: {
         .join('; ');
       return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
     }
+    const arrangement = parsed.data.paymentArrangement;
+
+    // Pay on the day: payment_pending → confirmed with no payment. The arrangement goes on FIRST —
+    // the state machine allows this move only for a booking that carries one. Anything not
+    // payment_pending (a retry that already confirmed it) is left alone.
+    const confirmPayOnDay = async (b: Booking): Promise<Booking> => {
+      if (!arrangement || b.status !== 'payment_pending') return b;
+      await deps.bookings.setPaymentArrangement(b.id, arrangement);
+      try {
+        await deps.bookings.setStatus(b.id, 'confirmed', undefined, {
+          source: 'quote_conversion',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          reason: 'pay_on_the_day',
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
+      } catch {
+        // A concurrent double-submit confirmed it first — the re-read below is the answer.
+      }
+      return (await deps.bookings.get(b.id)) ?? b;
+    };
+    // The customer's confirmation, LAST and best-effort: the booking is already confirmed, so a
+    // mail failure must never fail the request. Claimed before sending so a double-click or a
+    // re-book sends once; handed back when it did not leave, so the next press can retry.
+    const emailPayOnDay = async (b: Booking): Promise<void> => {
+      const log = deps.notificationLog;
+      if (!arrangement || !deps.email || !log || b.status !== 'confirmed' || !b.paymentArrangement) return;
+      try {
+        if (!(await log.claim(b.id, 'pay_on_day_confirmed'))) return;
+        try {
+          const links = deps.manageBaseUrl && deps.linkSecret
+            ? { manage: manageUrl(b, deps.manageBaseUrl, deps.linkSecret) }
+            : {};
+          const outcome = await sendPayOnDayConfirmed(b, deps.email, links);
+          if (!wasDelivered(outcome)) await log.release(b.id, 'pay_on_day_confirmed');
+        } catch (err) {
+          await log.release(b.id, 'pay_on_day_confirmed');
+          throw err;
+        }
+      } catch (err) {
+        console.error(`pay-on-the-day confirmation email failed for ${b.reference}:`, err);
+      }
+    };
 
     // A quote is welded to at most one booking (idempotency key + a unique constraint on
     // converted_booking_id), because a double-clicked Confirm must never bill one trip twice.
@@ -1134,10 +1189,13 @@ export function internalQuoteRoutes(deps: {
       ? await deps.bookings.get(quote.convertedBookingId)
       : await deps.bookings.findByIdempotencyKey(idempotencyKey);
     if (prior) {
+      // A second press of a pay-on-the-day Mark booked finds the booking it already confirmed:
+      // answer with it rather than "already booked". Nothing else past payment_pending gets in.
+      const payOnDayRetry = !!arrangement && prior.status === 'confirmed' && !!prior.paymentArrangement;
       // Once money has moved the payer on the row is evidence, not a draft. Refuse, and NAME
       // the booking — "already booked" with nothing to go on is how an operator ends up
       // pressing the button again.
-      if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
+      if (!payOnDayRetry && !(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
         return c.json(
           {
             error: 'already_booked',
@@ -1165,7 +1223,9 @@ export function internalQuoteRoutes(deps: {
           409,
         );
       }
-      const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
+      const updated = await confirmPayOnDay(
+        payOnDayRetry ? prior : await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer }),
+      );
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
       await deps.quotes.patch(id, {
@@ -1178,6 +1238,7 @@ export function internalQuoteRoutes(deps: {
           : {}),
       });
       await linkQuoteInterests(deps.experienceInterests, id, prior.id);
+      await emailPayOnDay(updated);
       return c.json(updated, 200);
     }
 
@@ -1240,6 +1301,7 @@ export function internalQuoteRoutes(deps: {
         booking = (await deps.bookings.get(created.id)) ?? created;
       }
     }
+    booking = await confirmPayOnDay(booking);
     await deps.quotes.patch(id, {
       convertedBookingId: booking.id,
       status: 'won',
@@ -1250,6 +1312,7 @@ export function internalQuoteRoutes(deps: {
         : {}),
     });
     await linkQuoteInterests(deps.experienceInterests, id, booking.id);
+    await emailPayOnDay(booking);
     return c.json(booking, 201);
   });
 
