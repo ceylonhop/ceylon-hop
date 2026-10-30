@@ -161,7 +161,7 @@ describe('projectBooking names a shared leg\'s pick-up and drop-off points', () 
   });
 
   it('leaves them out where it cannot know the leg, and off non-shared bookings', () => {
-    const legacy = { ...seat, input: { ...(seat as any).input, fromPlace: undefined, toPlace: undefined } } as unknown as Booking;
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as unknown as Booking;
     for (const b of [legacy, singleBooking, tripBooking]) {
       expect(projectBooking(b)).not.toHaveProperty('pickupPoint');
       expect(projectBooking(b)).not.toHaveProperty('dropoffPoint');
