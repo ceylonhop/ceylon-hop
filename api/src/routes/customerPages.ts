@@ -74,6 +74,7 @@ const ASSETS: [string, string][] = [
   ['checkout-handoff.js', JS], // the PayHere hand-off manage.html shares with booking.html
   ['datepicker.js', JS], // the site's date picker — manage.html's pickup card (dateless Phase 4)
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use
+  ['ch-shortplace.js', JS], // the place shortener — manage.html's heading, same file booking.html uses
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
   ['img/brand-c.svg', 'image/svg+xml'], // the header logo glyph — same file site.js's cmark() uses
 ];

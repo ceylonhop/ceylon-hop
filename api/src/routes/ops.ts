@@ -29,7 +29,7 @@ import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
 import { scheduleProblem, SCHEDULE_REASONS } from '../domain/bookingSchedule';
-import { isBalanceOpen } from '../domain/balance';
+import { isBalanceOpen, paidCents } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
 import { loadBookingInterests } from '../experiences/bookingInterests';
@@ -145,7 +145,7 @@ async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string):
     if (log && (await log.wasSent(bookingId, kind))) return; // already emailed for this milestone
     const booking = await deps.bookings.get(bookingId);
     if (!booking) return;
-    await sendNoShowNotice(booking, deps.email);
+    await sendNoShowNotice(booking, deps.email, { paidCents: paidCents(await deps.payments.findByBookingId(bookingId)) });
     await log?.markSent(bookingId, kind);
   } catch (err) {
     console.error(`ops ${kind} email failed for ${bookingId}:`, err);

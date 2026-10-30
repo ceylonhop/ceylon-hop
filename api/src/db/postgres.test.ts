@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDb, type Db, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
@@ -86,6 +86,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     quotes = new PostgresQuoteRepo(conn.db);
     communications = new PostgresCustomerCommunicationRepo(conn.db);
   });
+  afterAll(() => sql?.end());
 
   it('notification log records sent kinds per booking, idempotently', async () => {
     const b = await bookings.create(sample);
@@ -187,7 +188,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   });
 
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
-    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const alerts = new PostgresAlertLogRepo(db);
     const key = 'pgtest-' + Date.now(); // unique per run — the shared test DB persists rows
     const t0 = new Date();
     const COOLDOWN = 30 * 60_000;
@@ -202,7 +203,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   });
 
   it('alert log: rollback frees a failed reservation so the next send retries (BI3)', async () => {
-    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const alerts = new PostgresAlertLogRepo(db);
     const key = 'pgroll-' + Date.now();
     const t0 = new Date();
     const COOLDOWN = 30 * 60_000;
@@ -1609,7 +1610,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
 // The same contract the in-memory fake satisfies, run against the real database — so the fake can
 // never drift into accepting states Postgres refuses (partial unique index, CHECK constraints).
 describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
-  const conn = () => createDb(TEST_URL as string);
+  let pool: ReturnType<typeof createDb> | undefined;
+  const conn = () => (pool ??= createDb(TEST_URL as string));
+  afterAll(() => pool?.sql.end());
   quoteDiscountRepoContract('contract', async () => {
     const { db } = conn();
     const quotes = new PostgresQuoteRepo(db);
@@ -1626,7 +1629,9 @@ describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
 // Task 4 — the transaction boundary. This is the ONLY place atomicity is a real property: the
 // in-memory fake has no transaction, so a rollback assertion against it would prove nothing.
 describe.skipIf(!TEST_URL)('Ops save + discount is one transaction', () => {
-  const conn = () => createDb(TEST_URL as string);
+  let pool: ReturnType<typeof createDb> | undefined;
+  const conn = () => (pool ??= createDb(TEST_URL as string));
+  afterAll(() => pool?.sql.end());
 
   const quoteInput = (totalCents: number) => ({
     product: 'private' as const, vehicle: 'car', customerName: 'Rollback Fixture',
@@ -1698,41 +1703,45 @@ describe.skipIf(!TEST_URL)('Ops save + discount is one transaction', () => {
   });
 });
 
+// One migrated pool per describe, closed when it ends. Contracts call make() once per case, and a
+// pool per case is never closed — this file opened enough of them to hit the connection limit.
+function migratedDbPerDescribe(): () => Promise<Db> {
+  let pool: ReturnType<typeof createDb> | undefined;
+  let ready: Promise<Db> | undefined;
+  afterAll(() => pool?.sql.end());
+  return () => (ready ??= (async () => {
+    pool = createDb(TEST_URL as string);
+    await migrate(pool.db, { migrationsFolder: 'drizzle' });
+    return pool.db;
+  })());
+}
+
 describe.skipIf(!TEST_URL)('PostgresPromoCodeRepo (integration)', () => {
-  promoCodeRepoContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return new PostgresPromoCodeRepo(conn.db);
-  });
+  const migrated = migratedDbPerDescribe();
+  promoCodeRepoContract('contract', async () => new PostgresPromoCodeRepo(await migrated()));
 });
 
 describe.skipIf(!TEST_URL)('Postgres promo code uses (integration)', () => {
+  const migrated = migratedDbPerDescribe();
   bookingPromoContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    const db = await migrated();
     return {
-      bookings: new PostgresBookingRepo(conn.db),
-      payments: new PostgresPaymentRepo(conn.db),
-      promoCodes: new PostgresPromoCodeRepo(conn.db),
+      bookings: new PostgresBookingRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      promoCodes: new PostgresPromoCodeRepo(db),
     };
   });
 });
 
 describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)', () => {
+  const migrated = migratedDbPerDescribe();
   amountDueNowContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return { bookings: new PostgresBookingRepo(conn.db), payments: new PostgresPaymentRepo(conn.db) };
+    const db = await migrated();
+    return { bookings: new PostgresBookingRepo(db), payments: new PostgresPaymentRepo(db) };
   });
 });
 
 describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
-  // One pool for the whole contract: a pool per case is never closed, and this file opens enough
-  // of them to hit the server's connection limit.
-  let repo: Promise<PostgresBookingRepo> | undefined;
-  paymentArrangementContract('contract', () => (repo ??= (async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return new PostgresBookingRepo(conn.db);
-  })()));
+  const migrated = migratedDbPerDescribe();
+  paymentArrangementContract('contract', async () => new PostgresBookingRepo(await migrated()));
 });

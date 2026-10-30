@@ -30,7 +30,7 @@ export type CaseSource = 'payments' | 'payment_events' | 'booking_checkout_event
 export type VerdictKind =
   | 'paid' | 'paid_by_hand' | 'declined' | 'reached_no_answer' | 'checkout_no_trace' | 'never_started'
   | 'paid_elsewhere' | 'paid_twice' | 'money_back';
-export type WarningCode = 'money_on_unpaid_booking' | 'money_after_cancel' | 'paid_status_without_payment';
+export type WarningCode = 'money_on_unpaid_booking' | 'money_after_cancel' | 'paid_status_without_payment' | 'cash_due_on_the_day';
 export type GapCode = 'no_checkout_log' | 'declines_may_be_missing' | 'no_gateway_report' | 'actor_not_recorded';
 
 export interface Verdict {
@@ -79,6 +79,7 @@ export interface CaseEvidence {
   booking: {
     id: string; reference: string; status: string; total: number; createdAt: Date;
     cancelledAt: Date | null; cancelledBy: string | null; cancellationReason: string | null;
+    paymentArrangement?: 'on_the_day' | null;
   };
   payments: CasePayment[];
   notices: PaymentEvent[];
@@ -216,7 +217,11 @@ function warningsOf(e: CaseEvidence, m: Money): WarningCode[] {
   const { status, cancelledAt } = e.booking;
   if (moneyIn && (status === 'draft' || status === 'payment_pending')) w.push('money_on_unpaid_booking');
   if (moneyIn && cancelledAt && firstCapture && ms(firstCapture) > ms(cancelledAt)) w.push('money_after_cancel');
-  if (!moneyIn && PAID_STATUSES.has(status)) w.push('paid_status_without_payment');
+  // A pay-on-the-day booking is confirmed with no payment by design: the trip is confirmed, the money is
+  // still owed. That is cash due, not a booking that wrongly says paid.
+  if (e.booking.paymentArrangement) {
+    if (!moneyIn && (status === 'confirmed' || status === 'in_progress' || status === 'completed')) w.push('cash_due_on_the_day');
+  } else if (!moneyIn && PAID_STATUSES.has(status)) w.push('paid_status_without_payment');
   return w;
 }
 

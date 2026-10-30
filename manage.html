@@ -119,6 +119,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 </script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <script src="datepicker.js?v=dffb97f9e8"></script>
+<script src="ch-shortplace.js?v=1eb1db0211"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
      payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
@@ -474,9 +475,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // The title has to survive a four-stop tour. "first → last" reads exactly like a direct
   // transfer and hides the middle, so a real trip leads with what it IS — how many journeys, over
   // which dates — and the rail underneath names every hop.
+  // A direct transfer names each end the way the booking page does (CH-9QH34: two full Google
+  // addresses made a six-line heading on a phone); the full address is on the ticket's From / To rows.
+  // Without ch-shortplace.js the full address stands — a long heading, never a broken page.
+  function shortEnd(p){ return window.CH && window.CH.shortPlace ? window.CH.shortPlace(p) : p; }
   function titleOf(v){
     var legs = legsOf(v);
-    if (legs.length <= 1) return v.from + ' → ' + v.to;
+    if (legs.length <= 1) return shortEnd(v.from) + ' → ' + shortEnd(v.to);
     var range = rangeLabel(v.date, v.endDate);
     var word = countWord(legs.length);
     return word.charAt(0).toUpperCase() + word.slice(1) + ' journeys' + (range ? ', ' + range : '');
@@ -484,7 +489,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function subtitleOf(v){
     var legs = legsOf(v);
     if (legs.length <= 1) return isoParts(v.date) ? longDate(v.date) : 'Pick-up date not set yet';
-    return v.from + ' → ' + v.to;
+    // Short, like the heading: the rail underneath carries every full address.
+    return shortEnd(v.from) + ' → ' + shortEnd(v.to);
   }
   function factsOf(v){
     var legs = legsOf(v);
@@ -496,7 +502,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     // (pickupNeeds non-null) does it read as a to-do chip; elsewhere it stays plain "To be confirmed".
     var needs = pickupNeeds(v);
     var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
-    var rows = [
+    var rows = [];
+    // Only when the heading shortened an end — otherwise the row would repeat the title word for word.
+    if (legs.length <= 1 && (shortEnd(v.from) !== v.from || shortEnd(v.to) !== v.to)) {
+      rows.push({ k: 'From', v: v.from }, { k: 'To', v: v.to });
+    }
+    rows.push(
       { k: 'Trip start', v: noDate ? 'To be confirmed' : longDate(v.date), blank: noDate, sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
       { k: 'Trip end', v: isoParts(v.endDate) ? longDate(v.endDate) : 'To be confirmed', sub: sameDay ? 'same day' : '' },
       { k: v.mode === 'single' && isAirport(v) ? 'Landing time' : 'Pick-up time',
@@ -504,8 +515,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         sub: noTime ? '' : 'Sri Lanka time' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
-      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
-    ];
+      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' }
+    );
     // The local road the customer chose (the view carries it only then), in the emails' words.
     if (v.road) rows.push({ k: 'Road', v: v.road });
     rows.push(

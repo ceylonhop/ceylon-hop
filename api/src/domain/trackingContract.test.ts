@@ -13,6 +13,7 @@ describe('Phase A tracking contract', () => {
       'confirmation',
       'details_needed',
       'booking_confirmed',
+      'pay_on_day_confirmed',
       'cancellation',
       'refund',
       'no_show_notice',

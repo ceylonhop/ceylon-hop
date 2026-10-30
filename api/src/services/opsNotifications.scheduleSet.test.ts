@@ -12,7 +12,7 @@ const booking = (date: string, time: string | undefined): Booking => ({
 
 describe('teamScheduleSetEmail — the customer set their pickup on the manage page', () => {
   it('starts "Date set:" and names the booking, route and new pickup', () => {
-    const m = teamScheduleSetEmail(booking(inDays(14), '09:00'), { date: null, time: null }, 'https://ops.example');
+    const m = teamScheduleSetEmail(booking(inDays(14), '09:00'), { date: null, time: null }, 'https://ops.example', 12400);
     expect(m.subject.startsWith('Date set: CH-K7Q2M — ')).toBe(true);
     expect(m.subject).toContain('Colombo Airport (CMB) → Ella');
     expect(m.subject).toContain('09:00');
@@ -22,13 +22,27 @@ describe('teamScheduleSetEmail — the customer set their pickup on the manage p
   });
 
   it('says URGENT when the pickup is tomorrow (Colombo)', () => {
-    const m = teamScheduleSetEmail(booking(inDays(1), '20:00'), { date: null, time: null }, 'https://ops.example');
+    const m = teamScheduleSetEmail(booking(inDays(1), '20:00'), { date: null, time: null }, 'https://ops.example', 12400);
     expect(m.subject).toContain('URGENT');
     expect(m.html).toContain('URGENT');
   });
 
   it('names what was there before a time-only fill', () => {
-    const m = teamScheduleSetEmail(booking(inDays(14), '09:00'), { date: inDays(14), time: null }, 'https://ops.example');
+    const m = teamScheduleSetEmail(booking(inDays(14), '09:00'), { date: inDays(14), time: null }, 'https://ops.example', 12400);
     expect(m.text).toContain('was: date set, no time');
+  });
+
+  it('an ordinary paid booking shows the Paid row and no cash due', () => {
+    const m = teamScheduleSetEmail(booking(inDays(14), '09:00'), { date: null, time: null }, 'https://ops.example', 12400);
+    expect(m.text).toMatch(/Paid:\s+\$124\.00/);
+    expect(m.text).not.toContain('Cash due on the day');
+  });
+
+  it('a pay-on-the-day booking with nothing recorded shows cash due, not a Paid amount', () => {
+    const b = { ...booking(inDays(14), '09:00'), status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+    const m = teamScheduleSetEmail(b, { date: null, time: null }, 'https://ops.example', 0);
+    expect(m.text).toContain('Cash due on the day');
+    expect(m.text).toContain('$124.00');
+    expect(m.text).not.toMatch(/Paid:\s+\$124\.00/);
   });
 });
