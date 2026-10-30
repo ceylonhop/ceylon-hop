@@ -11722,11 +11722,6 @@ function renderReviewBanner() {
   return '';
 }
 
-// "Mark booked" modal body: collects the contact/date/vehicle details the quote itself
-// doesn't carry (spec 2026-07-18). Pre-fills from state where it can — name, pax, bags,
-// the first leg's date — and splits the single f-contact field back into email/whatsapp
-// where it recognizably is one or the other; email/whatsapp/country/date/time have no
-// safe default, so the operator must fill them (guarded client-side in bookQuote()).
 // What the modal opens with. The customer's own pay-page entry (the converted booking) wins over
 // the quote's single contact box; a blank on either side never overwrites a value (2026-10-29).
 function bookPrefill(st, booking) {
@@ -11747,15 +11742,24 @@ function bookPrefill(st, booking) {
 async function openBookModal() {
   bookPrefillBooking = null;
   if (state.convertedBookingId) {
+    var seq = _openSeq;
+    var body = null;
     try {
       var r = await api('/admin/ops/bookings/' + encodeURIComponent(state.convertedBookingId));
-      var body = r.ok ? await jsonOrNull(r) : null;
-      bookPrefillBooking = body && body.booking ? body.booking : null;
-    } catch (e) { bookPrefillBooking = null; } // pre-fill is a convenience; never block the modal
+      body = r.ok ? await jsonOrNull(r) : null;
+    } catch (e) { body = null; } // pre-fill is a convenience; never block the modal
+    if (seq !== _openSeq) return; // a different quote is open now — never open on it with this customer
+    bookPrefillBooking = body && body.booking ? body.booking : null;
   }
   bookOpen = true;
   render();
 }
+// "Mark booked" modal body: collects the contact/date/vehicle details the quote itself
+// doesn't carry (spec 2026-07-18). Name, email, WhatsApp and country come from the customer's
+// pay-page booking when the quote has one (bookPrefill), else from the quote — its single
+// f-contact field split back into email/whatsapp where it recognizably is one or the other;
+// pax, bags and the first leg's date come from the quote. Time has no safe default, so the
+// operator always types it (required fields guarded client-side in bookQuote()).
 function renderBookModal() {
   var st = state;
   var p = bookPrefill(st, bookPrefillBooking);
