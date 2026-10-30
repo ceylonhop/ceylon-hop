@@ -5,6 +5,7 @@ import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
 import { roadRow } from './notifications';
 import { balanceDueCents, paidCents } from '../domain/balance';
+import type { PaymentArrangement } from '../domain/paymentMethod';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -44,6 +45,10 @@ export interface OpsBookingRow {
    *  (domain/balance.ts), so a deposit booking reads "paid $50 · balance $169" on the row. */
   paidCents: number;
   balanceCents: number;
+  /** How the customer settles: 'on_the_day' = cash to the team at the first pickup, else null. */
+  paymentArrangement: PaymentArrangement | null;
+  /** Cash still to collect on the day: `balanceCents` when the booking is pay-on-the-day, else 0. */
+  cashDueCents: number;
   currency: string;
   customerFirstName: string;
   customerName: string;
@@ -118,6 +123,7 @@ export function toOpsRow(
   opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number },
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
+  const balance = balanceDueCents(b, ledger);
   const settled = ledger.flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
   const t = travel(b);
   const c = b.input.customer;
@@ -125,7 +131,9 @@ export function toOpsRow(
     id: b.id, reference: b.reference, mode: b.mode, channel: b.channel,
     bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
-    paidCents: paidCents(ledger), balanceCents: balanceDueCents(b, ledger),
+    paidCents: paidCents(ledger), balanceCents: balance,
+    paymentArrangement: b.paymentArrangement ?? null,
+    cashDueCents: b.paymentArrangement ? balance : 0,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
     route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, pax: pax(b),
