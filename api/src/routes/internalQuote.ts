@@ -1137,6 +1137,18 @@ export function internalQuoteRoutes(deps: {
       return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
     }
     const arrangement = parsed.data.paymentArrangement;
+    // Cash on the day confirms with no money taken, so only those who may act on payments book it
+    // (owner 2026-10-30). Checked before any write; without the field, ops Mark-book as before.
+    if (arrangement && !can(c.get('identity').role, 'payments:act')) {
+      return c.json(
+        {
+          error: 'forbidden',
+          reason: 'pay_on_day_founder_only',
+          message: 'Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.',
+        },
+        403,
+      );
+    }
 
     // draft → payment_pending, staff-attributed to this quote. Shared by the create path and a
     // pay-on-the-day re-book of a booking the customer's pay attempt left in draft.

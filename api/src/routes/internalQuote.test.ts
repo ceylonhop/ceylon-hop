@@ -2178,6 +2178,29 @@ describe('POST /admin/quote/:id/book — create a booking from a quote', () => {
       expect(email.sent).toHaveLength(0);
     });
 
+    // Owner 2026-10-30: only a founder (or finance) may book cash on the day.
+    it('an ops-role session cannot book cash on the day: 403, nothing written, no email', async () => {
+      const { quotes, bookings, email, app } = setup();
+      const id = await sentQuote(quotes);
+      const res = await book(app, id, PAY_ON_DAY, cookie('op@x.com'));
+      expect(res.status).toBe(403);
+      const out = await res.json();
+      expect(out).toMatchObject({ error: 'forbidden', reason: 'pay_on_day_founder_only' });
+      expect(out.message).toBe('Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.');
+      expect(await bookings.list()).toEqual([]);
+      const q = await quotes.get(id);
+      expect(q?.status).toBe('sent');
+      expect(q?.convertedBookingId ?? null).toBeNull();
+      expect(email.sent).toHaveLength(0);
+    });
+
+    it('an ops-role session still Mark-books without the field', async () => {
+      const { quotes, app } = setup();
+      const res = await book(app, await sentQuote(quotes), BODY, cookie('op@x.com'));
+      expect(res.status).toBe(201);
+      expect((await res.json()).status).toBe('payment_pending');
+    });
+
     it('a draft prior WITHOUT the field is re-booked exactly as before', async () => {
       const { quotes, bookings, email, app } = setup();
       const id = await sentQuote(quotes);
