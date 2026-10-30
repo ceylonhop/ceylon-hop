@@ -103,7 +103,7 @@ describe('board row helpers', () => {
 
 describe('stageLabel keeps grouping and wording separate', () => {
   function labeller() {
-    const src = `${liftConst(body, 'isBoard')}\n${/const STAGE=\{[\s\S]*?\n\};/.exec(body)![0]}\n${liftConst(body, 'boardShut')}\n${liftConst(body, 'stageLabel')}`;
+    const src = `${liftConst(body, 'isBoard')}\n${/const STAGE=\{[\s\S]*?\n\};/.exec(body)![0]}\n${liftConst(body, 'boardShut')}\n${liftConst(body, 'cashDue')}\n${liftConst(body, 'stageLabel')}`;
     return new Function(`${src}; return stageLabel;`)() as (t: unknown) => string;
   }
 
@@ -135,7 +135,7 @@ describe('stageLabel keeps grouping and wording separate', () => {
 describe('reason() never nags about a van', () => {
   it('returns nothing for a ride-board row whatever its stage', () => {
     // reason() consults CLOSED to stay silent about finished bookings, so lift both.
-    const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'reason')}`;
+    const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
     const reason = new Function(`${src}; return reason;`)() as (t: unknown) => string;
     expect(reason({ source: 'ride_board', stage: 'gathering' })).toBe('');
     expect(reason({ source: 'ride_board', stage: 'paid' })).toBe('');

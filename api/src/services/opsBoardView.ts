@@ -97,6 +97,9 @@ export function rideListToOpsRow(
     // A van is charged per seat by the sweep, never as a deposit + balance.
     paidCents: 0,
     balanceCents: 0,
+    // A van is never pay-on-the-day: the sweep charges per seat.
+    paymentArrangement: null,
+    cashDueCents: 0,
     currency: opts.currency,
     customerFirstName: name.first,
     customerName: name.full,
