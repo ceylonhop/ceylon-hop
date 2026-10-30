@@ -5,6 +5,7 @@ import type { SharedInput } from '../domain/shared';
 import type { SharedSeatCount } from '../domain/scheduledSeats';
 import type { ScheduleReason } from '../domain/bookingSchedule';
 import { assertTransition, type BookingStatus } from '../domain/status';
+import type { PaymentArrangement } from '../domain/paymentMethod';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
@@ -105,6 +106,9 @@ export type Booking = DistributiveOmit<NewBooking, 'amountDueNow' | 'channel' | 
   // The customer's own note from the booking page ("Anything we should know?"). Plain text,
   // already cleaned and bounded at the door. Null when they left none, and on older rows.
   customerNotes?: string | null;
+  // Pay on the day (0077): how the customer will pay when it isn't "now, by card". Null on every
+  // ordinary booking. Set only through setPaymentArrangement, never at create.
+  paymentArrangement?: PaymentArrangement | null;
   id: string;
   reference: string;
   status: BookingStatus;
@@ -394,6 +398,10 @@ export interface BookingRepo {
   // amountDueNow (balance, manage page, pay view, receipts) in agreement. Applies ONLY while the
   // booking is payment_pending, decided in the write itself; otherwise returns it unchanged.
   setAmountDueNowToTotal(id: string): Promise<Booking>;
+  // Ops agreed the customer pays later (e.g. cash on the day). Applies ONLY while the booking is
+  // still awaiting money (PAYER_EDITABLE_STATUSES), decided in the write itself; otherwise returns
+  // it unchanged. It is what allows payment_pending → confirmed (domain/status.ts).
+  setPaymentArrangement(id: string, arrangement: PaymentArrangement): Promise<Booking>;
   // Set a single transfer's pickup date/time after booking. Implementations MUST make the
   // expected-value check part of the write and update BOTH stores of the date (transfer_request
   // and booking_legs) plus the history row in one transaction.
@@ -532,6 +540,7 @@ export class InMemoryBookingRepo implements BookingRepo {
       billing: b.billing ?? null, // normalise absent → null, as the SQL repo does
       termsAcceptedAt: b.termsAcceptedAt ? b.termsAcceptedAt.toISOString() : null,
       customerNotes: b.customerNotes ?? null,
+      paymentArrangement: null,
       ...(promo ?? {}),
     };
     this.byId.set(booking.id, booking);
@@ -667,6 +676,15 @@ export class InMemoryBookingRepo implements BookingRepo {
     if (!current) throw new BookingNotFoundError(id);
     if (current.status !== 'payment_pending') return this.present(current);
     const updated: Booking = { ...current, amountDueNow: current.total };
+    this.byId.set(id, updated);
+    return this.present(updated);
+  }
+
+  async setPaymentArrangement(id: string, arrangement: PaymentArrangement): Promise<Booking> {
+    const current = this.byId.get(id);
+    if (!current) throw new BookingNotFoundError(id);
+    if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
+    const updated: Booking = { ...current, paymentArrangement: arrangement };
     this.byId.set(id, updated);
     return this.present(updated);
   }

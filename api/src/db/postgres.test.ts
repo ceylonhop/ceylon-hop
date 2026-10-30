@@ -32,6 +32,7 @@ import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
 import { amountDueNowContract } from './bookingAmountDueNow.test';
+import { paymentArrangementContract } from './bookingPaymentArrangement.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
@@ -1722,5 +1723,13 @@ describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)'
     const conn = createDb(TEST_URL as string);
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     return { bookings: new PostgresBookingRepo(conn.db), payments: new PostgresPaymentRepo(conn.db) };
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
+  paymentArrangementContract('contract', async () => {
+    const conn = createDb(TEST_URL as string);
+    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    return new PostgresBookingRepo(conn.db);
   });
 });
