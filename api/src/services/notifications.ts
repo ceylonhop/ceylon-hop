@@ -7,7 +7,7 @@ import type {
   EmailAdapter,
   SendOutcome,
 } from '../adapters/email';
-import { sharedRouteLabel } from '../db/departureRepo';
+import { sharedRouteLabel, sharedProductFor } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette — "concierge letter" direction, held to docs/brand-book.md. Colours are
@@ -246,6 +246,11 @@ export function factRows(booking: Booking): [string, string][] {
       ['Seats', String(booking.input.seats)],
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
+    // Where to stand and where they are set down, as published (owner, 2026-10-29) — the
+    // town alone left customers guessing. Only a recorded leg can name its points.
+    const leg = booking.input.fromPlace && booking.input.toPlace ? sharedProductFor(booking.input.fromPlace, booking.input.toPlace) : null;
+    if (leg?.pickup) rows.push(['Pick-up point', leg.pickup]);
+    if (leg?.dropoff) rows.push(['Drop-off point', leg.dropoff]);
     // One bag per seat rides free; the rest were charged. Showing the count is what makes the
     // total add up — before this the surcharge was simply unexplained (audit 2026-09-22 #1).
     const bags = booking.input.bags ?? 0;

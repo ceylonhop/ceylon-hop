@@ -194,6 +194,10 @@ export interface CustomerBookingView {
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
   road?: string;
+  // A shared leg's published meeting points (departureRepo SHARED_PRODUCTS). Absent unless the
+  // booking recorded its leg and the catalogue names the point (owner, 2026-10-29).
+  pickupPoint?: string;
+  dropoffPoint?: string;
   // The promo code the booking was made with and what it took off (promoDiscount) — the card's
   // Promo row above Total. Both absent on every booking without a code.
   promoCode?: string;
@@ -266,8 +270,11 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
   // because the corridor's endpoints are the van's route and not this traveller's (CH-6HE3V).
   const label = sharedRouteLabel(b.input);
   const leg = label?.kind === 'leg' ? label : null;
+  const product = leg ? sharedProductFor(leg.from, leg.to) : null;
   return {
     ...base,
+    ...(product?.pickup ? { pickupPoint: product.pickup } : {}),
+    ...(product?.dropoff ? { dropoffPoint: product.dropoff } : {}),
     from: leg?.from ?? 'Pickup',
     to: leg?.to ?? 'Drop-off',
     date: b.input.date,

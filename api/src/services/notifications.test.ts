@@ -758,6 +758,24 @@ describe('shared seat — the email names the leg that was sold', () => {
     expect(routeText(seat)).toBe('Shared shuttle · Colombo Airport (CMB) → Sigiriya / Dambulla');
   });
 
+  // Customers could not tell where the shared taxi picks them up or sets them down: the email
+  // named the towns only (owner, 2026-10-29). It now names the leg's published points.
+  it('names the pick-up and drop-off points of the leg', async () => {
+    expect(factRows(seat)).toEqual(expect.arrayContaining([
+      ['Pick-up point', 'CMB Airport'],
+      ['Drop-off point', 'Barista Cafe, Sigiriya'],
+    ]));
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(seat, email);
+    expect(email.sent[0].html).toContain('Barista Cafe, Sigiriya');
+    expect(email.sent[0].text).toContain('Drop-off point: Barista Cafe, Sigiriya');
+  });
+
+  it('a row with no recorded leg names no point, since it cannot know which', () => {
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as Booking;
+    expect(factRows(legacy).map(([k]) => k)).not.toContain('Pick-up point');
+  });
+
   // Rows booked before the leg was recorded cannot be resolved. The corridor ends
   // are still worth showing, but as the SERVICE — never as this traveller's route.
   it('a row with no recorded leg names the service, not a destination', () => {
