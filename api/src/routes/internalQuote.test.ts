@@ -617,7 +617,7 @@ describe('internal quoting tool route', () => {
     expect(d.fxUsdToLkr).toBe(330);
     // V12 server half: expose vehicle capacity caps for client-side vehicle labelling
     expect(d.vehicle).toMatchObject({
-      car: { maxPax: 3, maxBags: 3 },
+      car: { maxPax: 3, maxBags: 2 },
       van: { maxPax: 6, maxBags: 6 },
       van9: { maxPax: 9, maxBags: 8 },
       van14: { maxPax: 14, maxBags: 12 },

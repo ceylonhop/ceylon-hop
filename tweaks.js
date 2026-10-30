@@ -18,11 +18,7 @@
     saffron:['#F9A429','#a96b04']
   };
   const CTAS={tomato:'#EC3A24',saffron:'#F9A429',ink:'#3A3739'};
-  const FONTS={
-    'Bodoni Moda':"'Bodoni Moda', Didot, Georgia, serif",
-    'Bricolage Grotesque':"'Bricolage Grotesque', system-ui, sans-serif",
-    'Spectral':"'Spectral', Georgia, serif"
-  };
+  const FONTS={};
   const RAD={sharp:0.34,rounded:1,pill:1.5};
   const HEADLINES={
     'Door to door':[
@@ -37,7 +33,7 @@
   };
 
   function loadFont(name){
-    if(name==='Bodoni Moda'||!FONTS[name])return; // the brand face is already in site.css
+    if(!FONTS[name])return;
     const id='tf-'+name.replace(/\s/g,'');
     if(document.getElementById(id))return;
     const l=document.createElement('link');l.rel='stylesheet';l.id=id;

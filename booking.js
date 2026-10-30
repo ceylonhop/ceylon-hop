@@ -244,7 +244,7 @@ if(mode==='trip' && window.TRANSFERS){
   unit = r.price;
 }
 
-const VEH_CAP = { car:{pax:3,bags:3}, van:{pax:6,bags:6} };
+const VEH_CAP = { car:{pax:3,bags:2}, van:{pax:6,bags:6} };
 let maxBags = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).bags : 6;
 let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 // luggage can be dialled past the current vehicle's limit so we can prompt a van

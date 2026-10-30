@@ -83,7 +83,9 @@ const GOLDEN_REQUESTS: Record<string, QuoteRequest> = {
   // Every chargeable extra at once. A manual discount's eligible base is the FULL quote
   // including extras, and each extra's cost is assumed equal to its sell price (spec
   // §5.3), so all six need their sell prices pinned before that assumption is coded.
-  private_car_all_extras: { product: 'private', vehicle: 'car', pax: 3, bags: 3,
+  // bags 2 (was 3): a car takes 2 large bags since 2026-10-27, and 3 would size this to a van.
+  // The snapshot is unchanged, since bags only pick the vehicle.
+  private_car_all_extras: { product: 'private', vehicle: 'car', pax: 3, bags: 2,
     legs: [{ from: 'Kandy', to: 'Sigiriya', distanceKm: 90 }],
     extras: ['sightseeing', 'safari-wait', 'luggage', 'front', 'flex', 'waiting'] },
   // Finishing where the PROPORTIONAL cap rejects the charm candidate and the strategy
