@@ -2245,9 +2245,10 @@ const productType=t=>{
 };
 /* Two views of one queue: 'date' is the day-grouped timeline, where the stage chip decides what
    shows; 'recent' is a feed of what came in — every stage, closed and expired included — so the
-   chip does not apply there. Type and channel filter both. */
+   chip does not apply there. Type and channel filter both. A typed search is a lookup, so it
+   spans every stage too (owner 2026-10-29: a cancelled CH-NQ66B was unfindable under "All open"). */
 const inQueue=(t,s)=>{
-  if(s.view!=='recent'&&!inGroup(t,s.group))return false;
+  if(s.view!=='recent'&&!(s.q||'').trim()&&!inGroup(t,s.group))return false;
   if(s.chan&&t.chan!==s.chan)return false;
   if(s.type&&productType(t)!==s.type)return false;
   return true;
