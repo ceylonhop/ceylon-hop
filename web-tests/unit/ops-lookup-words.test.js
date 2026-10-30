@@ -194,11 +194,12 @@ describe('lookupVerdictText — one title per situation, with the facts behind i
   });
 
   it('turns each warning code into a sentence, in order', () => {
-    const t = W.lookupVerdictText(verdict({ kind: 'paid', amount: 100, warnings: ['money_on_unpaid_booking', 'money_after_cancel', 'paid_status_without_payment'] }));
+    const t = W.lookupVerdictText(verdict({ kind: 'paid', amount: 100, warnings: ['money_on_unpaid_booking', 'money_after_cancel', 'paid_status_without_payment', 'cash_due_on_the_day'] }));
     expect(t.warnings).toEqual([
       'Money received, but the booking still says unpaid — check it.',
       'Money arrived after the booking was cancelled — a refund may be owed.',
       'The booking says paid, but no payment is recorded.',
+      'Pay on the day: cash is due to the Ceylon Hop team. Record it with Mark paid when it\'s collected.',
     ]);
   });
 });

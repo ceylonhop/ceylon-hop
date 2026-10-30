@@ -113,6 +113,27 @@ describe('POST /admin/bookings/:id/cancel — the team is told', () => {
   });
 });
 
+describe('POST /admin/bookings/:id/cancel — money comes from the ledger', () => {
+  it('a confirmed pay-on-the-day booking with no payments says nothing was taken', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, opsBaseUrl: 'https://ops.example' });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Changed plans' }),
+    });
+    expect(res.status).toBe(200);
+    const m = alerts.sent.find((a) => a.kind === 'booking_cancelled')!.email!;
+    expect(m.text).toContain('Not paid — nothing to refund');
+    expect(m.text).not.toContain('Not refunded yet');
+  });
+});
+
 describe('POST /admin/bookings/:id/cancel', () => {
   it('records the staff cancellation provenance', async () => {
     const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });
@@ -908,6 +929,77 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     const after = (await bookings.get(b.id))!;
     expect(after.amountDueNow).toBe(b.total);
     expect(balanceDueCents(after, rows)).toBe(0);
+  });
+
+  // Pay on the day: status is the trip, money is the ledger. Ops record the cash the team
+  // collected without moving the booking's status.
+  async function onTheDay(app: ReturnType<typeof createApp>, bookings: InMemoryBookingRepo, ...then: string[]) {
+    const b = await awaitingPayment(app, bookings);
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await drive(bookings, b.id, 'confirmed', ...then);
+    return b;
+  }
+
+  it.each([[[]], [['in_progress']], [['in_progress', 'completed']]] as const)(
+    'records cash on a pay-on-the-day booking without moving its status (after %j)',
+    async (then) => {
+      const { app, bookings, payments, email } = makeCashApp();
+      const b = await onTheDay(app, bookings, ...then);
+      const status = (await bookings.get(b.id))!.status;
+      const res = await markPaid(app, b.id, { method: 'cash' });
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe(status);
+      const after = (await bookings.get(b.id))!;
+      expect(after.status).toBe(status);
+      const rows = (await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].provider).toBe('cash');
+      expect(rows[0].orderId).toBe(`${b.reference}-MANUAL`);
+      expect(rows[0].amount).toBe(b.total);
+      expect(balanceDueCents(after, rows)).toBe(0);
+      expect(email.sent).toHaveLength(0);
+    },
+  );
+
+  it('a double-click on a pay-on-the-day booking records the cash once', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+    expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
+  });
+
+  it('still refuses a plain confirmed booking (no arrangement, nothing paid)', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await drive(bookings, b.id, 'paid', 'confirmed'); // status graph only: no payment row exists
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('does not answer 200 for a cancelled pay-on-the-day booking that had cash recorded', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    await bookings.setStatus(b.id, 'cancelled');
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
+  });
+
+  it('refuses a cancelled pay-on-the-day booking with not_awaiting_payment', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'cancelled');
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
   });
 
   it('records the staff member, method and payment behind a manual settlement', async () => {

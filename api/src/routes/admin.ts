@@ -37,6 +37,7 @@ import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
+import { paidCents } from '../domain/balance';
 import { mayReverse, isLateRequest } from '../domain/reversalWindow';
 import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
@@ -211,7 +212,8 @@ export function adminRoutes(deps: {
       const refundedCents = (await deps.refunds.list(updated.id))
         .filter((r) => r.status === 'manual_confirmed' || r.status === 'api_confirmed')
         .reduce((n, r) => n + r.amountCents, 0);
-      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, refundedCents }, deps.opsBaseUrl ?? '');
+      const paid = paidCents(await deps.payments.findByBookingId(updated.id));
+      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, paidCents: paid, refundedCents }, deps.opsBaseUrl ?? '');
       await alerts.send({
         severity: 'info',
         kind: 'booking_cancelled',
@@ -532,16 +534,23 @@ export function adminRoutes(deps: {
     const idempotencyKey = `manual-paid:${booking.id}`;
     const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
     // The money of an earlier attempt is already in the ledger; only the booking may still be
-    // behind. Short-circuit ONLY once the booking has actually reached paid — the second half of
+    // behind. Short-circuit ONLY once the booking has actually reached paid (or, for a pay-on-the-day booking, is
+    // already confirmed or later, where its status never moves) — the second half of
     // the same window as the pending case above: if setStatus threw something other than an
     // IllegalTransitionError (a pool timeout, a connection blip), the payment is succeeded while
     // the booking sits in payment_pending, and nothing else can move it (no webhook is coming for
     // cash, and confirm/cancel/no-show do not start from payment_pending). Answering 200 with the
     // unchanged booking would strand it for good, repairable only by hand-written SQL in prod.
     const recorded = claimed?.status === 'succeeded';
-    if (recorded && booking.status === 'paid') return c.json(booking, 200);
+    // Pay on the day: status is the trip, money is the ledger. A booking with a payment arrangement
+    // is already confirmed (or later) with nothing paid, so ops may record the cash the team
+    // collected without moving its status. A plain confirmed booking is still refused.
+    const awaitingPayment = booking.status === 'payment_pending';
+    const arrangedLater = !!booking.paymentArrangement
+      && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'completed');
+    if (recorded && (booking.status === 'paid' || arrangedLater)) return c.json(booking, 200);
 
-    if (booking.status !== 'payment_pending') {
+    if (!awaitingPayment && !arrangedLater) {
       return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
     }
 
@@ -584,22 +593,24 @@ export function adminRoutes(deps: {
     // repair path as well (idempotent), and before the status move, which closes its payment_pending guard.
     await bookings.setAmountDueNowToTotal(booking.id);
 
-    let paid: Booking;
-    try {
-      paid = await bookings.setStatus(booking.id, 'paid', undefined, {
-        source: 'ops',
-        actorType: 'staff',
-        actorId: c.get('identity').email,
-        requestId: c.get('requestId'),
-        reason: `manual_payment:${method}`,
-        relatedEntityType: 'payment',
-        relatedEntityId: transitionPaymentId,
-      });
-    } catch (err) {
-      if (!(err instanceof IllegalTransitionError)) throw err;
-      // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
-      // money is recorded either way, so report the booking as it now stands, not a 500.
-      paid = (await bookings.get(booking.id)) ?? booking;
+    let paid: Booking = booking;
+    if (awaitingPayment) {
+      try {
+        paid = await bookings.setStatus(booking.id, 'paid', undefined, {
+          source: 'ops',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          reason: `manual_payment:${method}`,
+          relatedEntityType: 'payment',
+          relatedEntityId: transitionPaymentId,
+        });
+      } catch (err) {
+        if (!(err instanceof IllegalTransitionError)) throw err;
+        // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
+        // money is recorded either way, so report the booking as it now stands, not a 500.
+        paid = (await bookings.get(booking.id)) ?? booking;
+      }
     }
 
     // Cash landing wins the quote exactly like a webhook settle does (pay-link flow) —
