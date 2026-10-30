@@ -409,6 +409,14 @@ describe('paymentVerdict — mismatch warnings', () => {
   it('a booking that says paid with no payment recorded', () => {
     expect(paymentVerdict(evidence({ booking: { status: 'confirmed' } }))?.warnings).toEqual(['paid_status_without_payment']);
   });
+  it('a pay-on-the-day booking with no money yet owes cash, not a mismatch', () => {
+    const w = (status: string, payments: CasePayment[] = []) =>
+      paymentVerdict(evidence({ booking: { status, paymentArrangement: 'on_the_day' }, payments }))?.warnings;
+    expect(w('confirmed')).toEqual(['cash_due_on_the_day']);
+    expect(w('completed')).toEqual(['cash_due_on_the_day']);
+    expect(w('no_show')).toEqual([]);
+    expect(w('confirmed', [manual()])).toEqual([]);
+  });
 });
 
 describe('caseGaps', () => {

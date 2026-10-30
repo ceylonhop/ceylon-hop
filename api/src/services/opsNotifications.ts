@@ -541,7 +541,7 @@ export function teamUnpricedEmail(b: Booking, reason: string, opsBaseUrl: string
 // them; URGENT when the pickup is today or tomorrow in Colombo (12 h notice still allows tomorrow).
 // ---------------------------------------------------------------------------
 
-export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl: string, now: Date = new Date()): { subject: string; html: string; text: string } {
+export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl: string, paidCents: number, now: Date = new Date()): { subject: string; html: string; text: string } {
   const f = bookingFacts(b);
   const date = b.mode === 'single' ? b.input.date : undefined;
   const urgent = !!date && date <= addIsoDays(isoToday('Asia/Colombo', now), 1);
@@ -560,7 +560,12 @@ export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl:
           `${b.input.customer.firstName} set it on their booking page (was: ${before}). ` +
           `Book a driver${urgent ? ' today' : ''}. They can't change it there again — any change comes to us on WhatsApp.`,
         moneyTitle: 'Payment',
-        moneyRows: [['Paid', money(f.paidNow, b.currency)], ['Channel', channelLabel(b)]],
+        // Money is the ledger, not the status: a pay-on-the-day booking is confirmed with nothing paid.
+        moneyRows: [
+          ['Paid', money(paidCents, b.currency)],
+          ...(b.paymentArrangement && paidCents < b.total ? [['Cash due on the day', money(b.total - paidCents, b.currency)] as [string, string]] : []),
+          ['Channel', channelLabel(b)],
+        ],
         strong: [],
       },
       opsBaseUrl,
@@ -576,25 +581,23 @@ export function teamScheduleSetEmail(b: Booking, was: ScheduleValue, opsBaseUrl:
 export interface TeamCancelledArgs {
   by: string;
   reason: string;
-  /** Status before the cancel: a booking still awaiting payment took no money. */
   statusBefore: string;
+  /** Σ succeeded payments (the ledger), minor units — not inferred from the status. */
+  paidCents: number;
   /** Sum already refunded (confirmed) before this cancel, minor units. */
   refundedCents: number;
 }
 
-// Every status before money is taken (domain/status.ts): a cancel from one of these refunds nothing.
-const UNPAID_STATUSES = new Set(['draft', 'payment_pending', 'awaiting_details']);
-
 export function teamCancelledEmail(b: Booking, a: TeamCancelledArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
   const f = bookingFacts(b);
-  const tookMoney = !UNPAID_STATUSES.has(a.statusBefore);
+  const tookMoney = a.paidCents > 0;
   const subject = f.shared
     ? `Cancelled: ${f.subjectRoute}, ${f.when} — ${f.people} released — ${b.reference}`
     : `Cancelled: ${f.subjectRoute}, ${f.when} — ${f.people} — ${b.reference}`;
-  const owed = f.paidNow - a.refundedCents;
+  const owed = a.paidCents - a.refundedCents;
   const moneyRows: [string, string][] = tookMoney
     ? [
-        ['Paid', money(f.paidNow, b.currency)],
+        ['Paid', money(a.paidCents, b.currency)],
         [
           'Refund',
           a.refundedCents <= 0
