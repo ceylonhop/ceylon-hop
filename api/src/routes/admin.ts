@@ -37,6 +37,7 @@ import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
+import { paidCents } from '../domain/balance';
 import { mayReverse, isLateRequest } from '../domain/reversalWindow';
 import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
@@ -211,7 +212,8 @@ export function adminRoutes(deps: {
       const refundedCents = (await deps.refunds.list(updated.id))
         .filter((r) => r.status === 'manual_confirmed' || r.status === 'api_confirmed')
         .reduce((n, r) => n + r.amountCents, 0);
-      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, refundedCents }, deps.opsBaseUrl ?? '');
+      const paid = paidCents(await deps.payments.findByBookingId(updated.id));
+      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, paidCents: paid, refundedCents }, deps.opsBaseUrl ?? '');
       await alerts.send({
         severity: 'info',
         kind: 'booking_cancelled',

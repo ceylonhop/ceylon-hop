@@ -113,6 +113,27 @@ describe('POST /admin/bookings/:id/cancel — the team is told', () => {
   });
 });
 
+describe('POST /admin/bookings/:id/cancel — money comes from the ledger', () => {
+  it('a confirmed pay-on-the-day booking with no payments says nothing was taken', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, opsBaseUrl: 'https://ops.example' });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Changed plans' }),
+    });
+    expect(res.status).toBe(200);
+    const m = alerts.sent.find((a) => a.kind === 'booking_cancelled')!.email!;
+    expect(m.text).toContain('Not paid — nothing to refund');
+    expect(m.text).not.toContain('Not refunded yet');
+  });
+});
+
 describe('POST /admin/bookings/:id/cancel', () => {
   it('records the staff cancellation provenance', async () => {
     const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true });

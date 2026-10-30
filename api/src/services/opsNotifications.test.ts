@@ -1,3 +1,4 @@
+import type { Booking } from '../db/bookingRepo';
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, type AssignedQuote } from './opsNotifications';
@@ -303,11 +304,28 @@ describe('teamPaidEmail', () => {
 
 describe('teamCancelledEmail / teamRefundedEmail', () => {
   it('a paid shared seat: seats released, refund still owed, never a "Paid:" subject', () => {
-    const m = teamCancelledEmail(sampleBooking('shared'), { by: 'r@x.com', reason: 'Duplicate', statusBefore: 'paid', refundedCents: 0 }, '');
+    const shared = sampleBooking('shared');
+    const m = teamCancelledEmail(shared, { by: 'r@x.com', reason: 'Duplicate', statusBefore: 'paid', paidCents: shared.total, refundedCents: 0 }, '');
     expect(m.subject.startsWith('Cancelled: ')).toBe(true);
     expect(m.subject).toContain('2 seats released');
     expect(m.text).toContain('Not refunded yet');
     expect(m.text).toContain('back on sale');
+  });
+
+  // Status is the trip, money is the ledger: a confirmed pay-on-the-day booking took nothing.
+  it('a confirmed pay-on-the-day booking with no money recorded says nothing was taken', () => {
+    const b = { ...sampleBooking('single'), status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+    const m = teamCancelledEmail(b, { by: 'f@x.com', reason: 'Changed plans', statusBefore: 'confirmed', paidCents: 0, refundedCents: 0 }, '');
+    expect(m.text).toContain('Not paid — nothing to refund');
+    expect(m.text).not.toContain('Not refunded yet');
+    expect(m.text).not.toMatch(/Paid:\s+\$/);
+  });
+
+  it('the Paid row shows what the ledger holds', () => {
+    const b = { ...sampleBooking('single'), status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+    const m = teamCancelledEmail(b, { by: 'f@x.com', reason: 'Changed plans', statusBefore: 'confirmed', paidCents: 5000, refundedCents: 0 }, '');
+    expect(m.text).toMatch(/Paid:\s+LKR 50\.00/);
+    expect(m.text).toContain('Not refunded yet');
   });
 
   it('a full refund reads as full, and says how it was made', () => {
@@ -345,7 +363,7 @@ describe('Message on WhatsApp button', () => {
 
   it('is on the cancelled and refunded emails too (same customer block)', () => {
     const b = sampleBooking('single');
-    expect(teamCancelledEmail(b, { by: 'x', reason: 'y', statusBefore: 'paid', refundedCents: 0 }, '').html).toContain('wa.me/94771234567');
+    expect(teamCancelledEmail(b, { by: 'x', reason: 'y', statusBefore: 'paid', paidCents: b.total, refundedCents: 0 }, '').html).toContain('wa.me/94771234567');
     expect(teamRefundedEmail(b, { amountCents: 1, currency: b.currency, full: false, by: 'x', reason: 'y', gatewayRef: null, viaApi: false }, '').html).toContain('wa.me/94771234567');
   });
 });
