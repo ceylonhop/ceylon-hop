@@ -489,7 +489,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   function subtitleOf(v){
     var legs = legsOf(v);
     if (legs.length <= 1) return isoParts(v.date) ? longDate(v.date) : 'Pick-up date not set yet';
-    return v.from + ' → ' + v.to;
+    // Short, like the heading: the rail underneath carries every full address.
+    return shortEnd(v.from) + ' → ' + shortEnd(v.to);
   }
   function factsOf(v){
     var legs = legsOf(v);

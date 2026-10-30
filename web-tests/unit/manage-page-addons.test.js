@@ -31,7 +31,7 @@ function loadFactsOf() {
   const sub = html.match(/function subtitleOf\(v\)\{[\s\S]*?\n  \}/);
   if (!sub) throw new Error('subtitleOf(v) not found in manage.html');
   // eslint-disable-next-line no-new-func
-  const subtitleOf = new Function('legsOf', 'longDate', 'isoParts', 'return (' + sub[0] + ')')(() => [{}], (d) => d, isoParts);
+  const subtitleOf = new Function('legsOf', 'longDate', 'isoParts', 'shortEnd', 'return (' + sub[0] + ')')(() => [{}], (d) => d, isoParts, (p) => p);
   return { factsOf, subtitleOf };
 }
 const { factsOf, subtitleOf } = loadFactsOf();
