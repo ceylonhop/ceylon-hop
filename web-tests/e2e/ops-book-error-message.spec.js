@@ -173,7 +173,7 @@ test('cash on the day: a founder ticks it, the copy follows, typed values surviv
   await page.locator('[data-action="confirmBook"]').click();
   await expect.poll(() => posts.length).toBe(1);
   expect(JSON.parse(posts[0]).paymentArrangement).toBe('on_the_day');
-  await expect(toastMsg(page)).toHaveText('Booked CH-CASH1: confirmed, cash on the day. Confirmation emailed to Maya-Lee.');
+  await expect(toastMsg(page)).toHaveText('Booked CH-CASH1: confirmed, cash on the day. A confirmation email is on its way to Maya-Lee.');
 });
 
 test('cash on the day: left unticked, the body has no paymentArrangement and the toast is the usual one', async ({ page }) => {

@@ -133,9 +133,21 @@ test('an arranged booking still awaiting payment gets ONE settle row, "Mark paid
   await expect.poll(() => said).toContain('moves it to Paid');
 });
 
-test('a completed trip with cash unrecorded asks for it, and counts in the Bookings badge', async ({ page }) => {
+test('a completed trip with cash unrecorded stays in All open, asks for it, and counts in the badge', async ({ page }) => {
   await boot(page, { theRow: row({ stage: 'completed', vehiclePhotoReceived: true, customerUpdated: true }), open: false });
   await expect(page.locator('#nav-attn')).toHaveText('1');
-  await page.locator('.fchip[data-g="done"]').click();
-  await expect(page.locator('.tk .reason')).toHaveText('Record $342 cash · trip done');
+  await expect(page.locator('.tk .reason')).toHaveText('Record $342 cash · trip done'); // default view, no chip click
+});
+
+test('an ops-role user is told the cash is not recorded yet (they cannot record it)', async ({ page }) => {
+  await boot(page, { theRow: row({ stage: 'completed', vehiclePhotoReceived: true, customerUpdated: true }), caps: OPS_ROLE, open: false });
+  await expect(page.locator('.tk .reason')).toHaveText('Cash $342 not recorded yet · trip done');
+});
+
+// Any succeeded payment on the ledger means the server would refuse mark-paid with already_paid.
+test('a pay-on-the-day booking that already has a payment never offers Record cash collected', async ({ page }) => {
+  await boot(page, { theRow: row({ stage: 'vehicle_confirmed', paymentStatus: 'paid', paidCents: 10000, cashDueCents: 24200, balanceCents: 24200 }) });
+  await expect(payBlock(page)).toContainText('Pay on the day'); // the detail has rendered, not the skeleton
+  await expect(page.locator('#sheet [data-act="markpaid"]')).toHaveCount(0);
+  await expect(page.locator('#paidmethod')).toHaveCount(0);
 });

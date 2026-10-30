@@ -2193,7 +2193,7 @@ const reason=t=>{
      cancelled booking with money waiting to go back is exactly what a founder must act on. */
   if(t.refundWaiting>0&&isFounderUi())return 'Refund waiting for your approval';
   /* Pay on the day, trip done, cash never recorded — the moment ops forget it. */
-  if(t.stage==='completed'&&cashDue(t))return `Record ${money({amount:t.cashDue,currency:t.currency})} cash · trip done`;
+  if(t.stage==='completed'&&cashDue(t)){const x=money({amount:t.cashDue,currency:t.currency});return state.caps&&state.caps.includes('payments:act')?`Record ${x} cash · trip done`:`Cash ${x} not recorded yet · trip done`;}
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
@@ -2205,8 +2205,8 @@ const reason=t=>{
      outranks the housekeeping reasons below. */
   if(t.balance>0&&t.date&&t.date===TODAY)return 'Balance due — travels today';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
-  if(cashDue(t))return `Cash on the day · ${money({amount:t.cashDue,currency:t.currency})}`;
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
+  if(cashDue(t))return `Cash on the day · ${money({amount:t.cashDue,currency:t.currency})}`;
   return '';
 };
 const isAttn=t=>!!reason(t);
@@ -2230,7 +2230,7 @@ const inGroup=(t,g)=>{
   /* "All open" is the day's work: everything still to come, dated or not. The past piles have
      their own chips below, so a row that has fallen out of the future appears in exactly one
      place rather than nagging from the middle of the timeline. */
-  if(g==='all')return !CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t);
+  if(g==='all')return (!CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t))||(t.stage==='completed'&&cashDue(t)); /* + a finished pay-on-the-day trip whose cash isn't recorded */
   if(g==='refunds')return t.refundWaiting>0;
   /* The stage chips answer "what do I do next", so they are scoped to live rows too: a trip
      whose date is gone needs closing, not a vehicle; an unpaid cart past its date cannot be
@@ -2582,8 +2582,7 @@ function setNav(){
      act on — a red "0" is noise. */
   /* A founder's badge also counts refunds waiting on them — including closed bookings, which
      "All open" leaves out. Each row counts once. */
-  /* So is a completed pay-on-the-day trip whose cash is still unrecorded (it files under Closed). */
-  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds'))||(t.stage==='completed'&&cashDue(t)))).length;
+  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
@@ -3492,22 +3491,24 @@ function lookupVerdictText(v,cur){
   const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
   const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
   let detail='';
-  const cashDue=v.kind==='never_started'&&(v.warnings||[]).includes('cash_due_on_the_day'); /* pay on the day: nobody was meant to check out */
+  /* Pay on the day: nobody was meant to check out, so any unpaid verdict leads with the cash. */
+  const onTheDayDue=['declined','reached_no_answer','checkout_no_trace','never_started'].includes(v.kind)&&(v.warnings||[]).includes('cash_due_on_the_day');
   switch(v.kind){
     case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
     case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
     case 'declined':detail=join([String(ph.code)==='-1'?'Cancelled on PayHere’s page':(ph.message?'“'+ph.message+'”':'no message')+(ph.code!=null?' (code '+ph.code+')':''),when,counts+since]);break;
     case 'reached_no_answer':detail='Reached PayHere'+(when?' '+when:'')+'. A 3-D Secure failure and closing the page look the same here — PayHere sends nothing for either.';break;
     case 'checkout_no_trace':detail='Checkout started'+(when?' '+when:'')+'; nothing recorded after it.';break;
-    case 'never_started':detail=cashDue?'Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; record it with Mark paid when it’s collected.':'The booking was created but checkout never started.';break;
+    case 'never_started':detail='The booking was created but checkout never started.';break;
     case 'paid_elsewhere':detail='Closed automatically — paid on '+(v.paidOn||'another booking');break;
     case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
     case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
   }
+  if(onTheDayDue)detail='Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; use Record cash collected when it’s collected.';
   const c=v.cancellation;
   return {
-    title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
-      checkout_no_trace:'Started checkout, nothing after',never_started:cashDue?'Pay on the day: cash due':'Never started checkout',paid_elsewhere:'Paid on another booking',
+    title:onTheDayDue?'Pay on the day: cash due':({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
+      checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
       paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
     detail,
     refund:refund&&refund!==detail?refund:null, /* money_back already says it */
@@ -3516,7 +3517,7 @@ function lookupVerdictText(v,cur){
       money_on_unpaid_booking:'Money received, but the booking still says unpaid — check it.',
       money_after_cancel:'Money arrived after the booking was cancelled — a refund may be owed.',
       paid_status_without_payment:'The booking says paid, but no payment is recorded.',
-      cash_due_on_the_day:'Pay on the day: cash is due to the Ceylon Hop team. Record it with Mark paid when it\'s collected.',
+      cash_due_on_the_day:'Pay on the day: cash is due to the Ceylon Hop team. Use Record cash collected when it\'s collected.',
     })[w]||String(w)),
   };
 }
@@ -4353,7 +4354,7 @@ function renderSheet(){
      is the sheet-foot primary — one copy of each action, never two. */
   let pendingBlock='';
   /* The same settle row records pay-on-the-day cash, at any stage (the status stays put). */
-  const settle=canSettle&&(isPending||cashDue(t))?`<div class="settle">
+  const settle=canSettle&&(isPending||(cashDue(t)&&!t.paid))?`<div class="settle">
         <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
         <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">${isPending?'Mark paid':'Record cash collected'}</button>
       </div>`:'';
@@ -7718,7 +7719,7 @@ async function bookQuote() {
     state.status = 'won';
     state.convertedBookingId = res.id;
     showToast(cashOnDay
-      ? 'Booked ' + res.reference + ': confirmed, cash on the day. Confirmation emailed to ' + (b.customer.firstName || 'the customer') + '.'
+      ? 'Booked ' + res.reference + ': confirmed, cash on the day. A confirmation email is on its way to ' + (b.customer.firstName || 'the customer') + '.'
       : 'Booked · ' + res.reference);
     if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     render();

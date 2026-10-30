@@ -68,8 +68,24 @@ describe('pay on the day', () => {
   it('never_started + cash_due_on_the_day: says cash is due, not "never started"', () => {
     const t = W.lookupVerdictText(verdict({ kind: 'never_started', warnings: ['cash_due_on_the_day'] }));
     expect(t.title).toBe('Pay on the day: cash due');
-    expect(t.detail).toBe('Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; record it with Mark paid when it’s collected.');
+    expect(t.detail).toBe('Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; use Record cash collected when it’s collected.');
     expect(t.detail).not.toMatch(/driver/i);
+  });
+  it('any unpaid kind + cash_due_on_the_day: the headline is the cash, not the card story', () => {
+    for (const kind of ['declined', 'reached_no_answer', 'checkout_no_trace', 'never_started']) {
+      const t = W.lookupVerdictText(verdict({ kind, checkouts: 1, payhere: { code: '-2', message: 'Declined', method: null, paymentId: null }, warnings: ['cash_due_on_the_day'] }));
+      expect(t.title, kind).toBe('Pay on the day: cash due');
+      expect(t.detail, kind).toBe('Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; use Record cash collected when it’s collected.');
+    }
+  });
+  it('paid kinds keep their headline even with the warning', () => {
+    expect(W.lookupVerdictText(verdict({ kind: 'paid', amount: 100, warnings: ['cash_due_on_the_day'] })).title).toBe('Paid by card');
+    expect(W.lookupVerdictText(verdict({ kind: 'paid_by_hand', amount: 100, manual: { method: 'cash' }, warnings: ['cash_due_on_the_day'] })).title).toBe('Paid by hand');
+  });
+  it('the verdict helper does not shadow the global cashDue()', () => {
+    const start = html.indexOf('function lookupVerdictText(');
+    const body = html.slice(start, html.indexOf('\nfunction ', start + 10));
+    expect(body).not.toMatch(/const cashDue=/);
   });
   it('never_started alone is unchanged', () => {
     const t = W.lookupVerdictText(verdict({ kind: 'never_started' }));
@@ -217,7 +233,7 @@ describe('lookupVerdictText — one title per situation, with the facts behind i
       'Money received, but the booking still says unpaid — check it.',
       'Money arrived after the booking was cancelled — a refund may be owed.',
       'The booking says paid, but no payment is recorded.',
-      'Pay on the day: cash is due to the Ceylon Hop team. Record it with Mark paid when it\'s collected.',
+      'Pay on the day: cash is due to the Ceylon Hop team. Use Record cash collected when it\'s collected.',
     ]);
   });
 });

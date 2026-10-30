@@ -25,9 +25,10 @@ beforeAll(async () => {
 });
 
 const TODAY = '2026-10-08';
-function reasonFn() {
+// `caps` is the signed-in user's capabilities (state.caps in the shell); founder/finance by default.
+function reasonFn(caps: string[] = ['payments:act']) {
   const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'money')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
-  return new Function('TODAY', `${src}; return reason;`)(TODAY) as (t: unknown) => string;
+  return new Function('TODAY', 'state', `${src}; return reason;`)(TODAY, { caps }) as (t: unknown) => string;
 }
 
 describe('reason() — a balance that is still open on the day of travel', () => {
@@ -58,6 +59,9 @@ describe('reason() — a pay-on-the-day booking with cash still to collect', () 
     expect(reasonFn()({ ...cash, date: TODAY })).toBe('Collect $342 cash · travels today');
     expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', date: TODAY })).toBe('Collect $342 cash · travels today');
   });
+  it('keeps "Customer not contacted yet" on another day — contacting the customer comes before the cash', () => {
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', updated: false, date: '2026-10-09' })).toBe('Customer not contacted yet');
+  });
   it('says "Cash on the day · $342" on another day once the vehicle is confirmed', () => {
     expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', updated: true, date: '2026-10-09' })).toBe('Cash on the day · $342');
   });
@@ -67,6 +71,9 @@ describe('reason() — a pay-on-the-day booking with cash still to collect', () 
   // A completed trip whose cash was never recorded is exactly when ops forget it.
   it('says "Record $342 cash · trip done" on a completed booking with cash still unrecorded', () => {
     expect(reasonFn()({ ...cash, stage: 'completed', date: '2026-10-07' })).toBe('Record $342 cash · trip done');
+  });
+  it('tells a user who cannot record money that the cash is not recorded yet', () => {
+    expect(reasonFn(['bookings:operate'])({ ...cash, stage: 'completed', date: '2026-10-07' })).toBe('Cash $342 not recorded yet · trip done');
   });
   it('stays quiet on a completed booking once the cash is recorded, and on an unarranged one', () => {
     expect(reasonFn()({ ...cash, stage: 'completed', paid: true, cashDue: 0, balance: 0, date: '2026-10-07' })).toBe('');
