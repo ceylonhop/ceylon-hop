@@ -37,6 +37,9 @@ const SANS = SERIF;
 const MONO = SERIF;
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
+// Shared by the paid confirmation's and the pay-on-the-day email's "What happens next" box.
+const WHAT_HAPPENS_NEXT =
+  'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.';
 
 const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
   confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
@@ -628,7 +631,7 @@ function renderHtml(
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
         'What happens next',
-        'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
+        WHAT_HAPPENS_NEXT,
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -1065,8 +1068,7 @@ export async function sendPayOnDayConfirmed(
   const first = esc(booking.input.customer.firstName);
   const amount = money(booking.total, booking.currency);
   const cashLine = `Please pay ${amount} in US dollars, cash, to the Ceylon Hop team at your first pickup.`;
-  const next =
-    'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your vehicle details will be sent on WhatsApp before pickup.';
+  const next = WHAT_HAPPENS_NEXT;
   const html = page(
     brandHeader() +
       introBlock(

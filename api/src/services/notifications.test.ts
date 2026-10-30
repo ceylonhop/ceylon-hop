@@ -434,7 +434,10 @@ describe('sendPayOnDayConfirmed — pay in cash on the day', () => {
     expect(m.html).toContain('manage.html?t=xyz');
     for (const body of [m.html, m.text]) {
       for (const s of ['To pay on the day', '$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
-      for (const s of ['Total paid', 'Deposit paid', 'Balance due', 'driver']) expect(body).not.toContain(s);
+      for (const s of ['Total paid', 'Deposit paid', 'Balance due']) expect(body).not.toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+      expect(body).toContain('to the Ceylon Hop team');
+      expect(body).toContain('Your driver and vehicle details will be sent on WhatsApp before pickup.');
     }
     expect(m.html).not.toContain('>Paid<');
   });
