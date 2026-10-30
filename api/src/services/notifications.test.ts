@@ -274,6 +274,36 @@ describe('sendTripReminder', () => {
   });
 });
 
+describe('sendTripReminder — pay on the day', () => {
+  const arranged = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  const send = async (b: Booking, opts?: { cashDueCents?: number }) => {
+    const email = new FakeEmailAdapter();
+    await sendTripReminder(b, email, {}, opts);
+    return email.sent[0];
+  };
+  it('owing cash: Confirmed badge, not Paid, and a cash-ready line in html and text', async () => {
+    const m = await send(arranged, { cashDueCents: 34200 });
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+    }
+  });
+  it('ledger unknown: Confirmed badge, no cash line, never Paid', async () => {
+    const m = await send(arranged);
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+    expect(m.text).not.toContain('US dollars');
+  });
+  it('cash already recorded: the usual Paid reminder, no cash line', async () => {
+    const m = await send(arranged, { cashDueCents: 0 });
+    expect(m.html).toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+  });
+});
+
 describe('sendReviewRequest', () => {
   it('thanks the customer and asks for a review, with reference and a review link — once', async () => {
     const email = new FakeEmailAdapter();

@@ -757,8 +757,16 @@ export async function sendTripReminder(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
+  // Pay on the day only: what the ledger still says is owed. Undefined = ledger not consulted.
+  opts: { cashDueCents?: number } = {},
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
+  // Pay on the day: never say "Paid" until the cash is on the ledger (status = trip, money = ledger).
+  const unsettled = !!booking.paymentArrangement && opts.cashDueCents !== 0;
+  const cashLine =
+    unsettled && opts.cashDueCents
+      ? `Have ${money(opts.cashDueCents, booking.currency)} in US dollars cash ready. You’ll pay the Ceylon Hop team at your first pickup.`
+      : null;
   const html = page(
     brandHeader() +
       introBlock(
@@ -767,7 +775,10 @@ export async function sendTripReminder(
         `Your trip is almost here, ${first}`,
         'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
       ) +
-      ticketCard(booking, BADGE_PAID) +
+      ticketCard(booking, unsettled ? BADGE_CONFIRMED : BADGE_PAID) +
+      (cashLine
+        ? `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>`
+        : '') +
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Before you travel',
@@ -778,6 +789,7 @@ export async function sendTripReminder(
   const text = textShell('your trip is coming up', 'A quick reminder about your upcoming journey:', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
+    ...(cashLine ? [cashLine] : []),
     'Your driver and vehicle details will be sent on WhatsApp before pickup.',
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
