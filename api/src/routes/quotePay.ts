@@ -37,7 +37,7 @@ import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 // not on the webhook (payments.booking_id is NOT NULL, so settlement needs a booking to
 // land on). Idempotent per quote+revision, so a double tap resumes rather than duplicates.
 
-type PayState = 'balance' | 'paid' | 'revised' | 'payable' | 'unavailable';
+type PayState = 'balance' | 'pay_on_day' | 'paid' | 'revised' | 'payable' | 'unavailable';
 
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
@@ -205,7 +205,7 @@ export function quotePayRoutes(deps: {
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
-  // State precedence per spec §4: balance → paid → revised → payable → unavailable. Paid is checked
+  // State precedence per spec §4: balance → pay_on_day → paid → revised → payable → unavailable. Paid is checked
   // FIRST so a customer reopening their link after paying always finds the keepsake — a
   // won quote must never read as a dead end, and a settled booking must never re-offer Pay.
   // `balance` sits before it for the same reason: a customer who paid a deposit reopens the link
@@ -222,6 +222,11 @@ export function quotePayRoutes(deps: {
         return { state: 'balance', paidVia: { bookingId: booking.id } };
       }
       const settled = rows.some((p) => p.status === 'succeeded');
+      // Pay on the day (owner 2026-10-29/30): booked with no money in. Until ops records the cash
+      // this link says what is owed and how — never "Paid", never a card checkout.
+      if (booking?.paymentArrangement && !settled) {
+        return { state: 'pay_on_day', paidVia: { bookingId: booking.id } };
+      }
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
       }
@@ -311,6 +316,22 @@ export function quotePayRoutes(deps: {
       });
     }
 
+    if (state === 'pay_on_day' && quote && paidVia) {
+      const booking = await deps.bookings.get(paidVia.bookingId);
+      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const sold = soldViewFor(quote, booking);
+      return c.json({
+        state,
+        payOnDay: {
+          reference: booking?.reference ?? null,
+          firstName: prefillFor(quote).firstName || null,
+          // From the ledger: total − succeeded payments (balance.ts), the cash still to hand over.
+          amountUsd: usd(booking ? balanceDueCents(booking, rows) : sold.totalCents),
+          title: payPageCopy(sold, legSelectionOf(sold.payLinkSelection)).title,
+        },
+      });
+    }
+
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
       const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
@@ -384,7 +405,7 @@ export function quotePayRoutes(deps: {
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
     const stored = await deps.quotes.get(parsed.quoteId);
     const { state } = await stateFor(stored, parsed);
-    if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
+    if (state === 'paid' || state === 'balance' || state === 'pay_on_day') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !stored) return c.json({ error: 'quote_unavailable' }, 409);
     // The quote AS SOLD on this link — see /view. null (nothing valid behind the selection) is the
