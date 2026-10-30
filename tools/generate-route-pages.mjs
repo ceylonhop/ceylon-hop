@@ -655,7 +655,7 @@ ${headAssets}
   .drive-photo{position:relative;margin:0}
   .drive-photo img{display:block;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;border-radius:26px}
   .drive-photo figcaption{position:absolute;left:18px;bottom:16px;background:var(--paper,#fffdf8);border-radius:12px;
-    padding:6px 14px;font-family:var(--hand,'Caveat',cursive);font-weight:600;font-size:1.3rem;line-height:1.2;
+    padding:6px 14px;font-family:var(--hand);font-weight:600;font-size:1.3rem;line-height:1.2;
     transform:rotate(-2deg);box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}
   /* ── what's included, and the proof row under it ──────────────────────────────
      The four marks are the house line family, so each carries one filled waypoint dot.
@@ -1101,7 +1101,7 @@ ${headAssets}
   @media(prefers-reduced-motion:reduce){.rt-card{transition:none}.rt-card:hover{transform:none}}
   .rt-card img{display:block;width:100%;height:auto;aspect-ratio:16/10;object-fit:cover;max-width:100%}
   .rt-card .bd{padding:14px 16px 16px;display:flex;flex-direction:column;gap:3px}
-  .rt-card .nm{font-family:var(--display,'Bodoni Moda',Georgia,serif);font-weight:700;font-size:1.12rem;line-height:1.2}
+  .rt-card .nm{font-family:var(--display);font-weight:700;font-size:1.12rem;line-height:1.2}
   /* F2 fix: was '.mt', which collided with site.css's own '.mt{margin-top:20px}' utility —
      every estimate span (here and in .dests below) picked up an unwanted 20px top margin.
      '.est' is free (grepped site.css first). */

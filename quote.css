@@ -14,7 +14,6 @@
      here rather than let a new set of "faint" text silently render full-strength ink. */
   --ink-faint:#8a8272;
   --line-soft:#f0ece1;
-  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 
 /* page column — ticket.css caps 470; the quote page widens to 660 for the map (D13).

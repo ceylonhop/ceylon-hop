@@ -18,11 +18,12 @@ const C = {
 
    These are INTERNAL family names read out of the bundled TTFs, not file names or the
    CSS family. Resvg runs with loadSystemFonts:false, so a name that does not match a
-   bundled face renders blank glyphs rather than falling back — and Google's static
-   Bodoni Moda reports itself as "Bodoni Moda 11pt", so plain "Bodoni Moda" silently
-   produces an empty card. Guarded by web-tests/unit/card-font-families.test.js. */
-export const DISPLAY = 'Bodoni Moda 11pt';
-export const BODY = 'Poppins';
+   bundled face renders blank glyphs rather than falling back. Guarded by
+   web-tests/unit/card-font-families.test.js. One family for both since 2026-10-29: the
+   whole brand is Source Serif 4 (Adobe's static Regular + Bold, OFL); the 800s these
+   cards ask for resolve to the bundled Bold. */
+export const DISPLAY = 'Source Serif 4';
+export const BODY = 'Source Serif 4';
 
 /** Neither bundled face has '→', and resvg blanks a whole run over one missing glyph. */
 export const deArrow = (s: string): string => s.replace(/\s*→\s*/g, ' – ');
@@ -181,8 +182,8 @@ export function cardSvg(m: CardModel): string {
 <!-- ride -->
 <text x="66" y="250" font-family="${BODY}" font-size="14" font-weight="700" letter-spacing="2.8" fill="${C.tealDeep}">SHARED TAXI · THE RIDE BOARD</text>
 <text x="66" y="316" font-family="${DISPLAY}" font-size="${routeSize}" font-weight="800" fill="${C.ink}">${xml(m.from)}</text>
-<!-- The arrow is DRAWN, not typed. No bundled face has '→' (Bodoni Moda and Poppins both
-     lack it), and resvg has no system fonts to fall back to, so a literal arrow renders as
+<!-- The arrow is DRAWN, not typed. Don't assume the bundled face has '→' (the old Bodoni
+     Moda and Poppins both lacked it), and resvg has no system fonts to fall back to, so a literal arrow renders as
      .notdef. A path also keeps it optically aligned to the cap height at any routeSize. -->
 <g transform="translate(66,${316 + routeSize + 8 - routeSize * 0.3})" stroke="${C.teal}" stroke-width="${routeSize * 0.09}" stroke-linecap="round" stroke-linejoin="round" fill="none">
   <path d="M0 0 h${routeSize * 0.52}"/><path d="M${routeSize * 0.34} ${-routeSize * 0.16} L${routeSize * 0.54} 0 L${routeSize * 0.34} ${routeSize * 0.16}"/>
