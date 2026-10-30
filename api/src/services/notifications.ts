@@ -42,6 +42,7 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
   details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
   booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  pay_on_day_confirmed: { templateKey: 'booking-pay-on-day', source: 'quote_conversion', actorType: 'staff' },
   cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
   refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
   no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
@@ -1052,6 +1053,50 @@ export async function sendBookingConfirmed(
     html,
     text,
     tracking: emailTracking(booking, 'booking_confirmed'),
+  });
+}
+
+// ── Pay on the day (ops Mark booked: confirmed, customer pays USD cash at first pickup) ──
+export async function sendPayOnDayConfirmed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const amount = money(booking.total, booking.currency);
+  const cashLine = `Please pay ${amount} in US dollars, cash, to the Ceylon Hop team at your first pickup.`;
+  const next =
+    'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your vehicle details will be sent on WhatsApp before pickup.';
+  const html = page(
+    brandHeader() +
+      introBlock(
+        '✓ Confirmed',
+        TEAL_DEEP,
+        `You’re confirmed, ${first}!`,
+        'Your trip is booked. You’ll pay in cash on the day, so there’s nothing to pay online.',
+      ) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      totalBlock('To pay on the day', amount) +
+      `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>` +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('What happens next', next, cancellationPolicy(booking)) +
+      footer(),
+  );
+  const text = textShell('your booking is confirmed', 'Your trip is booked — you’ll pay in cash on the day.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `To pay on the day: ${amount}`,
+    cashLine,
+    '',
+    `What happens next: ${next}`,
+    cancellationPolicy(booking),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `You’re confirmed — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'pay_on_day_confirmed'),
   });
 }
 

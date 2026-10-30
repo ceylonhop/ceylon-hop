@@ -356,6 +356,7 @@ describe('sendRefundConfirmation', () => {
 import {
   sendPaymentIncomplete,
   sendBookingConfirmed,
+  sendPayOnDayConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
   sendScheduleSet,
@@ -417,6 +418,25 @@ describe('sendBookingConfirmed — driver arranged', () => {
     expect(m.html).toContain('Confirmed');
     expect(m.html.toLowerCase()).toContain('whatsapp');
     expect(m.html).toContain('manage.html?t=xyz');
+  });
+});
+
+describe('sendPayOnDayConfirmed — pay in cash on the day', () => {
+  const booking = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  it('confirms the trip and says to pay cash USD to the team at the first pickup', async () => {
+    const email = new FakeEmailAdapter();
+    const out = await sendPayOnDayConfirmed(booking, email, { manage: 'https://ceylonhop.com/manage.html?t=xyz' });
+    expect(out).toEqual(expect.objectContaining({ delivered: true }));
+    const m = email.sent[0];
+    expect(m.subject).toBe('You’re confirmed — CH-ABC12');
+    expect(m.tracking?.kind).toBe('pay_on_day_confirmed');
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).toContain('manage.html?t=xyz');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['To pay on the day', '$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      for (const s of ['Total paid', 'Deposit paid', 'Balance due', 'driver']) expect(body).not.toContain(s);
+    }
+    expect(m.html).not.toContain('>Paid<');
   });
 });
 
