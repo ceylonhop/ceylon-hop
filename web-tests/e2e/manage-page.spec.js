@@ -41,7 +41,7 @@ test('wears the same travel document as the pay page', async ({ page }) => {
   // The real logo file, not a wordmark on its own — the header is pay.html's verbatim.
   await expect(page.locator('.pp-cmark')).toHaveAttribute('src', 'img/brand-c.svg');
   await expect(page.locator('.pp-hello')).toHaveText('Hi Roshen,');
-  await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Batticaloa, Sri Lanka');
+  await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Batticaloa');
   await expect(page.locator('.ticket')).toBeVisible();
   await expect(page.locator('.t-ref')).toHaveText('Booking CH-HAFDZ');
 });
@@ -157,4 +157,18 @@ test('a Pay refused as awaiting a price says so, never "already paid or closed"'
   await expect(page.locator('.pp-tbc')).toHaveText(HAND_PRICE);
   await expect(page.locator('#paybtn')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('already been paid');
+});
+
+// CH-9QH34 (owner, 2026-10-29): the heading printed both full Google addresses and stood six lines
+// tall on a phone. It now names each end the way the booking page does (ch-shortplace.js), and the
+// full address moves into the ticket's From / To rows so nothing is lost.
+test('a long Google address shortens in the heading and stays in full on the ticket', async ({ page }) => {
+  const from = 'Barefoot Inn Kandy, Anniewatta Circular Road, Kandy, Sri Lanka';
+  const to = 'Star Gate Hotel, Lady Macllum Road, Nuwara Eliya, Sri Lanka';
+  await stub(page, { ...BOOKING, from, to });
+  await page.goto(PAGE);
+  await expect(page.locator('.pp-title')).toHaveText('Barefoot Inn Kandy → Star Gate Hotel · Nuwara Eliya');
+  const row = (k) => page.locator('.fact').filter({ has: page.locator('.k', { hasText: new RegExp('^' + k + '$') }) });
+  await expect(row('From')).toContainText(from);
+  await expect(row('To')).toContainText(to);
 });
