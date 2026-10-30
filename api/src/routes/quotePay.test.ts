@@ -1760,6 +1760,27 @@ describe('the pay_on_day state', () => {
     expect((await bookings.list()).length).toBe(1);
   });
 
+  // A cancelled or no-show arranged booking keeps the quote won — the link must not say "You're
+  // booked … nothing to pay online" next to the cancellation / no-show email.
+  it('/view: an arranged booking that went no_show or was cancelled reads unavailable', async () => {
+    const noShow = await payOnDay();
+    await noShow.bookings.setStatus(noShow.bookingId, 'no_show');
+    expect((await (await view(noShow.app, noShow.t)).json()).state).toBe('unavailable');
+
+    const cancelled = await payOnDay();
+    await cancelled.bookings.setStatus(cancelled.bookingId, 'cancelled');
+    expect((await (await view(cancelled.app, cancelled.t)).json()).state).toBe('unavailable');
+  });
+
+  it('/start on a cancelled arranged booking is refused', async () => {
+    const { app, t, bookings, bookingId } = await payOnDay();
+    await bookings.setStatus(bookingId, 'cancelled');
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+    expect((await bookings.list()).length).toBe(1);
+  });
+
   it('/balance on a pay_on_day link is refused', async () => {
     const { app, t } = await payOnDay();
     const res = await payBalance(app, t);

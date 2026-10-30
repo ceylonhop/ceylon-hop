@@ -77,6 +77,8 @@ const BalanceSchema = z.object({ t: z.string() }).strict();
 // A "Request info" tap on the paid confirmation (owner, 2026-10-15). Same limits the quote page's had.
 const InterestSchema = z.object({ t: z.string().max(2000), experienceId: z.string().uuid(), interested: z.boolean() }).strict();
 
+const PAY_ON_DAY_STATUSES: ReadonlySet<string> = new Set(['confirmed', 'in_progress', 'completed']);
+
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
 // The deposit a customer may pay instead of the full amount on this link, in cents; 0 = not
@@ -223,9 +225,12 @@ export function quotePayRoutes(deps: {
       }
       const settled = rows.some((p) => p.status === 'succeeded');
       // Pay on the day (owner 2026-10-29/30): booked with no money in. Until ops records the cash
-      // this link says what is owed and how — never "Paid", never a card checkout.
+      // this link says what is owed and how — never "Paid", never a card checkout. Only while the
+      // trip is going ahead or done: a cancelled / no-show / refunded one is a dead link, not "booked".
       if (booking?.paymentArrangement && !settled) {
-        return { state: 'pay_on_day', paidVia: { bookingId: booking.id } };
+        return PAY_ON_DAY_STATUSES.has(booking.status)
+          ? { state: 'pay_on_day', paidVia: { bookingId: booking.id } }
+          : { state: 'unavailable' };
       }
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
