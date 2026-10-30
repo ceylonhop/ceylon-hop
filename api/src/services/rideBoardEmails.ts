@@ -18,8 +18,10 @@ const MUTED = '#6c6a6b'; // --ink-soft
 const PAPER = '#F0EEE5'; // --cream page tone, same as the letters
 const CARD = '#fffdf8'; // --paper
 const LINE = '#e7e3d6'; // --line
-const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
-const SANS = "'Poppins', Helvetica, Arial, sans-serif";
+// One family everywhere (owner, 2026-10-29). Clients that block web fonts (Gmail, Outlook)
+// get Georgia, the nearest serif they all ship.
+const SERIF = "'Source Serif 4', Georgia, 'Times New Roman', serif";
+const SANS = SERIF;
 
 // Same regex as notifications.ts's esc(): every interpolated value is text, never markup.
 // First names and place names are user-influenced, and an email body is exactly where a
@@ -33,7 +35,7 @@ function shell(heading: string, bodyHtml: string): string {
   // mojibake bait without one) and the light-only color-scheme declaration.
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..800;1,8..60,400..800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK}">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:24px 12px">
     <tr><td align="center">
@@ -170,7 +172,7 @@ const TEAL = '#0AB9B6'; // route start marker (graphic only, never type)
 const TOMATO = '#EC3A24'; // route end marker (graphic only)
 const FAINT = '#8a8272'; // --ink-faint
 const ROUTE_LINE = '#dcc9a9';
-const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
+const MONO = SERIF;
 const EYEBROW = `font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:${FAINT};font-weight:600`;
 
 // Same formatter as the letters' fmtDate: "Fri, 14 Aug 2026". Noon anchors the
@@ -184,7 +186,7 @@ const fmtDate = (d: string) => {
 function letter(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..800;1,8..60,400..800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
