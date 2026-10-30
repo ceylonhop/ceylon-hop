@@ -15,8 +15,8 @@ const row = (over = {}) => ({
   paymentArrangement: 'on_the_day', cashDueCents: 34200,
   vehiclePhotoReceived: false, customerUpdated: false, opsNotes: '', ...over,
 });
-const detail = () => ({
-  booking: { id: 'booking-1', reference: 'CH-CASH1', mode: 'single', status: 'confirmed', total: 34200, currency: 'USD', createdAt: '2030-01-01T10:00:00.000Z',
+const detail = (status = 'confirmed') => ({
+  booking: { id: 'booking-1', reference: 'CH-CASH1', mode: 'single', status, total: 34200, currency: 'USD', createdAt: '2030-01-01T10:00:00.000Z',
     paymentArrangement: 'on_the_day',
     input: { from: 'Colombo', to: 'Ella', customer: { firstName: 'Cash', lastName: 'Traveller', email: 'c@example.com', whatsapp: '+94770000000', country: 'UK' } } },
   ops: {}, payments: [], payLink: null,
@@ -24,14 +24,14 @@ const detail = () => ({
 const FOUNDER = ['bookings:read', 'bookings:operate', 'payments:act', 'payments:reverse'];
 const OPS_ROLE = ['bookings:read', 'bookings:operate'];
 
-async function boot(page, { theRow = row(), caps = FOUNDER, open = true } = {}) {
+async function boot(page, { theRow = row(), theDetail = detail(), caps = FOUNDER, open = true } = {}) {
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
   });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({ email: 'f@e2e.test', role: caps === FOUNDER ? 'founder' : 'ops', caps })));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([theRow])));
-  await page.route('**/admin/ops/bookings/booking-1', (r) => r.fulfill(json(detail())));
+  await page.route('**/admin/ops/bookings/booking-1', (r) => r.fulfill(json(theDetail)));
   await page.goto(OPS_FILE);
   if (open) {
     await page.locator('[data-act="open"][data-id="booking-1"]').click();
@@ -46,6 +46,8 @@ test('the queue row reads "Confirmed · cash due", not "Paid", and stays out of 
   await expect(pill).toHaveText('Confirmed · cash due');
   await expect(pill).toHaveClass(/pill-bal/); // the existing amber
   await expect(page.locator('.tk')).not.toContainText('Paid');
+  // Screen readers hear the same label as the pill.
+  await expect(page.locator('.tk')).toHaveAttribute('aria-label', /Confirmed · cash due$/);
 });
 
 test('a later stage keeps its label and carries a "Cash due $342" chip', async ({ page }) => {
@@ -96,4 +98,44 @@ test('no-show on a booking with nothing paid does not claim a non-refundable far
   await page.locator('#sheet [data-act="noshow"]').click();
   await expect.poll(() => said).toContain('nothing was charged');
   expect(said).not.toContain('refundable');
+});
+
+test('no-show on an ordinary unpaid booking keeps the non-refundable copy and tooltip', async ({ page }) => {
+  await boot(page, { theRow: row({ paymentArrangement: null, cashDueCents: 0 }) });
+  await expect(page.locator('#sheet [data-act="noshow"]')).toHaveAttribute('title', /forfeited-fare notice/);
+  let said = '';
+  page.on('dialog', (d) => { said = d.message(); d.dismiss(); });
+  await page.locator('#sheet [data-act="noshow"]').click();
+  await expect.poll(() => said).toContain('fare isn’t refundable');
+  expect(said).not.toContain('nothing was charged');
+});
+
+test('the no-show tooltip on a pay-on-the-day booking does not promise a forfeited fare', async ({ page }) => {
+  await boot(page);
+  await expect(page.locator('#sheet [data-act="noshow"]')).not.toHaveAttribute('title', /forfeited/);
+});
+
+// A failed pay-on-the-day confirm can leave the arrangement on a payment_pending booking — that is an
+// ordinary awaiting-payment booking, and Mark paid moves it to paid.
+test('an arranged booking still awaiting payment gets ONE settle row, "Mark paid", and the pending copy', async ({ page }) => {
+  await boot(page, { theRow: row({ stage: 'awaiting_payment' }), theDetail: detail('payment_pending') });
+  await expect(page.locator('#paidmethod')).toHaveCount(1);
+  await expect(page.locator('#sheet [data-act="markpaid"]')).toHaveCount(1);
+  await expect(page.locator('#sheet [data-act="markpaid"]')).toHaveText('Mark paid');
+  const pay = payBlock(page);
+  await expect(pay).toContainText('Not received yet');
+  await expect(pay).not.toContainText('Pay on the day');
+  await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Awaiting payment');
+  await expect(page.locator('#sheet .sheet-h .pill.pill-bal')).toHaveCount(0);
+  let said = '';
+  page.on('dialog', (d) => { said = d.message(); d.dismiss(); });
+  await page.locator('#sheet [data-act="markpaid"]').click();
+  await expect.poll(() => said).toContain('moves it to Paid');
+});
+
+test('a completed trip with cash unrecorded asks for it, and counts in the Bookings badge', async ({ page }) => {
+  await boot(page, { theRow: row({ stage: 'completed', vehiclePhotoReceived: true, customerUpdated: true }), open: false });
+  await expect(page.locator('#nav-attn')).toHaveText('1');
+  await page.locator('.fchip[data-g="done"]').click();
+  await expect(page.locator('.tk .reason')).toHaveText('Record $342 cash · trip done');
 });

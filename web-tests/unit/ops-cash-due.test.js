@@ -45,6 +45,11 @@ describe('cashDue', () => {
     expect(cashDue({ source: 'booking', stage: 'paid', paid: true, paymentArrangement: null, cashDue: 0 })).toBe(false);
     expect(cashDue({ source: 'booking', stage: 'paid', paid: true })).toBe(false);
   });
+  // A failed pay-on-the-day confirm can leave the arrangement on a payment_pending booking. That is an
+  // ordinary awaiting-payment booking (Mark paid moves it to paid), so none of the cash branches apply.
+  it('is false while the booking is still awaiting payment', () => {
+    expect(cashDue(onTheDay({ stage: 'awaiting_payment' }))).toBe(false);
+  });
 });
 
 describe('stageLabel', () => {
@@ -74,6 +79,10 @@ describe('pipeLabel — the sheet pipeline rail', () => {
 });
 
 describe('copy', () => {
+  it('the mark-paid refusal says the booking can no longer take a payment, on both paths', () => {
+    expect(html).toContain("toast('This booking can no longer take a payment','error')");
+    expect(html).not.toContain('no longer awaiting payment');
+  });
   it('never names the driver as the cash collector', () => {
     expect(html).not.toMatch(/driver (collects|takes) (the )?cash/i);
     expect(html).not.toMatch(/cash (to|for) the driver/i);

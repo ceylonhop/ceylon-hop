@@ -2180,8 +2180,10 @@ const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirm
 /* Founder = may move money. The "Refunds waiting" pile is theirs alone. */
 const isFounderUi=()=>!!(state.caps&&state.caps.includes('payments:reverse'));
 /* Pay on the day (owner 2026-10-29/30): confirmed with nothing paid — the customer pays USD cash
-   to the Ceylon Hop team at the first pickup. True until that cash is recorded. */
-const cashDue=t=>!!t.paymentArrangement&&t.cashDue>0;
+   to the Ceylon Hop team at the first pickup. True until that cash is recorded. A booking still
+   awaiting payment is excluded: a failed pay-on-the-day confirm can leave the arrangement set,
+   and that booking is an ordinary awaiting-payment one (Mark paid moves it to paid). */
+const cashDue=t=>!!t.paymentArrangement&&t.cashDue>0&&t.stage!=='awaiting_payment';
 const reason=t=>{
   /* Ride-board vans carry no ops overlay — there are no flags to tick and no
      status to advance, so they must never sit in the attention badge nagging
@@ -2190,6 +2192,8 @@ const reason=t=>{
   /* Before the closed-stage return on purpose: cancel-then-refund is the common case, and a
      cancelled booking with money waiting to go back is exactly what a founder must act on. */
   if(t.refundWaiting>0&&isFounderUi())return 'Refund waiting for your approval';
+  /* Pay on the day, trip done, cash never recorded — the moment ops forget it. */
+  if(t.stage==='completed'&&cashDue(t))return `Record ${money({amount:t.cashDue,currency:t.currency})} cash · trip done`;
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
@@ -2578,7 +2582,8 @@ function setNav(){
      act on — a red "0" is noise. */
   /* A founder's badge also counts refunds waiting on them — including closed bookings, which
      "All open" leaves out. Each row counts once. */
-  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;
+  /* So is a completed pay-on-the-day trip whose cash is still unrecorded (it files under Closed). */
+  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds'))||(t.stage==='completed'&&cashDue(t)))).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
@@ -2609,7 +2614,7 @@ function ticketRow(t,i){
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
-  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${esc(stageLabel(t))}">
     ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
@@ -4200,7 +4205,7 @@ function sheetFootHtml(t,nx){
   if(t.stage==='awaiting_payment')return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
   if(!nx)return '';
   return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
-    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button></div>`;
+    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — ${t.paymentArrangement&&!t.paid?'emails that nothing was charged':'emails the forfeited-fare notice'}">Mark no-show</button></div>`;
 }
 /* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
    note must not throw the scroll position away or eat text the operator is mid-typing.
@@ -4887,7 +4892,7 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\n${t.paid?'This emails the customer that the fare isn’t refundable.':'This emails the customer that nothing was charged.'} It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\n${t.paymentArrangement&&!t.paid?'This emails the customer that nothing was charged.':'This emails the customer that the fare isn’t refundable.'} It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
     /* clearInput on SUCCESS is load-bearing since the sheet became a diff-render: morphdom
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
@@ -4960,7 +4965,7 @@ document.addEventListener('click',async e=>{
            in already (a late PayHere webhook) — reading it as a plain failure would invite a
            retry, or worse, a second collection from the customer. */
         if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again','error');await refreshRow(id);}
-        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment','error');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking can no longer take a payment','error');await refreshRow(id);}
         else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid','error');}
       }
       break;

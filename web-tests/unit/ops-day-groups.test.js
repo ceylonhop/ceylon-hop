@@ -159,6 +159,7 @@ describe('bookings queue filter chips', () => {
   it('scopes the nav badge to open work', () => {
     // A founder's badge also adds the refunds waiting on them (closed bookings included); the
     // open-work half is still scoped to "All open", so the count never reaches back into old rows.
-    expect(html).toContain("const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;");
+    // So does a completed pay-on-the-day trip whose cash is still unrecorded (it files under Closed).
+    expect(html).toContain("const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds'))||(t.stage==='completed'&&cashDue(t)))).length;");
   });
 });
