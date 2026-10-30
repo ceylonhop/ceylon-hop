@@ -39,7 +39,8 @@ const W = new Function(`
   ${fnSrc('lookupRowTone')}
   ${fnSrc('lookupGapText')}
   ${fnSrc('lookupUnavailableText')}
-  return { paLabel, lookupTime, lookupVerdictText, lookupRowLabel, lookupRowDetail, lookupRowTone, lookupGapText, lookupUnavailableText };
+  ${fnSrc('trackingKindLabel')}
+  return { trackingKindLabel, paLabel, lookupTime, lookupVerdictText, lookupRowLabel, lookupRowDetail, lookupRowTone, lookupGapText, lookupUnavailableText };
 `)();
 
 // Times are built from LOCAL components, so the expected "DD Mon HH:MM:SS" string is the same in
@@ -60,6 +61,23 @@ describe('lookupTime', () => {
   it('says — for a missing or unreadable time', () => {
     expect(W.lookupTime(null)).toBe('—');
     expect(W.lookupTime('not a date')).toBe('—');
+  });
+});
+
+describe('pay on the day', () => {
+  it('never_started + cash_due_on_the_day: says cash is due, not "never started"', () => {
+    const t = W.lookupVerdictText(verdict({ kind: 'never_started', warnings: ['cash_due_on_the_day'] }));
+    expect(t.title).toBe('Pay on the day: cash due');
+    expect(t.detail).toBe('Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; record it with Mark paid when it’s collected.');
+    expect(t.detail).not.toMatch(/driver/i);
+  });
+  it('never_started alone is unchanged', () => {
+    const t = W.lookupVerdictText(verdict({ kind: 'never_started' }));
+    expect(t.title).toBe('Never started checkout');
+    expect(t.detail).toBe('The booking was created but checkout never started.');
+  });
+  it('the activity label knows pay_on_day_confirmed', () => {
+    expect(W.trackingKindLabel('pay_on_day_confirmed')).toBe('pay on the day confirmed');
   });
 });
 
@@ -254,6 +272,7 @@ describe('lookupRowLabel — every row kind', () => {
     expect(e('trip_reminder')).toBe('Email: trip reminder');
     expect(e('review_request')).toBe('Email: review request');
     expect(e('no_show_notice')).toBe('Email: no-show notice');
+    expect(e('pay_on_day_confirmed')).toBe('Email: pay on the day confirmed');
     expect(e('something_new')).toBe('Email: something_new');
   });
 

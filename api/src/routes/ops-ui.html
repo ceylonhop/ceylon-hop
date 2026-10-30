@@ -3492,13 +3492,14 @@ function lookupVerdictText(v,cur){
   const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
   const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
   let detail='';
+  const cashDue=v.kind==='never_started'&&(v.warnings||[]).includes('cash_due_on_the_day'); /* pay on the day: nobody was meant to check out */
   switch(v.kind){
     case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
     case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
     case 'declined':detail=join([String(ph.code)==='-1'?'Cancelled on PayHere’s page':(ph.message?'“'+ph.message+'”':'no message')+(ph.code!=null?' (code '+ph.code+')':''),when,counts+since]);break;
     case 'reached_no_answer':detail='Reached PayHere'+(when?' '+when:'')+'. A 3-D Secure failure and closing the page look the same here — PayHere sends nothing for either.';break;
     case 'checkout_no_trace':detail='Checkout started'+(when?' '+when:'')+'; nothing recorded after it.';break;
-    case 'never_started':detail='The booking was created but checkout never started.';break;
+    case 'never_started':detail=cashDue?'Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; record it with Mark paid when it’s collected.':'The booking was created but checkout never started.';break;
     case 'paid_elsewhere':detail='Closed automatically — paid on '+(v.paidOn||'another booking');break;
     case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
     case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
@@ -3506,7 +3507,7 @@ function lookupVerdictText(v,cur){
   const c=v.cancellation;
   return {
     title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
-      checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
+      checkout_no_trace:'Started checkout, nothing after',never_started:cashDue?'Pay on the day: cash due':'Never started checkout',paid_elsewhere:'Paid on another booking',
       paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
     detail,
     refund:refund&&refund!==detail?refund:null, /* money_back already says it */
@@ -3536,7 +3537,7 @@ function lookupRowLabel(row){
       return s;
     }
     case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
-      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice',pay_on_day_confirmed:'Email: pay on the day confirmed'})[row.emailKind]||'Email: '+row.emailKind;
     case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
       failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
   }
@@ -3624,7 +3625,7 @@ function lookupOtherBookingsHtml(list){
 function trackingKindLabel(kind){
   return ({confirmation:'booking confirmation',details_needed:'details needed',booking_confirmed:'booking confirmed',cancellation:'cancellation',refund:'refund',
     no_show_notice:'no-show notice',trip_reminder:'trip reminder',review_request:'review request',payment_recovery:'payment reminder',
-    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received'})[kind]||String(kind||'email').replaceAll('_',' ');
+    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received',pay_on_day_confirmed:'pay on the day confirmed'})[kind]||String(kind||'email').replaceAll('_',' ');
 }
 function trackingEventLabel(row){
   if(row.source==='booking_transition')return 'Booking: '+String(row.fromStatus).replaceAll('_',' ')+' → '+String(row.toStatus).replaceAll('_',' ');
