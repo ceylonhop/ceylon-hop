@@ -485,6 +485,35 @@ describe('sendNoShowNotice — fare forfeited', () => {
   });
 });
 
+describe('sendNoShowNotice — pay on the day', () => {
+  const arranged = { ...single, status: 'no_show', paymentArrangement: 'on_the_day' } as typeof single;
+
+  it('says nothing was charged when a pay-on-the-day booking has no money on the ledger', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 0 });
+    const m = email.sent[0];
+    expect(m.html).toContain('Nothing was charged');
+    expect(m.text).toContain('Nothing was charged');
+    expect(m.html.toLowerCase()).not.toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).not.toContain('isn’t refundable');
+  });
+
+  it('keeps the forfeited-fare wording when the arranged booking did pay something', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 34200 });
+    const m = email.sent[0];
+    expect(m.html.toLowerCase()).toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).toContain('isn’t refundable');
+    expect(m.html).not.toContain('Nothing was charged');
+  });
+
+  it('keeps the forfeited-fare wording without an arrangement, even at 0 paid', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice({ ...single, status: 'no_show' }, email, { paidCents: 0 });
+    expect(email.sent[0].html.toLowerCase()).toContain('isn’t refundable');
+  });
+});
+
 describe('sendDetailsNeeded — flexible booking follow-up', () => {
   it('says we still need the exact pickup/time and will reach out on WhatsApp', async () => {
     const email = new FakeEmailAdapter();

@@ -99,6 +99,7 @@ const EMAILS: EmailDef[] = [
   { name: 'cancellation', label: 'Cancellation', run: (b, e) => sendCancellationConfirmation(b, e) },
   { name: 'refund', label: 'Refund processed', run: (b, e) => sendRefundConfirmation(b, e) },
   { name: 'no-show', label: 'No-show notice', run: (b, e) => sendNoShowNotice(b, e) },
+  { name: 'no-show-pay-on-day', label: 'No-show notice — pay on the day', run: (b, e) => sendNoShowNotice({ ...b, status: 'no_show', paymentArrangement: 'on_the_day' } as Booking, e, { paidCents: 0 }) },
   { name: 'trip-reminder', label: 'Pre-trip reminder', run: (b, e) => sendTripReminder(b, e, { manage: LINKS.manage }) },
   { name: 'review-request', label: 'Review request', run: (b, e) => sendReviewRequest(b, e) },
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },

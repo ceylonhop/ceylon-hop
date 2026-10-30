@@ -1115,7 +1115,14 @@ export async function sendPayOnDayConfirmed(
 }
 
 // ── No-show (confirmed/in_progress → no_show; fare forfeited) ──────────────
-export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): Promise<void> {
+// Pay on the day with nothing on the ledger: nothing was collected, so "the fare isn't refundable"
+// would be false — say the booking is closed instead. `paidCents` comes from the payments ledger.
+export async function sendNoShowNotice(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { paidCents?: number } = {},
+): Promise<void> {
+  const nothingCharged = Boolean(booking.paymentArrangement) && opts.paidCents === 0;
   const first = esc(booking.input.customer.firstName);
   const html = page(
     brandHeader() +
@@ -1126,16 +1133,23 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
         'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
       ) +
       ticketCard(booking, BADGE_NO_SHOW) +
-      infoBox(
-        'About your fare',
-        'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
-      ) +
+      (nothingCharged
+        ? infoBox(
+            'About your booking',
+            'We’ve marked this booking as a no-show and closed it. Nothing was charged. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )
+        : infoBox(
+            'About your fare',
+            'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )) +
       footer(),
   );
   const text = textShell('missed pickup', 'Your driver was at the pickup, but we couldn’t reach you.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
+    nothingCharged
+      ? 'This booking is marked as a no-show and closed. Nothing was charged. Message us to arrange a new booking.'
+      : 'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
   ]);
   await email.send({
     to: booking.input.customer.email,

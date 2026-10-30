@@ -496,7 +496,8 @@ export function adminRoutes(deps: {
     transitionAndNotify(c, 'confirmed', async () => {}),
   );
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
-  r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
+  r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', async (b, e) =>
+      sendNoShowNotice(b, e, { paidCents: paidCents(await deps.payments.findByBookingId(b.id)) })));
 
   const MarkPaid = z
     .object({
