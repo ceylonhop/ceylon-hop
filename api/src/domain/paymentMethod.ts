@@ -7,6 +7,13 @@ export const MANUAL_PAYMENT_METHODS = ['cash', 'bank_transfer', 'manual_other'] 
 
 export type ManualPaymentMethod = (typeof MANUAL_PAYMENT_METHODS)[number];
 
+// How a customer will pay when it isn't "now, by card" (0077, owner 2026-10-29). 'on_the_day' = USD
+// cash to the driver at the first pickup. Must match the `bookings_payment_arrangement_valid` CHECK.
+// An arrangement says how money is EXPECTED; whether it arrived is the payments ledger's answer.
+export const PAYMENT_ARRANGEMENTS = ['on_the_day'] as const;
+
+export type PaymentArrangement = (typeof PAYMENT_ARRANGEMENTS)[number];
+
 // Asking "did this money arrive by hand?" is deliberately NOT a provider-name test — the
 // payment row records its own provenance and `paymentRepo.hasManualSettlement()` reads that.
 // A name check would quietly answer wrong the first time this list and the row disagree.
