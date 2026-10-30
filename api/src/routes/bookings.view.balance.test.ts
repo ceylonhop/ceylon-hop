@@ -85,7 +85,7 @@ describe('GET /bookings/view names a pay-on-the-day arrangement', () => {
     expect(await viewOf(true)).toMatchObject({ paymentArrangement: 'on_the_day', balanceDueCents: 34200 });
   });
 
-  it('an ordinary booking has paymentArrangement null', async () => {
-    expect(await viewOf(false)).toMatchObject({ paymentArrangement: null });
+  it('an ordinary booking leaves paymentArrangement out of the view', async () => {
+    expect(await viewOf(false)).not.toHaveProperty('paymentArrangement');
   });
 });
