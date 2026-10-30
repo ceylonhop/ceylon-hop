@@ -2179,6 +2179,11 @@ const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirm
 /* attention logic — what an ops agent must act on */
 /* Founder = may move money. The "Refunds waiting" pile is theirs alone. */
 const isFounderUi=()=>!!(state.caps&&state.caps.includes('payments:reverse'));
+/* Pay on the day (owner 2026-10-29/30): confirmed with nothing paid — the customer pays USD cash
+   to the Ceylon Hop team at the first pickup. True until that cash is recorded. A booking still
+   awaiting payment is excluded: a failed pay-on-the-day confirm can leave the arrangement set,
+   and that booking is an ordinary awaiting-payment one (Mark paid moves it to paid). */
+const cashDue=t=>!!t.paymentArrangement&&t.cashDue>0&&t.stage!=='awaiting_payment';
 const reason=t=>{
   /* Ride-board vans carry no ops overlay — there are no flags to tick and no
      status to advance, so they must never sit in the attention badge nagging
@@ -2187,15 +2192,21 @@ const reason=t=>{
   /* Before the closed-stage return on purpose: cancel-then-refund is the common case, and a
      cancelled booking with money waiting to go back is exactly what a founder must act on. */
   if(t.refundWaiting>0&&isFounderUi())return 'Refund waiting for your approval';
+  /* Pay on the day, trip done, cash never recorded — the moment ops forget it. */
+  if(t.stage==='completed'&&cashDue(t)){const x=money({amount:t.cashDue,currency:t.currency});return state.caps&&state.caps.includes('payments:act')?`Record ${x} cash · trip done`:`Cash ${x} not recorded yet · trip done`;}
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Pay on the day: the team collects the cash at today's first pickup. On any other day the
+     vehicle nag still wins — the car is arranged first. */
+  if(cashDue(t)&&t.date===TODAY)return `Collect ${money({amount:t.cashDue,currency:t.currency})} cash · travels today`;
   /* Day one of a deposit trip with the balance still open: the driver is about to go, so this
      outranks the housekeeping reasons below. */
   if(t.balance>0&&t.date&&t.date===TODAY)return 'Balance due — travels today';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
+  if(cashDue(t))return `Cash on the day · ${money({amount:t.cashDue,currency:t.currency})}`;
   return '';
 };
 const isAttn=t=>!!reason(t);
@@ -2219,7 +2230,7 @@ const inGroup=(t,g)=>{
   /* "All open" is the day's work: everything still to come, dated or not. The past piles have
      their own chips below, so a row that has fallen out of the future appears in exactly one
      place rather than nagging from the middle of the timeline. */
-  if(g==='all')return !CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t);
+  if(g==='all')return (!CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t))||(t.stage==='completed'&&cashDue(t)); /* + a finished pay-on-the-day trip whose cash isn't recorded */
   if(g==='refunds')return t.refundWaiting>0;
   /* The stage chips answer "what do I do next", so they are scoped to live rows too: a trip
      whose date is gone needs closing, not a vehicle; an unpaid cart past its date cannot be
@@ -2320,6 +2331,8 @@ function rowToTicket(row){
     paidAt:row.paidAt||null,
     /* Σ refund requests waiting for a founder (spec 2026-10-17 §4). */
     refundWaiting:row.refundWaitingCents||0,
+    /* Pay on the day: the customer pays cash at the first pickup; cashDue is what is still owed. */
+    paymentArrangement:row.paymentArrangement||null, cashDue:row.cashDueCents||0,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
@@ -2344,10 +2357,13 @@ const timeTbc=t=>!isBoard(t)&&t.mode==='single'&&!!t.date&&t.date>=TODAY&&!t.tim
    that can no longer be added. */
 const boardShut=t=>!!(t&&t.board&&t.board.listStatus!=='confirmed'&&t.board.cutoffAt&&Date.parse(t.board.cutoffAt)<=Date.now());
 const stageLabel=t=>{
+  if(!isBoard(t)&&t.stage==='paid'&&cashDue(t))return 'Confirmed · cash due';
   if(!isBoard(t))return STAGE[t.stage]?STAGE[t.stage].label:t.stage;
   if(t.board&&t.board.listStatus==='confirmed')return 'Van confirmed';
   return boardShut(t)?'Names closed':'Gathering names';
 };
+/* The sheet pipeline's step name — the Paid step is not paid while the cash is still owed. */
+const pipeLabel=(t,s)=>s==='paid'&&cashDue(t)?'Cash due':STAGE[s].short;
 /* "3 of 3 seats · van runs" — the one number that says whether this van goes. */
 const boardSeats=t=>{
   const b=t.board;if(!b)return '';
@@ -2597,7 +2613,7 @@ function ticketRow(t,i){
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
-  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${esc(stageLabel(t))}">
     ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
@@ -2605,8 +2621,8 @@ function ticketRow(t,i){
       <div class="tk-meta">${meta}${booked}</div>
     </div>
     <div class="tk-side">
-      <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
-      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
+      <span class="pill${t.stage==='paid'&&cashDue(t)?' pill-bal':''}"><span class="pd"></span>${esc(stageLabel(t))}</span>
+      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}${cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''}
       <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
@@ -3475,6 +3491,8 @@ function lookupVerdictText(v,cur){
   const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
   const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
   let detail='';
+  /* Pay on the day: nobody was meant to check out, so any unpaid verdict leads with the cash. */
+  const onTheDayDue=['declined','reached_no_answer','checkout_no_trace','never_started'].includes(v.kind)&&(v.warnings||[]).includes('cash_due_on_the_day');
   switch(v.kind){
     case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
     case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
@@ -3486,9 +3504,10 @@ function lookupVerdictText(v,cur){
     case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
     case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
   }
+  if(onTheDayDue)detail='Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; use Record cash collected when it’s collected.';
   const c=v.cancellation;
   return {
-    title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
+    title:onTheDayDue?'Pay on the day: cash due':({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
       checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
       paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
     detail,
@@ -3498,7 +3517,7 @@ function lookupVerdictText(v,cur){
       money_on_unpaid_booking:'Money received, but the booking still says unpaid — check it.',
       money_after_cancel:'Money arrived after the booking was cancelled — a refund may be owed.',
       paid_status_without_payment:'The booking says paid, but no payment is recorded.',
-      cash_due_on_the_day:'Pay on the day: cash is due to the Ceylon Hop team. Record it with Mark paid when it\'s collected.',
+      cash_due_on_the_day:'Pay on the day: cash is due to the Ceylon Hop team. Use Record cash collected when it\'s collected.',
     })[w]||String(w)),
   };
 }
@@ -3519,7 +3538,7 @@ function lookupRowLabel(row){
       return s;
     }
     case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
-      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice',pay_on_day_confirmed:'Email: pay on the day confirmed'})[row.emailKind]||'Email: '+row.emailKind;
     case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
       failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
   }
@@ -3607,7 +3626,7 @@ function lookupOtherBookingsHtml(list){
 function trackingKindLabel(kind){
   return ({confirmation:'booking confirmation',details_needed:'details needed',booking_confirmed:'booking confirmed',cancellation:'cancellation',refund:'refund',
     no_show_notice:'no-show notice',trip_reminder:'trip reminder',review_request:'review request',payment_recovery:'payment reminder',
-    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received'})[kind]||String(kind||'email').replaceAll('_',' ');
+    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received',pay_on_day_confirmed:'pay on the day confirmed'})[kind]||String(kind||'email').replaceAll('_',' ');
 }
 function trackingEventLabel(row){
   if(row.source==='booking_transition')return 'Booking: '+String(row.fromStatus).replaceAll('_',' ')+' → '+String(row.toStatus).replaceAll('_',' ');
@@ -3785,7 +3804,7 @@ function buildActivity(t,d){
   (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push(['Payment',`Received · ${money({amount:p.amount,currency:p.currency})}`]);});
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
-  if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${stageLabel(t)}”`]);
   (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
   (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
@@ -4150,13 +4169,13 @@ function bookingPromo(booking) {
 }
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
-  const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
+  const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx&&!(s==='paid'&&cashDue(t))?'done':i===o.idx?'cur':''}">${pipeLabel(t,s)}</span>`).join('')}</div>`:'';
   return `<div class="sheet-h">
       <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
       <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
       <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
-        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
+        <span class="pill${o.pillCls||''}"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
       </div>${pipe}
     </div>
     <div class="sheet-stub">${o.stub}</div>
@@ -4188,7 +4207,7 @@ function sheetFootHtml(t,nx){
   if(t.stage==='awaiting_payment')return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
   if(!nx)return '';
   return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
-    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button></div>`;
+    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — ${t.paymentArrangement&&!t.paid?'emails that nothing was charged':'emails the forfeited-fare notice'}">Mark no-show</button></div>`;
 }
 /* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
    note must not throw the scroll position away or eat text the operator is mid-typing.
@@ -4306,10 +4325,11 @@ function renderSheet(){
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx,
+    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t),pipe:true,idx,
     /* The row's own balance tag, repeated in the header so an open balance is visible without
        scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
-    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''});
+    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`
+      :cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
      print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
   if(!d){
@@ -4333,11 +4353,12 @@ function renderSheet(){
      backend has actually issued one) and the manual settle row. The reminder button itself
      is the sheet-foot primary — one copy of each action, never two. */
   let pendingBlock='';
-  if(isPending){
-    const settle=canSettle?`<div class="settle">
+  /* The same settle row records pay-on-the-day cash, at any stage (the status stays put). */
+  const settle=canSettle&&(isPending||(cashDue(t)&&!t.paid))?`<div class="settle">
         <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
-        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
+        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">${isPending?'Mark paid':'Record cash collected'}</button>
       </div>`:'';
+  if(isPending){
     const link=d&&d.payLink;
     const linkBtn=link?`<button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy payment link</button>`:'';
     /* Both halves of the sentence have to be true for whoever is reading it: the link half
@@ -4409,9 +4430,10 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
         ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
-        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):`<span style="color:var(--wait);font-weight:700">${cashDue(t)?'Cash due on the day':'Awaiting payment'}</span>`}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${cashDue(t)?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Pay on the day — ${money({amount:t.cashDue,currency:t.currency})} in US dollars cash to the Ceylon Hop team, at the first pickup. ${canSettle?"Record it here when it's collected.":"A founder or finance records it when it's collected."}</p>${settle?`<div class="sheet-actions">${settle}</div>`:''}`
+        :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
         ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
       ${paymentAttemptsHtmlFor(d)}
@@ -4872,7 +4894,7 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\n${t.paymentArrangement&&!t.paid?'This emails the customer that nothing was charged.':'This emails the customer that the fare isn’t refundable.'} It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
     /* clearInput on SUCCESS is load-bearing since the sheet became a diff-render: morphdom
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
@@ -4932,7 +4954,9 @@ document.addEventListener('click',async e=>{
       /* Every other consequential action in this sheet states its email consequence, and on the
          PayHere path a booking reaching Paid DOES auto-send a confirmation — so silence here
          reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
-      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
+      if(!confirm(cashDue(t)
+        ?`Record ${money({amount:t.cashDue,currency:t.currency})} received ${method==='cash'?'in cash':'by '+label.toLowerCase()} for ${t.ref}? The trip status stays as it is. No email goes to the customer.`
+        :`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
       el.disabled=true;
       try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);await refreshDetail(id);await refreshRow(id);}
       catch(err){
@@ -4943,7 +4967,7 @@ document.addEventListener('click',async e=>{
            in already (a late PayHere webhook) — reading it as a plain failure would invite a
            retry, or worse, a second collection from the customer. */
         if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again','error');await refreshRow(id);}
-        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment','error');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking can no longer take a payment','error');await refreshRow(id);}
         else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid','error');}
       }
       break;
@@ -5109,6 +5133,7 @@ function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
+  window.opsCan=(cap)=>!!(state.caps&&state.caps.includes(cap)); /* the quote module asks about a capability (Mark booked → cash on the day) */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
   /* The Experiences page (QuoteView) opens a lead's booking or quote through these. The queue only
      holds open bookings, so a booking it does not carry is fetched once; if it is still absent
@@ -5387,6 +5412,7 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 // from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var bookCashOnDay = false; // "Customer pays cash on the day" ticked in the Mark booked modal (payments:act only)
 var bookPrefillBooking = null; // the quote's converted booking (the customer's pay-page entry), fetched when the modal opens
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
@@ -7663,6 +7689,8 @@ async function bookQuote() {
     date: val('bk-date') || undefined,
     time: val('bk-time') || undefined,
   };
+  var cashOnDay = bookCashOnDay && canBookCashOnDay();
+  if (cashOnDay) b.paymentArrangement = 'on_the_day';
   // Client-side required-field guard (server re-validates via Zod).
   if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
     showToast('Fill in name, email, WhatsApp, country, date and time', 'error');
@@ -7690,7 +7718,9 @@ async function bookQuote() {
   _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
-    showToast('Booked · ' + res.reference);
+    showToast(cashOnDay
+      ? 'Booked ' + res.reference + ': confirmed, cash on the day. A confirmation email is on its way to ' + (b.customer.firstName || 'the customer') + '.'
+      : 'Booked · ' + res.reference);
     if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     render();
   } finally {
@@ -11743,6 +11773,7 @@ function bookPrefill(st, booking) {
 // booking holding what they typed there — fetch it so the modal starts from that, not blanks.
 async function openBookModal() {
   bookPrefillBooking = null;
+  bookCashOnDay = false; // never carried over from a previous open
   if (state.convertedBookingId) {
     var seq = _openSeq;
     var body = null;
@@ -11762,6 +11793,27 @@ async function openBookModal() {
 // f-contact field split back into email/whatsapp where it recognizably is one or the other;
 // pax, bags and the first leg's date come from the quote. Time has no safe default, so the
 // operator always types it (required fields guarded client-side in bookQuote()).
+// Booking a customer as cash-on-the-day is founder/finance only (the server enforces it; this hides the box).
+function canBookCashOnDay() { return !!(window.opsCan && window.opsCan('payments:act')); }
+function bookCashCents() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  if (typeof bt === 'number') return bt;
+  return lastEstimate && lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : null;
+}
+// One amber line when the existing booking was priced differently from what the builder shows.
+function bookCashWarn() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  var shown = lastEstimate && lastEstimate.total ? lastEstimate.total.cents : null;
+  if (!bookCashOnDay || typeof bt !== 'number' || shown == null || bt === shown) return '';
+  return 'Heads up: the customer’s existing booking is ' + fmtUsd(bt) + ', not the ' + fmtUsd(shown) + ' on this quote. The email will ask for ' + fmtUsd(bt) + '.';
+}
+function bookCashHelp() {
+  if (!bookCashOnDay) return 'Leave unticked if they’ll still pay by card. The booking stays “Awaiting payment”, as today.';
+  var first = val('bk-first') || 'The customer';
+  // The email states the BOOKING's total: the customer's own pay-page booking when there is one, else the quote's.
+  var bc = bookCashCents(), total = bc != null ? fmtUsd(bc) : 'the quote total';
+  return 'Confirms the booking now. ' + first + ' is emailed to pay ' + total + ' in US dollars, cash, to the Ceylon Hop team at the first pickup. You record the cash when it’s collected.';
+}
 function renderBookModal() {
   var st = state;
   var p = bookPrefill(st, bookPrefillBooking);
@@ -11790,6 +11842,11 @@ function renderBookModal() {
     field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(p.date) + '" />'),
     field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
     '</div>',
+    canBookCashOnDay() ? '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">'
+      + '<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="bk-cash-on-day"' + (bookCashOnDay ? ' checked' : '') + ' /> Customer pays cash on the day</label>'
+      + '<p id="bk-cash-help" style="margin:6px 0 0;font-size:13px;color:var(--muted)">' + esc(bookCashHelp()) + '</p>'
+      + '<p id="bk-cash-warn" style="margin:6px 0 0;font-size:13px;color:#7a4f0c"' + (bookCashWarn() ? '' : ' hidden') + '>' + esc(bookCashWarn()) + '</p>'
+      + '</div>' : '',
   ].join('');
 }
 
@@ -12374,7 +12431,7 @@ function render() {
       renderBookModal(),
       '      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">',
       '        <button class="ch-btn ch-btn-outline" data-action="cancelBook">Cancel</button>',
-      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">Confirm booking</button>',
+      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">' + (bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking') + '</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -12975,6 +13032,13 @@ function attachEventListeners() {
     // artifact 'change': the typing-flicker loop (docs/bug-ops-quote-typing-flicker.md).
     if (_renderSwapping) return;
     var el = e.target;
+    if (el.id === 'bk-cash-on-day') { // update the two nodes in place: a re-render would wipe the typed fields
+      bookCashOnDay = el.checked;
+      var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp();
+      var warn = document.getElementById('bk-cash-warn'); if (warn) { warn.textContent = bookCashWarn(); warn.hidden = !warn.textContent; }
+      var cb = document.querySelector('.ch-modal [data-action="confirmBook"]'); if (cb) cb.textContent = bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking';
+      return;
+    }
     if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
@@ -13087,6 +13151,7 @@ function attachEventListeners() {
 
   app.addEventListener('input', function(e) {
     var el = e.target;
+    if (el && el.id === 'bk-first' && bookCashOnDay) { var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp(); }
     if (!el || !el.matches || !el.matches('.ch-output-editor[data-output-tab]')) return;
     var tab = el.getAttribute('data-output-tab');
     if (tab === 'whatsapp' || tab === 'email') outputDrafts[tab] = el.value;

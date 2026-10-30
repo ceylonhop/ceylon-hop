@@ -50,6 +50,7 @@ const { dayGroup, inGroup } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
   const dayGroup=${extractConst('dayGroup')};
+  ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
   const inGroup=${extractConst('inGroup')};
   return { dayGroup, inGroup };
 `)(CLOSED, TODAY, TOMORROW);
@@ -116,6 +117,11 @@ describe('bookings queue filter chips', () => {
     expect(inGroup(overdue, 'all')).toBe(false);
     expect(inGroup(expired, 'all')).toBe(false);
     expect(inGroup(closed, 'all')).toBe(false);
+    // …except a completed pay-on-the-day trip whose cash is still unrecorded: the list shows it until
+    // the cash is recorded, so the badge (which counts what the list shows) can point at it.
+    const cashOwed = { stage: 'completed', date: LAST_WEEK, paymentArrangement: 'on_the_day', cashDue: 34200 };
+    expect(inGroup(cashOwed, 'all')).toBe(true);
+    expect(inGroup({ ...cashOwed, cashDue: 0 }, 'all')).toBe(false);
   });
 
   it('keeps every live row in "All open", dated or not', () => {
