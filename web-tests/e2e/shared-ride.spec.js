@@ -66,3 +66,23 @@ test('the shared booking UI advertises the schedule as Wed & Sat, not daily', as
   const s2sub = await page.locator('#s2-sub').innerText();
   expect(s2sub.toLowerCase()).not.toContain('daily');
 });
+
+// Customers could not tell where a shared taxi picks them up or sets them down: the card
+// named only the towns and said "our team confirms them after you book" (owner, 2026-10-29).
+// It now names both published points, each with a map link, and no longer defers them.
+test('the shared booking card names the pick-up and drop-off points, with map links', async ({ page }) => {
+  await gotoBooking(page, {
+    query: 'mode=shared&from=sigiriya&to=kandy&price=19.99&times=11:30&corridor=airport-cultural&days=3,6&pax=1',
+  });
+
+  const card = page.locator('.shared-route');
+  await expect(card).toContainText('Barista Cafe, Sigiriya');
+  await expect(card).toContainText('Kandy City Centre');
+  await expect(card).not.toContainText('confirms them with you after you book');
+
+  const maps = await card.locator('a.sr-map').evaluateAll((as) => as.map((a) => a.href));
+  expect(maps).toEqual([
+    'https://www.google.com/maps/search/?api=1&query=Barista%20Cafe%2C%20Sigiriya%2C%20Sri%20Lanka',
+    'https://www.google.com/maps/search/?api=1&query=Kandy%20City%20Centre%2C%20Sri%20Lanka',
+  ]);
+});
