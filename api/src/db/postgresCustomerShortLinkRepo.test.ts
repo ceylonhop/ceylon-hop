@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import { createDb, type Sql } from './client';
+import { createDb, type Db, type Sql } from './client';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresCustomerShortLinkRepo } from './postgresCustomerShortLinkRepo';
 import { CustomerShortLinkCollisionError } from './customerShortLinkRepo';
@@ -12,10 +12,12 @@ describe.skipIf(!TEST_URL)('PostgresCustomerShortLinkRepo (integration)', () => 
   let repo: PostgresCustomerShortLinkRepo;
   let quoteId: string;
   let sql: Sql;
+  let db: Db;
 
   beforeAll(async () => {
     const conn = createDb(TEST_URL as string);
     sql = conn.sql;
+    db = conn.db;
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     repo = new PostgresCustomerShortLinkRepo(conn.db);
     const quote = await new PostgresQuoteRepo(conn.db).save({
@@ -102,7 +104,7 @@ describe.skipIf(!TEST_URL)('PostgresCustomerShortLinkRepo (integration)', () => 
   });
 
   it('cascades aliases when a quote is hard-deleted', async () => {
-    const quote = await new PostgresQuoteRepo(createDb(TEST_URL as string).db).save({
+    const quote = await new PostgresQuoteRepo(db).save({
       channel: 'ops', product: 'private', vehicle: 'car', totalCents: 1000, currency: 'USD',
       rateCardVersion: 'short-link-cascade', request: {}, result: {},
     });
