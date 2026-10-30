@@ -82,6 +82,23 @@ describe('bookings queue views', () => {
     expect(inQueue(t({ stage: 'completed' }), s({ view: 'recent', group: 'pay' }))).toBe(true);
   });
 
+  // Owner 2026-10-29: CH-NQ66B (cancelled) could not be found by typing its ref, because the
+  // search only looked inside the "All open" chip. A typed search is a lookup — it spans every
+  // stage; clearing the box hands the queue back to the chip.
+  it('a search ignores the stage chip, so a closed booking can be found by its ref', () => {
+    const cancelled = t({ stage: 'cancelled' });
+    expect(inQueue(cancelled, s({ q: 'CH-NQ66B' }))).toBe(true);
+    expect(inQueue(t({ stage: 'paid', date: iso(-3) }), s({ q: 'x', group: 'pay' }))).toBe(true);
+    expect(inQueue(cancelled, s({ q: '  ' }))).toBe(false);
+    expect(inQueue(cancelled, s({ q: '' }))).toBe(false);
+  });
+
+  it('a search still honours the type and channel filters', () => {
+    const shared = t({ stage: 'cancelled', mode: 'shared' });
+    expect(inQueue(shared, s({ q: 'CH', type: 'private' }))).toBe(false);
+    expect(inQueue(shared, s({ q: 'CH', chan: 'whatsapp' }))).toBe(false);
+  });
+
   it('applies the type and channel filters in both views', () => {
     const chauffeur = t({ mode: 'trip', serviceType: 'chauffeur', chan: 'whatsapp' });
     for (const view of ['date', 'recent']) {
