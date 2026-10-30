@@ -152,9 +152,8 @@ function page(opts: {
  * these the card renders as a blank rectangle.
  */
 const FONT_FILES = [
-  'BodoniModa-ExtraBold.ttf',
-  'Poppins-Bold.ttf',
-  'Poppins-Regular.ttf',
+  'SourceSerif4-Bold.ttf',
+  'SourceSerif4-Regular.ttf',
 ].map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
 
 export function renderCard(model: Parameters<typeof cardSvg>[0]): Buffer {

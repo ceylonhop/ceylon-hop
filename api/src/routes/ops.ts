@@ -122,7 +122,7 @@ async function mirrorToBooking(
   try {
     const booking = await deps.bookings.get(bookingId);
     if (!booking || booking.status === target) return;
-    if (!canTransition(booking.status, target)) return;
+    if (!canTransition(booking.status, target, { paymentArrangement: booking.paymentArrangement })) return;
     await deps.bookings.setStatus(bookingId, target, undefined, {
       source: 'ops',
       actorType: 'staff',

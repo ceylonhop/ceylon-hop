@@ -51,6 +51,7 @@ import {
   type PromoCode,
 } from '../domain/promoCode';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
+import type { PaymentArrangement } from '../domain/paymentMethod';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 import { track } from '../observability/track';
@@ -77,7 +78,9 @@ export async function applyBookingStatusTransition(
   const [row] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
   if (!row) throw new BookingNotFoundError(input.id);
   const from = row.status as BookingStatus;
-  assertTransition(from, input.to);
+  // The arrangement is read in the same row as the status; it is set only while awaiting money and
+  // never cleared, so it cannot change under the guarded UPDATE below.
+  assertTransition(from, input.to, { paymentArrangement: row.paymentArrangement });
   if (input.transitionTrackingEnabled && !input.context) {
     throw new BookingTransitionContextRequiredError();
   }
@@ -252,6 +255,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       : null,
     termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
     customerNotes: row.customerNotes,
+    paymentArrangement: row.paymentArrangement as PaymentArrangement | null,
     // Only bookings made with a code carry these, so every other booking's shape is unchanged.
     ...(row.promoCodeId
       ? {
@@ -705,6 +709,17 @@ export class PostgresBookingRepo implements BookingRepo {
       .update(bookings)
       .set({ amountDueNow: sql`${bookings.total}` })
       .where(and(eq(bookings.id, id), eq(bookings.status, 'payment_pending')));
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
+  }
+
+  async setPaymentArrangement(id: string, arrangement: PaymentArrangement): Promise<Booking> {
+    // The status guard is part of the UPDATE, not a read-then-write (see refreshPayerDetails).
+    await this.db
+      .update(bookings)
+      .set({ paymentArrangement: arrangement })
+      .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])));
     const fresh = await this.get(id);
     if (!fresh) throw new BookingNotFoundError(id);
     return fresh;
