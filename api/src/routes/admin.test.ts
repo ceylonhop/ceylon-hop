@@ -970,14 +970,24 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
   });
 
-  it('still refuses a plain confirmed booking (no arrangement): no second payment', async () => {
+  it('still refuses a plain confirmed booking (no arrangement, nothing paid)', async () => {
     const { app, bookings, payments } = makeCashApp();
     const b = await awaitingPayment(app, bookings);
-    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200); // → paid
-    await bookings.setStatus(b.id, 'confirmed');
+    await drive(bookings, b.id, 'paid', 'confirmed'); // status graph only: no payment row exists
     const res = await markPaid(app, b.id, { method: 'cash' });
-    // The earlier payment short-circuits the idempotent path; either way nothing new is recorded.
-    expect([200, 400, 409]).toContain(res.status);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('does not answer 200 for a cancelled pay-on-the-day booking that had cash recorded', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    await bookings.setStatus(b.id, 'cancelled');
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
     expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
   });
 

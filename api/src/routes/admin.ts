@@ -534,21 +534,22 @@ export function adminRoutes(deps: {
     const idempotencyKey = `manual-paid:${booking.id}`;
     const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
     // The money of an earlier attempt is already in the ledger; only the booking may still be
-    // behind. Short-circuit ONLY once the booking has actually reached paid — the second half of
+    // behind. Short-circuit ONLY once the booking has actually reached paid (or, for a pay-on-the-day booking, is
+    // already confirmed or later, where its status never moves) — the second half of
     // the same window as the pending case above: if setStatus threw something other than an
     // IllegalTransitionError (a pool timeout, a connection blip), the payment is succeeded while
     // the booking sits in payment_pending, and nothing else can move it (no webhook is coming for
     // cash, and confirm/cancel/no-show do not start from payment_pending). Answering 200 with the
     // unchanged booking would strand it for good, repairable only by hand-written SQL in prod.
     const recorded = claimed?.status === 'succeeded';
-    if (recorded && booking.status !== 'payment_pending') return c.json(booking, 200);
-
     // Pay on the day: status is the trip, money is the ledger. A booking with a payment arrangement
     // is already confirmed (or later) with nothing paid, so ops may record the cash the team
     // collected without moving its status. A plain confirmed booking is still refused.
     const awaitingPayment = booking.status === 'payment_pending';
     const arrangedLater = !!booking.paymentArrangement
       && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'completed');
+    if (recorded && (booking.status === 'paid' || arrangedLater)) return c.json(booking, 200);
+
     if (!awaitingPayment && !arrangedLater) {
       return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
     }
