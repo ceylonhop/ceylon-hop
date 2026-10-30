@@ -5386,6 +5386,7 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 // from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var bookPrefillBooking = null; // the quote's converted booking (the customer's pay-page entry), fetched when the modal opens
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
@@ -11722,18 +11723,49 @@ function renderReviewBanner() {
   return '';
 }
 
+// What the modal opens with. The customer's own pay-page entry (the converted booking) wins over
+// the quote's single contact box; a blank on either side never overwrites a value (2026-10-29).
+function bookPrefill(st, booking) {
+  var c = (booking && booking.input && booking.input.customer) || {};
+  var contact = (st.contact || '').trim();
+  function pick(a, b) { return (a && String(a).trim()) || b || ''; }
+  return {
+    first: pick(c.firstName, st.firstName),
+    last: pick(c.lastName, st.lastName),
+    email: pick(c.email, isValidEmail(contact) ? contact : ''),
+    whatsapp: pick(c.whatsapp, isValidPhone(contact) ? contact : ''),
+    country: pick(c.country, ''),
+    date: (st.legs[0] && st.legs[0].date) || '',
+  };
+}
+// Opens "Mark booked". A quote the customer already tapped the pay link on has a converted
+// booking holding what they typed there — fetch it so the modal starts from that, not blanks.
+async function openBookModal() {
+  bookPrefillBooking = null;
+  if (state.convertedBookingId) {
+    var seq = _openSeq;
+    var body = null;
+    try {
+      var r = await api('/admin/ops/bookings/' + encodeURIComponent(state.convertedBookingId));
+      body = r.ok ? await jsonOrNull(r) : null;
+    } catch (e) { body = null; } // pre-fill is a convenience; never block the modal
+    if (seq !== _openSeq) return; // a different quote is open now — never open on it with this customer
+    bookPrefillBooking = body && body.booking ? body.booking : null;
+  }
+  bookOpen = true;
+  render();
+}
 // "Mark booked" modal body: collects the contact/date/vehicle details the quote itself
-// doesn't carry (spec 2026-07-18). Pre-fills from state where it can — name, pax, bags,
-// the first leg's date — and splits the single f-contact field back into email/whatsapp
-// where it recognizably is one or the other; email/whatsapp/country/date/time have no
-// safe default, so the operator must fill them (guarded client-side in bookQuote()).
+// doesn't carry (spec 2026-07-18). Name, email, WhatsApp and country come from the customer's
+// pay-page booking when the quote has one (bookPrefill), else from the quote — its single
+// f-contact field split back into email/whatsapp where it recognizably is one or the other;
+// pax, bags and the first leg's date come from the quote. Time has no safe default, so the
+// operator always types it (required fields guarded client-side in bookQuote()).
 function renderBookModal() {
   var st = state;
-  var contact = (st.contact || '').trim();
-  var prefEmail = isValidEmail(contact) ? contact : '';
-  var prefWhatsapp = isValidPhone(contact) ? contact : '';
+  var p = bookPrefill(st, bookPrefillBooking);
+  var c = (bookPrefillBooking && bookPrefillBooking.input && bookPrefillBooking.input.customer) || null;
   var prefVehicle = (st.vehicleType === 'car') ? 'car' : 'van'; // booking schema only knows car/van
-  var prefDate = (st.legs[0] && st.legs[0].date) || '';
   function field(label, req, inputHtml) {
     return '<div class="ch-field">'
       + '<label class="ch-field-label">' + esc(label) + (req ? ' <em class="req">*</em>' : '') + '</label>'
@@ -11741,19 +11773,20 @@ function renderBookModal() {
       + '</div>';
   }
   return [
+    c ? '<p class="ch-book-prefill-hint" style="margin:0 0 12px;font-size:13px;color:var(--muted)">Filled in from what ' + esc((c.firstName && String(c.firstName).trim()) || 'the customer') + ' entered on the pay page. Check before confirming.</p>' : '',
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 14px">',
-    field('First name', true, '<input class="ch-input" id="bk-first" type="text" value="' + esc(st.firstName) + '" />'),
-    field('Last name', true, '<input class="ch-input" id="bk-last" type="text" value="' + esc(st.lastName) + '" />'),
-    field('Email', true, '<input class="ch-input" id="bk-email" type="email" value="' + esc(prefEmail) + '" />'),
-    field('WhatsApp', true, '<input class="ch-input" id="bk-whatsapp" type="tel" placeholder="+94 77 123 4567" value="' + esc(prefWhatsapp) + '" />'),
-    field('Country', true, '<input class="ch-input" id="bk-country" type="text" placeholder="e.g. LK" value="" />'),
+    field('First name', true, '<input class="ch-input" id="bk-first" type="text" value="' + esc(p.first) + '" />'),
+    field('Last name', true, '<input class="ch-input" id="bk-last" type="text" value="' + esc(p.last) + '" />'),
+    field('Email', true, '<input class="ch-input" id="bk-email" type="email" value="' + esc(p.email) + '" />'),
+    field('WhatsApp', true, '<input class="ch-input" id="bk-whatsapp" type="tel" placeholder="+94 77 123 4567" value="' + esc(p.whatsapp) + '" />'),
+    field('Country', true, '<input class="ch-input" id="bk-country" type="text" placeholder="e.g. LK" value="' + esc(p.country) + '" />'),
     field('Vehicle', false, '<select class="ch-input" id="bk-vehicle">'
       + '<option value="car"' + (prefVehicle === 'car' ? ' selected' : '') + '>Car</option>'
       + '<option value="van"' + (prefVehicle === 'van' ? ' selected' : '') + '>Van</option>'
       + '</select>'),
     field('Pax', false, '<input class="ch-input" id="bk-pax" type="number" min="1" value="' + esc(st.passengerCount) + '" />'),
     field('Bags', false, '<input class="ch-input" id="bk-bags" type="number" min="0" value="' + esc(st.luggageCount) + '" />'),
-    field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(prefDate) + '" />'),
+    field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(p.date) + '" />'),
     field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
     '</div>',
   ].join('');
@@ -12850,8 +12883,7 @@ function attachEventListeners() {
     } else if (action === 'confirmPlacePick') {
       pickConfirmPlace(parseInt(el.getAttribute('data-idx'), 10));
     } else if (action === 'markWon') {
-      bookOpen = true;
-      render();
+      openBookModal();
     } else if (action === 'markLost') {
       runAction(action, function(){ return markOutcome('lost'); });
     } else if (action === 'confirmBook') {
