@@ -174,6 +174,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
       id: b.id, reference: b.reference, status: b.status, total: b.total, createdAt: new Date(b.createdAt),
       cancelledAt: b.cancelledAt ? new Date(b.cancelledAt) : null,
       cancelledBy: b.cancelledBy ?? null, cancellationReason: b.cancellationReason ?? null,
+      paymentArrangement: b.paymentArrangement ?? null,
     },
     payments: paid ?? [],
     notices,
