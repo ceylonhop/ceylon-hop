@@ -20,12 +20,14 @@ function productionTypescript(dir: string): string[] {
 
 // Booking statuses that, listed beside 'paid', mark a list as a booking-status set. Payment-row
 // ('succeeded', 'failed'), ride-board and quote statuses are deliberately absent.
-const OTHER_BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'payment_pending', 'no_show', 'refunded'];
+const OTHER_BOOKING_STATUSES = ['confirmed', 'in_progress', 'completed', 'payment_pending', 'no_show', 'refunded', 'cancelled'];
 
 // (a) a status compared with 'paid', either side: `status === 'paid'`, `b.toStatus !== 'paid'`,
 //     `(x.status ?? y.status) === 'paid'`, `'paid' === booking.status`.
 const STATUS_EQ_PAID = /[sS]tatus\b\)?\s*[!=]==?\s*'paid'/;
 const PAID_EQ_STATUS = /'paid'\s*[!=]==?\s*[\w.?]*[sS]tatus\b/;
+// drizzle: `eq(bookings.status, 'paid')`, `ne(t.toStatus, 'paid')`.
+const DRIZZLE_EQ_PAID = /\b(?:eq|ne)\(\s*[\w.]*[sS]tatus\s*,\s*'paid'\s*\)/;
 // (b) an array literal (incl. `new Set([...])`, `z.enum([...])`) or a parenthesised SQL `in (...)`
 //     list of quoted words, possibly spanning lines. Array bodies exclude parentheses so a schema
 //     callback `(t) => [ check(sql`... in (...)`) ]` yields its SQL lists, not one giant array.
@@ -44,7 +46,7 @@ function scan(): Hit[] {
     const lines = source.split('\n');
     const hitLines = new Set<number>();
     lines.forEach((text, i) => {
-      if (STATUS_EQ_PAID.test(text) || PAID_EQ_STATUS.test(text)) hitLines.add(i + 1);
+      if (STATUS_EQ_PAID.test(text) || PAID_EQ_STATUS.test(text) || DRIZZLE_EQ_PAID.test(text)) hitLines.add(i + 1);
     });
     for (const m of source.matchAll(LIST_LITERAL)) {
       const body = m[1] ?? m[2] ?? '';
@@ -62,6 +64,7 @@ type Allowed = { file: string; match: string; why: string };
 const ALLOWLIST: Allowed[] = [
   // The state machine and the status CHECK lists: they enumerate statuses, they answer nothing.
   { file: 'domain/status.ts', match: 'export const BOOKING_STATUSES = [', why: 'The state machine itself: every booking status.' },
+  { file: 'domain/status.ts', match: "payment_pending: ['paid', 'awaiting_details', 'cancelled']", why: 'The state machine itself: legal transitions out of payment_pending.' },
   { file: 'domain/status.ts', match: "awaiting_details: ['payment_pending', 'paid', 'cancelled']", why: 'The state machine itself: legal transitions out of awaiting_details.' },
   { file: 'db/schema.ts', match: "${t.status} in ('draft'", why: 'bookings.status CHECK constraint: the full status list, not a money question.' },
   { file: 'db/schema.ts', match: "${t.fromStatus} in ('draft'", why: 'booking_status_events.from_status CHECK constraint: the full status list.' },
@@ -97,8 +100,9 @@ const ALLOWLIST: Allowed[] = [
   { file: 'routes/opsExperiences.ts', match: "current.status) === 'paid' && !ref", why: 'Experience-interest status: paid requires a payment ref; not a booking status.' },
   { file: 'routes/opsExperiences.ts', match: "if (lead.status !== 'paid')", why: 'Experience-interest status; not a booking status.' },
 
+  { file: 'domain/promoCode.ts', match: 'export const PROMO_PAID_STATUSES = [', why: 'Promo use is committed once the trip goes ahead at the promo price; a confirmed pay-on-the-day trip commits the use whether or not cash has arrived (controller ruling 2026-10-29).' },
+
   // Money answered from booking status. Out of scope for this guard's task: surfaced, not fixed.
-  { file: 'domain/promoCode.ts', match: 'export const PROMO_PAID_STATUSES = [', why: "KNOWN GAP: a promo use counts as 'paid' from status (confirmed/in_progress/completed/no_show/refunded) with no succeeded payment, so a pay-on-the-day booking (incl. a no-show that never paid) consumes a use as paid; SQL twin in postgresBookingRepo.countUses." },
   { file: 'services/watchdog.ts', match: 'const PAID_OR_LATER = [', why: 'KNOWN GAP: "money in once it reaches any of these" — a newer confirmed pay-on-the-day booking with no payment makes the stuck-pending alert say "the customer paid on <ref>" and suppresses the recovery email.' },
 ];
 
