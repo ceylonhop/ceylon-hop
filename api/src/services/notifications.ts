@@ -30,9 +30,11 @@ const PAPER = '#F0EEE5'; // Marshmallow — outer page tone (--cream)
 const CARD = '#fffdf8'; // letter surface (--paper; was one digit off at #fffefb)
 const HAIR = '#e7e3d6'; // hairline dividers (--line; was a near-miss #efe6d6)
 const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
-const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
-const SANS = "'Poppins', Helvetica, Arial, sans-serif";
-const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
+// One family everywhere (owner, 2026-10-29). Clients that block web fonts (Gmail, Outlook)
+// get Georgia, the nearest serif they all ship.
+const SERIF = "'Source Serif 4', Georgia, 'Times New Roman', serif";
+const SANS = SERIF;
+const MONO = SERIF;
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
 
@@ -542,7 +544,7 @@ function footer(): string {
 function page(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..800;1,8..60,400..800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">

@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 // Same bundled faces the ride card uses — Resvg runs with loadSystemFonts:false.
-const FONT_FILES = ['BodoniModa-ExtraBold.ttf', 'Poppins-Bold.ttf', 'Poppins-Regular.ttf']
+const FONT_FILES = ['SourceSerif4-Bold.ttf', 'SourceSerif4-Regular.ttf']
   .map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
 
 export interface CustomerPagesDeps {

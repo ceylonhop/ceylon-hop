@@ -34,7 +34,7 @@
 /* ticket */
 .ticket{background:var(--paper);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);overflow:hidden}
 .t-main{padding:16px 18px 14px}
-.t-ref{font-family:var(--mono,ui-monospace,monospace);font-size:.68rem;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
+.t-ref{font-family:var(--mono);font-size:.68rem;color:var(--ink-faint);letter-spacing:.08em;text-transform:uppercase}
 .t-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:6px}
 /* Booking state in the customer's language. Never the raw enum: "payment_pending" is a
    database value, not something a traveller should be asked to interpret. */
@@ -87,7 +87,7 @@
 .st-badge.warn{background:#fbf0d8;color:#c7841f}
 .st-title{font-family:var(--display);font-weight:700;font-size:1.55rem;line-height:1.15;margin:0 0 4px}
 .st-sub{font-size:.85rem;color:var(--ink-soft)}
-.refchip{display:inline-block;font-family:var(--mono,ui-monospace,monospace);font-weight:600;font-size:.9rem;color:var(--accent-deep);background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:12px 0}
+.refchip{display:inline-block;font-family:var(--mono);font-weight:600;font-size:.9rem;color:var(--accent-deep);background:#e6f4f2;border:1px solid #c9e8e4;border-radius:999px;padding:7px 18px;margin:12px 0}
 .next{margin-top:14px;background:var(--cream);border-radius:11px;padding:11px 13px;text-align:left}
 .next b{display:block;font-size:.62rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
 .next ul{margin:0;padding-left:17px;font-size:.8rem;line-height:1.75;color:var(--ink-soft)}
@@ -139,4 +139,4 @@
    receipt disagreed with the booking flow that produced it. Raised to the floor rather
    than exempted from it: this is the document the customer pays from and keeps. */
 .hop-t{font-family:var(--display);font-weight:700;font-size:1rem;line-height:1.25}
-.hop-d{font-family:var(--mono,ui-monospace,monospace);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}
+.hop-d{font-family:var(--mono);font-size:.66rem;color:var(--ink-faint);margin:1px 0 10px}
