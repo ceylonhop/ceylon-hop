@@ -25,9 +25,10 @@ beforeAll(async () => {
 });
 
 const TODAY = '2026-10-08';
-function reasonFn() {
-  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'reason')}`;
-  return new Function('TODAY', `${src}; return reason;`)(TODAY) as (t: unknown) => string;
+// `caps` is the signed-in user's capabilities (state.caps in the shell); founder/finance by default.
+function reasonFn(caps: string[] = ['payments:act']) {
+  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'money')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
+  return new Function('TODAY', 'state', `${src}; return reason;`)(TODAY, { caps }) as (t: unknown) => string;
 }
 
 describe('reason() — a balance that is still open on the day of travel', () => {
@@ -46,6 +47,43 @@ describe('reason() — a balance that is still open on the day of travel', () =>
   it('stays quiet when nothing is owed, or the booking is closed', () => {
     expect(reasonFn()({ ...live, balance: 0, date: TODAY })).toBe('Vehicle not confirmed yet');
     expect(reasonFn()({ ...live, stage: 'cancelled', date: TODAY })).toBe('');
+  });
+});
+
+// Pay on the day (owner 2026-10-29/30): confirmed with nothing paid; the customer pays USD cash to
+// the Ceylon Hop team at the first pickup. The row says so — urgently only on the travel day.
+describe('reason() — a pay-on-the-day booking with cash still to collect', () => {
+  const cash = { source: 'booking', stage: 'paid', paid: false, paymentArrangement: 'on_the_day', cashDue: 34200, balance: 34200, amount: 34200, currency: 'USD', updated: false };
+
+  it('says "Collect $342 cash · travels today" on the travel day, above the vehicle nag and the balance line', () => {
+    expect(reasonFn()({ ...cash, date: TODAY })).toBe('Collect $342 cash · travels today');
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', date: TODAY })).toBe('Collect $342 cash · travels today');
+  });
+  it('keeps "Customer not contacted yet" on another day — contacting the customer comes before the cash', () => {
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', updated: false, date: '2026-10-09' })).toBe('Customer not contacted yet');
+  });
+  it('says "Cash on the day · $342" on another day once the vehicle is confirmed', () => {
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', updated: true, date: '2026-10-09' })).toBe('Cash on the day · $342');
+  });
+  it('lets "Vehicle not confirmed yet" win on another day — the car comes first', () => {
+    expect(reasonFn()({ ...cash, date: '2026-10-09' })).toBe('Vehicle not confirmed yet');
+  });
+  // A completed trip whose cash was never recorded is exactly when ops forget it.
+  it('says "Record $342 cash · trip done" on a completed booking with cash still unrecorded', () => {
+    expect(reasonFn()({ ...cash, stage: 'completed', date: '2026-10-07' })).toBe('Record $342 cash · trip done');
+  });
+  it('tells a user who cannot record money that the cash is not recorded yet', () => {
+    expect(reasonFn(['bookings:operate'])({ ...cash, stage: 'completed', date: '2026-10-07' })).toBe('Cash $342 not recorded yet · trip done');
+  });
+  it('stays quiet on a completed booking once the cash is recorded, and on an unarranged one', () => {
+    expect(reasonFn()({ ...cash, stage: 'completed', paid: true, cashDue: 0, balance: 0, date: '2026-10-07' })).toBe('');
+    expect(reasonFn()({ ...cash, stage: 'completed', paymentArrangement: null, cashDue: 0, date: '2026-10-07' })).toBe('');
+  });
+  it('leaves an arranged booking still awaiting payment on the payment nag', () => {
+    expect(reasonFn()({ ...cash, stage: 'awaiting_payment', date: TODAY })).toBe('Payment not received — follow up');
+  });
+  it('is silent about cash once it is recorded', () => {
+    expect(reasonFn()({ ...cash, paid: true, cashDue: 0, balance: 0, stage: 'vehicle_confirmed', updated: true, date: TODAY })).toBe('');
   });
 });
 

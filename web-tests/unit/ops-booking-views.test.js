@@ -33,6 +33,7 @@ const TOMORROW = iso(1);
 const { productType, byRecent, inQueue } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
+  ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
   const inGroup=${extractConst('inGroup')};
   const productType=${extractConst('productType')};
   const byRecent=${extractConst('byRecent')};

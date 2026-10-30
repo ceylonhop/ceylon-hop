@@ -37,11 +37,15 @@ const SANS = SERIF;
 const MONO = SERIF;
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
+// Shared by the paid confirmation's and the pay-on-the-day email's "What happens next" box.
+const WHAT_HAPPENS_NEXT =
+  'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.';
 
 const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
   confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
   details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
   booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  pay_on_day_confirmed: { templateKey: 'booking-pay-on-day', source: 'quote_conversion', actorType: 'staff' },
   cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
   refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
   no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
@@ -632,7 +636,7 @@ function renderHtml(
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
         'What happens next',
-        'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
+        WHAT_HAPPENS_NEXT,
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -758,8 +762,16 @@ export async function sendTripReminder(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
+  // Pay on the day only: what the ledger still says is owed. Undefined = ledger not consulted.
+  opts: { cashDueCents?: number } = {},
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
+  // Pay on the day: never say "Paid" until the cash is on the ledger (status = trip, money = ledger).
+  const unsettled = !!booking.paymentArrangement && opts.cashDueCents !== 0;
+  const cashLine =
+    unsettled && opts.cashDueCents
+      ? `Have ${money(opts.cashDueCents, booking.currency)} in US dollars cash ready. You’ll pay the Ceylon Hop team at your first pickup.`
+      : null;
   const html = page(
     brandHeader() +
       introBlock(
@@ -768,7 +780,10 @@ export async function sendTripReminder(
         `Your trip is almost here, ${first}`,
         'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
       ) +
-      ticketCard(booking, BADGE_PAID) +
+      ticketCard(booking, unsettled ? BADGE_CONFIRMED : BADGE_PAID) +
+      (cashLine
+        ? `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>`
+        : '') +
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Before you travel',
@@ -779,6 +794,7 @@ export async function sendTripReminder(
   const text = textShell('your trip is coming up', 'A quick reminder about your upcoming journey:', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
+    ...(cashLine ? [cashLine] : []),
     'Your driver and vehicle details will be sent on WhatsApp before pickup.',
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
@@ -1060,8 +1076,58 @@ export async function sendBookingConfirmed(
   });
 }
 
+// ── Pay on the day (ops Mark booked: confirmed, customer pays USD cash at first pickup) ──
+export async function sendPayOnDayConfirmed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const amount = money(booking.total, booking.currency);
+  const cashLine = `Please pay ${amount} in US dollars, cash, to the Ceylon Hop team at your first pickup.`;
+  const next = WHAT_HAPPENS_NEXT;
+  const html = page(
+    brandHeader() +
+      introBlock(
+        '✓ Confirmed',
+        TEAL_DEEP,
+        `You’re confirmed, ${first}!`,
+        'Your trip is booked. You’ll pay in cash on the day, so there’s nothing to pay online.',
+      ) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      totalBlock('To pay on the day', amount) +
+      `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>` +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('What happens next', next, cancellationPolicy(booking)) +
+      footer(),
+  );
+  const text = textShell('your booking is confirmed', 'Your trip is booked — you’ll pay in cash on the day.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `To pay on the day: ${amount}`,
+    cashLine,
+    '',
+    `What happens next: ${next}`,
+    cancellationPolicy(booking),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `You’re confirmed — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'pay_on_day_confirmed'),
+  });
+}
+
 // ── No-show (confirmed/in_progress → no_show; fare forfeited) ──────────────
-export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): Promise<void> {
+// Pay on the day with nothing on the ledger: nothing was collected, so "the fare isn't refundable"
+// would be false — say the booking is closed instead. `paidCents` comes from the payments ledger.
+export async function sendNoShowNotice(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { paidCents?: number } = {},
+): Promise<void> {
+  const nothingCharged = Boolean(booking.paymentArrangement) && opts.paidCents === 0;
   const first = esc(booking.input.customer.firstName);
   const html = page(
     brandHeader() +
@@ -1072,16 +1138,23 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
         'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
       ) +
       ticketCard(booking, BADGE_NO_SHOW) +
-      infoBox(
-        'About your fare',
-        'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
-      ) +
+      (nothingCharged
+        ? infoBox(
+            'About your booking',
+            'We’ve marked this booking as a no-show and closed it. Nothing was charged. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )
+        : infoBox(
+            'About your fare',
+            'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )) +
       footer(),
   );
   const text = textShell('missed pickup', 'Your driver was at the pickup, but we couldn’t reach you.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
+    nothingCharged
+      ? 'This booking is marked as a no-show and closed. Nothing was charged. Message us to arrange a new booking.'
+      : 'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
   ]);
   await email.send({
     to: booking.input.customer.email,

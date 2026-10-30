@@ -738,6 +738,10 @@ export function createApp(deps: AppDeps = {}) {
     // Same repo the /s resolver reads, so a link minted here is resolvable immediately.
     shortLinks,
     shortLinksEnabled: deps.customerShortLinksEnabled ?? config.CUSTOMER_SHORT_LINKS_ENABLED,
+    // Pay on the day's confirmation email: the shared send-once log, and the same manage-link
+    // origin the paid confirmation email uses (webhooks) — emails keep APP_BASE_URL, not the pay domain.
+    notificationLog,
+    manageBaseUrl: deps.bookingBaseUrl ?? config.APP_BASE_URL,
   }));
   // T-E: cancel/refund require payments:act (founder or finance, human session only —
   // system/x-admin-key lacks payments:act per the matrix, spec D6). Cron/watchdog stay

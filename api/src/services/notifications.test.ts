@@ -274,6 +274,36 @@ describe('sendTripReminder', () => {
   });
 });
 
+describe('sendTripReminder — pay on the day', () => {
+  const arranged = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  const send = async (b: Booking, opts?: { cashDueCents?: number }) => {
+    const email = new FakeEmailAdapter();
+    await sendTripReminder(b, email, {}, opts);
+    return email.sent[0];
+  };
+  it('owing cash: Confirmed badge, not Paid, and a cash-ready line in html and text', async () => {
+    const m = await send(arranged, { cashDueCents: 34200 });
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+    }
+  });
+  it('ledger unknown: Confirmed badge, no cash line, never Paid', async () => {
+    const m = await send(arranged);
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+    expect(m.text).not.toContain('US dollars');
+  });
+  it('cash already recorded: the usual Paid reminder, no cash line', async () => {
+    const m = await send(arranged, { cashDueCents: 0 });
+    expect(m.html).toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+  });
+});
+
 describe('sendReviewRequest', () => {
   it('thanks the customer and asks for a review, with reference and a review link — once', async () => {
     const email = new FakeEmailAdapter();
@@ -356,6 +386,7 @@ describe('sendRefundConfirmation', () => {
 import {
   sendPaymentIncomplete,
   sendBookingConfirmed,
+  sendPayOnDayConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
   sendScheduleSet,
@@ -420,6 +451,28 @@ describe('sendBookingConfirmed — driver arranged', () => {
   });
 });
 
+describe('sendPayOnDayConfirmed — pay in cash on the day', () => {
+  const booking = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  it('confirms the trip and says to pay cash USD to the team at the first pickup', async () => {
+    const email = new FakeEmailAdapter();
+    const out = await sendPayOnDayConfirmed(booking, email, { manage: 'https://ceylonhop.com/manage.html?t=xyz' });
+    expect(out).toEqual(expect.objectContaining({ delivered: true }));
+    const m = email.sent[0];
+    expect(m.subject).toBe('You’re confirmed — CH-ABC12');
+    expect(m.tracking?.kind).toBe('pay_on_day_confirmed');
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).toContain('manage.html?t=xyz');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['To pay on the day', '$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      for (const s of ['Total paid', 'Deposit paid', 'Balance due']) expect(body).not.toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+      expect(body).toContain('to the Ceylon Hop team');
+      expect(body).toContain('Your driver and vehicle details will be sent on WhatsApp before pickup.');
+    }
+    expect(m.html).not.toContain('>Paid<');
+  });
+});
+
 describe('sendNoShowNotice — fare forfeited', () => {
   it('states the fare is not refundable and offers rebooking', async () => {
     const email = new FakeEmailAdapter();
@@ -429,6 +482,35 @@ describe('sendNoShowNotice — fare forfeited', () => {
     expect(m.html.toLowerCase()).toContain("isn’t refundable");
     expect((m.text ?? "").toLowerCase()).toContain("isn’t refundable");
     expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendNoShowNotice — pay on the day', () => {
+  const arranged = { ...single, status: 'no_show', paymentArrangement: 'on_the_day' } as typeof single;
+
+  it('says nothing was charged when a pay-on-the-day booking has no money on the ledger', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 0 });
+    const m = email.sent[0];
+    expect(m.html).toContain('Nothing was charged');
+    expect(m.text).toContain('Nothing was charged');
+    expect(m.html.toLowerCase()).not.toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).not.toContain('isn’t refundable');
+  });
+
+  it('keeps the forfeited-fare wording when the arranged booking did pay something', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 34200 });
+    const m = email.sent[0];
+    expect(m.html.toLowerCase()).toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).toContain('isn’t refundable');
+    expect(m.html).not.toContain('Nothing was charged');
+  });
+
+  it('keeps the forfeited-fare wording without an arrangement, even at 0 paid', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice({ ...single, status: 'no_show' }, email, { paidCents: 0 });
+    expect(email.sent[0].html.toLowerCase()).toContain('isn’t refundable');
   });
 });
 
