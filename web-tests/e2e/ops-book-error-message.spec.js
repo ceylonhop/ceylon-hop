@@ -37,7 +37,7 @@ const SENT_QUOTE = {
 };
 
 // Open `quote` (sent) in the builder, with /book answering `answer` and its POST bodies kept in `posts`.
-async function openSentQuote(page, quote, answer, posts) {
+async function openSentQuote(page, quote, answer, posts, caps) {
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
   });
@@ -56,7 +56,7 @@ async function openSentQuote(page, quote, answer, posts) {
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([])));
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({
     email: 'founder@e2e.test', role: 'founder',
-    caps: ['quote:manage', 'quote:approve', 'margin:view', 'bookings:read', 'bookings:operate', 'payments:act'],
+    caps: caps || ['quote:manage', 'quote:approve', 'margin:view', 'bookings:read', 'bookings:operate', 'payments:act'],
   })));
   await page.goto(OPS_FILE + '#quotes');
   await page.locator('#view .qrow[data-qopen="q1"]').click();
@@ -140,4 +140,84 @@ test('the pay-page booking fetch fails: the modal still opens, from the quote al
   await expect(page.locator('#bk-last')).toHaveValue('Silva');
   await expect(page.locator('#bk-country')).toHaveValue('');
   await expect(page.locator('.ch-book-prefill-hint')).toHaveCount(0);
+});
+
+// Cash on the day (owner decision 2026-10-30): founder/finance (payments:act) may confirm a booking
+// with no payment; the customer is emailed to pay USD cash at the first pickup.
+async function openBookModalAs(page, caps, answer = json({ id: 'b9', reference: 'CH-CASH1' }, 200)) {
+  const posts = [];
+  await openSentQuote(page, SENT_QUOTE, answer, posts, caps);
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await page.locator('#bk-first').fill('Maya');
+  await page.locator('#bk-last').fill('Silva');
+  await page.locator('#bk-email').fill('maya@example.com');
+  await page.locator('#bk-whatsapp').fill('+44 7700 900000');
+  await page.locator('#bk-country').fill('GB');
+  await page.locator('#bk-date').fill(futureIsoDate(30));
+  await page.locator('#bk-time').fill('09:30');
+  return posts;
+}
+
+test('cash on the day: a founder ticks it, the copy follows, typed values survive, the body carries it', async ({ page }) => {
+  const posts = await openBookModalAs(page, null);
+  const box = page.locator('#bk-cash-on-day');
+  await expect(box).not.toBeChecked();
+  await expect(page.locator('#bk-cash-help')).toHaveText('Leave unticked if they’ll still pay by card. The booking stays “Awaiting payment”, as today.');
+  await expect(page.locator('[data-action="confirmBook"]')).toHaveText('Confirm booking');
+  await page.locator('#bk-first').fill('Maya-Lee');
+  await box.check();
+  await expect(page.locator('#bk-first')).toHaveValue('Maya-Lee');
+  await expect(page.locator('#bk-time')).toHaveValue('09:30');
+  await expect(page.locator('[data-action="confirmBook"]')).toHaveText('Confirm: cash on the day');
+  await expect(page.locator('#bk-cash-help')).toHaveText('Confirms the booking now. Maya-Lee is emailed to pay $149.00 in US dollars, cash, to the Ceylon Hop team at the first pickup. You record the cash when it’s collected.');
+  await page.locator('[data-action="confirmBook"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(JSON.parse(posts[0]).paymentArrangement).toBe('on_the_day');
+  await expect(toastMsg(page)).toHaveText('Booked CH-CASH1: confirmed, cash on the day. A confirmation email is on its way to Maya-Lee.');
+});
+
+test('cash on the day: left unticked, the body has no paymentArrangement and the toast is the usual one', async ({ page }) => {
+  const posts = await openBookModalAs(page, null);
+  await page.locator('[data-action="confirmBook"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(JSON.parse(posts[0])).not.toHaveProperty('paymentArrangement');
+  await expect(toastMsg(page)).toHaveText('Booked · CH-CASH1');
+});
+
+test('cash on the day: an ops-role session (no payments:act) does not see the checkbox', async ({ page }) => {
+  await openBookModalAs(page, ['quote:manage', 'bookings:read', 'bookings:operate']);
+  await expect(page.locator('#bk-first')).toBeVisible();
+  await expect(page.locator('#bk-cash-on-day')).toHaveCount(0);
+});
+
+test('cash on the day: the server refusing a non-founder shows its message', async ({ page }) => {
+  const msg = 'Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.';
+  const posts = await openBookModalAs(page, null, json({ error: 'forbidden', reason: 'pay_on_day_founder_only', message: msg }, 403));
+  await page.locator('#bk-cash-on-day').check();
+  await page.locator('[data-action="confirmBook"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  await expect(toast(page)).toHaveClass(/bad/);
+  await expect(toastMsg(page)).toHaveText('Could not book — ' + msg);
+});
+
+const bookingWithTotal = (total) => (r) => r.fulfill(json({ booking: { id: 'b1', status: 'payment_pending', total, input: { customer: {
+  firstName: 'Lena', lastName: 'Weber', email: 'lena.weber@example.com', whatsapp: '+4915100000000', country: 'Germany',
+} } } }));
+
+test('cash on the day: the existing booking total differs from the quote: helper uses the booking, a warning names both', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  await page.route('**/admin/ops/bookings/b1', bookingWithTotal(34200));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await page.locator('#bk-cash-on-day').check();
+  await expect(page.locator('#bk-cash-help')).toContainText('pay $342.00 in US dollars');
+  await expect(page.locator('#bk-cash-warn')).toHaveText('Heads up: the customer’s existing booking is $342.00, not the $149.00 on this quote. The email will ask for $342.00.');
+});
+
+test('cash on the day: the booking total matches the quote: no warning', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  await page.route('**/admin/ops/bookings/b1', bookingWithTotal(14900));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await page.locator('#bk-cash-on-day').check();
+  await expect(page.locator('#bk-cash-help')).toContainText('pay $149.00 in US dollars');
+  await expect(page.locator('#bk-cash-warn')).toBeHidden();
 });
