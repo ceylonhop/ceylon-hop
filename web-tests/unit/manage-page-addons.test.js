@@ -25,8 +25,8 @@ function loadFactsOf() {
   // eslint-disable-next-line no-new-func
   const isoParts = new Function('return (' + oneLine[0] + ')')();
   // eslint-disable-next-line no-new-func
-  const factsOf = new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'pickupNeeds', 'isoParts', 'return (' + m[0] + ')')(
-    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'), real('pickupNeeds'), isoParts,
+  const factsOf = new Function('esc', 'legsOf', 'longDate', 'vehicleLabel', 'fmtTime', 'isAirport', 'pickupNeeds', 'isoParts', 'shortEnd', 'return (' + m[0] + ')')(
+    esc, () => [{}], (d) => d, (v) => v, real('fmtTime'), real('isAirport'), real('pickupNeeds'), isoParts, (p) => p,
   );
   const sub = html.match(/function subtitleOf\(v\)\{[\s\S]*?\n  \}/);
   if (!sub) throw new Error('subtitleOf(v) not found in manage.html');
