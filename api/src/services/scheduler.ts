@@ -196,6 +196,10 @@ export async function runScheduledNotifications(
 // GL-3 — an abandoned shared checkout holds real seats. After this long unpaid, the draft
 // is cancelled and its seats go back on sale.
 const STALE_HOLD_MS = 24 * 3600 * 1000;
+// Saved on the booking so ops can see why it closed (CH-NQ66B, 2026-10-29: cancelled with no
+// reason, and the transition ledger is off in prod). Same `system:` form as the other auto-closers.
+export const STALE_HOLD_REASON = 'not paid within 24 hours — seats released';
+export const STALE_HOLD_BY = 'system:stale-shared-hold';
 
 // Cancel shared bookings stuck in draft/payment_pending for over 24h and free their
 // seats. Pure over (now, repos) like runScheduledNotifications; the cron tick drives it.
@@ -213,7 +217,7 @@ export async function sweepStaleSharedHolds(deps: {
       if (b.mode !== 'shared') continue;
       if (now.getTime() - Date.parse(b.createdAt) <= STALE_HOLD_MS) continue;
       try {
-        await bookings.setStatus(b.id, 'cancelled', undefined, {
+        await bookings.setStatus(b.id, 'cancelled', { reason: STALE_HOLD_REASON, by: STALE_HOLD_BY, at: now }, {
           source: 'scheduled_job',
           actorType: 'scheduler',
           ...deps.correlation,
