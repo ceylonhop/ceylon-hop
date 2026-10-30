@@ -26,7 +26,7 @@
       '.ch-rc-scrim.is-in{opacity:1}' +
       '.ch-rc{position:relative;box-sizing:border-box;width:100%;max-width:560px;max-height:calc(100vh - 40px);overflow-y:auto;' +
       'background:var(--paper,#fffdf8);color:var(--ink,#3A3739);border-radius:20px;padding:26px 26px 22px;' +
-      'box-shadow:0 30px 80px -20px rgba(20,30,28,.45);font-family:var(--body,Poppins,system-ui,sans-serif);' +
+      'box-shadow:0 30px 80px -20px rgba(20,30,28,.45);font-family:var(--body,Georgia,serif);' +
       'transform:translateY(8px);transition:transform .2s ease}' +
       '.ch-rc-scrim.is-in .ch-rc{transform:none}' +
       '.ch-rc *{box-sizing:border-box}' +
