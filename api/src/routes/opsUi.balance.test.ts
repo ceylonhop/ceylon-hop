@@ -26,7 +26,7 @@ beforeAll(async () => {
 
 const TODAY = '2026-10-08';
 function reasonFn() {
-  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'reason')}`;
+  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'money')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
   return new Function('TODAY', `${src}; return reason;`)(TODAY) as (t: unknown) => string;
 }
 
@@ -46,6 +46,26 @@ describe('reason() — a balance that is still open on the day of travel', () =>
   it('stays quiet when nothing is owed, or the booking is closed', () => {
     expect(reasonFn()({ ...live, balance: 0, date: TODAY })).toBe('Vehicle not confirmed yet');
     expect(reasonFn()({ ...live, stage: 'cancelled', date: TODAY })).toBe('');
+  });
+});
+
+// Pay on the day (owner 2026-10-29/30): confirmed with nothing paid; the customer pays USD cash to
+// the Ceylon Hop team at the first pickup. The row says so — urgently only on the travel day.
+describe('reason() — a pay-on-the-day booking with cash still to collect', () => {
+  const cash = { source: 'booking', stage: 'paid', paid: false, paymentArrangement: 'on_the_day', cashDue: 34200, balance: 34200, amount: 34200, currency: 'USD', updated: false };
+
+  it('says "Collect $342 cash · travels today" on the travel day, above the vehicle nag and the balance line', () => {
+    expect(reasonFn()({ ...cash, date: TODAY })).toBe('Collect $342 cash · travels today');
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', date: TODAY })).toBe('Collect $342 cash · travels today');
+  });
+  it('says "Cash on the day · $342" on another day once the vehicle is confirmed', () => {
+    expect(reasonFn()({ ...cash, stage: 'vehicle_confirmed', updated: true, date: '2026-10-09' })).toBe('Cash on the day · $342');
+  });
+  it('lets "Vehicle not confirmed yet" win on another day — the car comes first', () => {
+    expect(reasonFn()({ ...cash, date: '2026-10-09' })).toBe('Vehicle not confirmed yet');
+  });
+  it('is silent about cash once it is recorded', () => {
+    expect(reasonFn()({ ...cash, paid: true, cashDue: 0, balance: 0, stage: 'vehicle_confirmed', updated: true, date: TODAY })).toBe('');
   });
 });
 
