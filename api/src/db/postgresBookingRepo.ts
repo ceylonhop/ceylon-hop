@@ -78,7 +78,9 @@ export async function applyBookingStatusTransition(
   const [row] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
   if (!row) throw new BookingNotFoundError(input.id);
   const from = row.status as BookingStatus;
-  assertTransition(from, input.to);
+  // The arrangement is read in the same row as the status; it is set only while awaiting money and
+  // never cleared, so it cannot change under the guarded UPDATE below.
+  assertTransition(from, input.to, { paymentArrangement: row.paymentArrangement });
   if (input.transitionTrackingEnabled && !input.context) {
     throw new BookingTransitionContextRequiredError();
   }

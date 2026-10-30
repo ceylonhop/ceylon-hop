@@ -587,7 +587,8 @@ export class InMemoryBookingRepo implements BookingRepo {
   ): Promise<Booking> {
     const current = this.byId.get(id);
     if (!current) throw new BookingNotFoundError(id);
-    assertTransition(current.status, to); // throws on illegal; leaves the row unchanged
+    // throws on illegal; leaves the row unchanged. The arrangement gates pay-on-the-day edges.
+    assertTransition(current.status, to, { paymentArrangement: current.paymentArrangement });
     if (this.options.transitionTrackingEnabled && !context) {
       throw new BookingTransitionContextRequiredError();
     }

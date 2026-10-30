@@ -206,6 +206,27 @@ describe('ops bookings endpoints', () => {
     await step('completed', 'completed');
   });
 
+  // Pay on the day (0077): the trip runs before any money, so the mirror must be able to confirm it —
+  // and must NOT confirm an ordinary unpaid booking (it used to be stopped by canTransition alone).
+  it('mirrors vehicle_confirmed onto a pay-on-the-day booking that has no payment', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    expect((await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+  });
+
+  it('never confirms an ordinary unpaid booking through the fulfilment mirror', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    expect((await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+  });
+
   it('a fulfilment backtrack leaves the booking lifecycle alone', async () => {
     const b = await seed(bookings);
     await bookings.setStatus(b.id, 'payment_pending');

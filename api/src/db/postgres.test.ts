@@ -1727,9 +1727,12 @@ describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)'
 });
 
 describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
-  paymentArrangementContract('contract', async () => {
+  // One pool for the whole contract: a pool per case is never closed, and this file opens enough
+  // of them to hit the server's connection limit.
+  let repo: Promise<PostgresBookingRepo> | undefined;
+  paymentArrangementContract('contract', () => (repo ??= (async () => {
     const conn = createDb(TEST_URL as string);
     await migrate(conn.db, { migrationsFolder: 'drizzle' });
     return new PostgresBookingRepo(conn.db);
-  });
+  })()));
 });

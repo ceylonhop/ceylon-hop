@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { InMemoryBookingRepo, type BookingRepo, type NewBooking } from './bookingRepo';
+import { IllegalTransitionError } from '../domain/status';
 
 const sample = (): NewBooking => ({
   mode: 'single',
@@ -39,6 +40,22 @@ export function paymentArrangementContract(name: string, make: () => Promise<Boo
       await bookings.setStatus(b.id, 'payment_pending');
       await bookings.setStatus(b.id, 'paid');
       expect((await bookings.setPaymentArrangement(b.id, 'on_the_day')).paymentArrangement).toBeNull();
+    });
+
+    it('confirms a pay-on-the-day booking straight from payment_pending', async () => {
+      const bookings = await make();
+      const b = await bookings.create(sample());
+      await bookings.setStatus(b.id, 'payment_pending');
+      await bookings.setPaymentArrangement(b.id, 'on_the_day');
+      expect((await bookings.setStatus(b.id, 'confirmed')).status).toBe('confirmed');
+    });
+
+    it('refuses to confirm an ordinary unpaid booking, and leaves it payment_pending', async () => {
+      const bookings = await make();
+      const b = await bookings.create(sample());
+      await bookings.setStatus(b.id, 'payment_pending');
+      await expect(bookings.setStatus(b.id, 'confirmed')).rejects.toBeInstanceOf(IllegalTransitionError);
+      expect((await bookings.get(b.id))!.status).toBe('payment_pending');
     });
   });
 }
