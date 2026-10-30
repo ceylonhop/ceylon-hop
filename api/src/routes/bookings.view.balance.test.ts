@@ -61,3 +61,31 @@ describe('GET /bookings/view reads the balance from the ledger', () => {
     expect(await view()).toMatchObject({ balanceDueCents: 0, paidCents: 20000, balancePayable: false });
   });
 });
+
+describe('GET /bookings/view names a pay-on-the-day arrangement', () => {
+  async function viewOf(arrange: boolean) {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings, payments: new InMemoryPaymentRepo() });
+    const b = await bookings.create({
+      mode: 'single', total: 34200, amountDueNow: 34200, currency: 'USD',
+      input: {
+        from: 'Colombo Airport (CMB)', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1,
+        customer: { firstName: 'Maya', lastName: 'Fernandez', email: 'maya@example.com', whatsapp: '+94771234567', country: 'Spain' },
+      },
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    if (arrange) {
+      await bookings.setPaymentArrangement(b.id, 'on_the_day');
+      await bookings.setStatus(b.id, 'confirmed');
+    }
+    return (await app.request(`/bookings/view?t=${signBookingToken(b.id, SECRET)}`)).json();
+  }
+
+  it('an arranged booking carries the arrangement and owes its whole total', async () => {
+    expect(await viewOf(true)).toMatchObject({ paymentArrangement: 'on_the_day', balanceDueCents: 34200 });
+  });
+
+  it('an ordinary booking has paymentArrangement null', async () => {
+    expect(await viewOf(false)).toMatchObject({ paymentArrangement: null });
+  });
+});
