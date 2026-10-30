@@ -22,12 +22,14 @@
     'kandy': 'Kandy', 'nuwara-eliya': 'Nuwara Eliya', 'ella': 'Ella', 'sigiriya': 'Sigiriya',
     'anuradhapura': 'Anuradhapura', 'yala': 'Yala', 'arugam-bay': 'Arugam Bay', 'trincomalee': 'Trincomalee'
   };
+  // Towns the shared catalogue does not serve. Where it does, its named point wins
+  // (TRANSFERS.meetingPoint) — this list used to disagree with it, e.g. Sigiriya "Dambulla
+  // junction" against Barista Cafe everywhere else (owner, 2026-10-29).
   var POINTS = {
-    'cmb-airport': 'Airport arrivals hall (CMB)', 'colombo': 'Colombo — Fort / Galle Face', 'negombo': 'Negombo — beach road',
+    'colombo': 'Colombo — Fort / Galle Face',
     'bentota': 'Bentota — main junction', 'hikkaduwa': 'Hikkaduwa — beach road', 'galle': 'Galle — Fort clock tower',
-    'weligama': 'Weligama — bay road', 'mirissa': 'Mirissa — beach entrance', 'kandy': 'Kandy — lake roundabout',
-    'nuwara-eliya': 'Nuwara Eliya — town centre', 'ella': 'Ella — main street (by the station)', 'sigiriya': 'Sigiriya — Dambulla junction',
-    'anuradhapura': 'Anuradhapura — town centre', 'yala': 'Tissamaharama — town centre', 'arugam-bay': 'Arugam Bay — main point', 'trincomalee': 'Trincomalee — town centre'
+    'nuwara-eliya': 'Nuwara Eliya — town centre',
+    'anuradhapura': 'Anuradhapura — town centre', 'arugam-bay': 'Arugam Bay — main point', 'trincomalee': 'Trincomalee — town centre'
   };
   // Departure windows — a list gathers on a slot; the exact time is set when it locks.
   var SLOTS = {
@@ -67,7 +69,8 @@
   function resolvePlaceId(name) { return NAME2ID[norm(name)] || null; }
   function pointFor(name, id) {
     var pid = id || resolvePlaceId(name);
-    return (pid && POINTS[pid]) || String(name || '');
+    var T = window.TRANSFERS;
+    return (pid && ((T && T.meetingPoint && T.meetingPoint(pid)) || POINTS[pid])) || String(name || '');
   }
 
   /* ---------------- PURE helpers (unit-tested) ---------------- */
@@ -539,6 +542,7 @@
   }
 
   var RideBoard = {
+    pointFor: pointFor,
     shouldReport: shouldReport,
     errorPayload: errorPayload,
     mineMarkChanged: mineMarkChanged,
