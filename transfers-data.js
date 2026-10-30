@@ -262,6 +262,21 @@
   }
 
   /**
+   * The catalogue's named meeting point in a town: where a shared taxi boards there, else
+   * where one sets down there (those agree wherever both exist). null for a town the
+   * catalogue does not serve. The ride board names its pick-ups from this so the site has
+   * one answer to "where exactly?" (owner, 2026-10-29).
+   */
+  function meetingPoint(placeId) {
+    const place = byId[placeId];
+    if (!place) return null;
+    const on = SHARED_PRODUCTS.find((x) => x.from === place.name && x.pickup);
+    if (on) return on.pickup;
+    const off = SHARED_PRODUCTS.find((x) => x.to === place.name && x.dropoff);
+    return off ? off.dropoff : null;
+  }
+
+  /**
    * What a ride-board seat costs on this leg — the SAME rule the server applies in
    * POST /board: the catalogue price where we sell a scheduled seat, otherwise the van
    * fare for the road distance split across the seats that cover the van.
@@ -484,7 +499,7 @@
   // ---- expose ----
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
-    roadKm, durationText, privateQuote, sharedOption, corridorFor, boardSeatPrice,
+    roadKm, durationText, privateQuote, sharedOption, meetingPoint, corridorFor, boardSeatPrice,
     resolvePlace, placeAliasId, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_MIN,
