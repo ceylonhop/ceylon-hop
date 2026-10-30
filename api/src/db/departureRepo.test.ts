@@ -148,6 +148,31 @@ describe('departureKeyFor', () => {
   });
 });
 
+// Customers could not tell where a shared taxi set them down: the catalogue named only the
+// boarding point, so every page said "Kandy" and nothing more (owner, 2026-10-29). Each leg
+// now names both ends as published points, the owner's own partner locations.
+describe('SHARED_PRODUCTS meeting points', () => {
+  it('names a pick-up and a drop-off point on every leg', () => {
+    for (const p of SHARED_PRODUCTS) {
+      expect(p.pickup?.trim(), `${p.fromPlace} -> ${p.toPlace} pickup`).toBeTruthy();
+      expect(p.dropoff?.trim(), `${p.fromPlace} -> ${p.toPlace} dropoff`).toBeTruthy();
+    }
+  });
+
+  it('drops off at the owner-supplied points', () => {
+    const drop = (from: string, to: string) =>
+      SHARED_PRODUCTS.find((p) => p.fromPlace === from && p.toPlace === to)?.dropoff;
+    expect(drop('Colombo Airport (CMB)', 'Sigiriya / Dambulla')).toBe('Barista Cafe, Sigiriya');
+    expect(drop('Negombo', 'Sigiriya / Dambulla')).toBe('Barista Cafe, Sigiriya');
+    expect(drop('Sigiriya / Dambulla', 'Kandy')).toBe('Kandy City Centre');
+    expect(drop('Ella', 'Yala')).toBe('Chef Lady, Tissamaharama');
+    expect(drop('Ella', 'Weligama')).toBe('Nomad Cafe, Weligama');
+    expect(drop('Ella', 'Ahangama')).toBe("Thileni's, Ahangama");
+    expect(drop('Mirissa', 'Colombo Airport (CMB)')).toBe('CMB Airport');
+    expect(drop('Weligama', 'Colombo Airport (CMB)')).toBe('CMB Airport');
+  });
+});
+
 // ── CH-6HE3V (2026-09-21) ──────────────────────────────────────────────────
 // A shared booking used to store only its corridorId, so every label rebuilt the
 // route from the corridor's end stops and told a CMB → Sigiriya customer they
