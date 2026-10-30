@@ -11793,10 +11793,23 @@ async function openBookModal() {
 // operator always types it (required fields guarded client-side in bookQuote()).
 // Booking a customer as cash-on-the-day is founder/finance only (the server enforces it; this hides the box).
 function canBookCashOnDay() { return !!(window.opsCan && window.opsCan('payments:act')); }
+function bookCashCents() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  if (typeof bt === 'number') return bt;
+  return lastEstimate && lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : null;
+}
+// One amber line when the existing booking was priced differently from what the builder shows.
+function bookCashWarn() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  var shown = lastEstimate && lastEstimate.total ? lastEstimate.total.cents : null;
+  if (!bookCashOnDay || typeof bt !== 'number' || shown == null || bt === shown) return '';
+  return 'Heads up: the customer’s existing booking is ' + fmtUsd(bt) + ', not the ' + fmtUsd(shown) + ' on this quote. The email will ask for ' + fmtUsd(bt) + '.';
+}
 function bookCashHelp() {
   if (!bookCashOnDay) return 'Leave unticked if they’ll still pay by card. The booking stays “Awaiting payment”, as today.';
   var first = val('bk-first') || 'The customer';
-  var total = lastEstimate && lastEstimate.total ? fmtUsd(lastEstimate.total.cents) : 'the quote total';
+  // The email states the BOOKING's total: the customer's own pay-page booking when there is one, else the quote's.
+  var bc = bookCashCents(), total = bc != null ? fmtUsd(bc) : 'the quote total';
   return 'Confirms the booking now. ' + first + ' is emailed to pay ' + total + ' in US dollars, cash, to the Ceylon Hop team at the first pickup. You record the cash when it’s collected.';
 }
 function renderBookModal() {
@@ -11830,6 +11843,7 @@ function renderBookModal() {
     canBookCashOnDay() ? '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">'
       + '<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="bk-cash-on-day"' + (bookCashOnDay ? ' checked' : '') + ' /> Customer pays cash on the day</label>'
       + '<p id="bk-cash-help" style="margin:6px 0 0;font-size:13px;color:var(--muted)">' + esc(bookCashHelp()) + '</p>'
+      + '<p id="bk-cash-warn" style="margin:6px 0 0;font-size:13px;color:#7a4f0c"' + (bookCashWarn() ? '' : ' hidden') + '>' + esc(bookCashWarn()) + '</p>'
       + '</div>' : '',
   ].join('');
 }
@@ -13019,6 +13033,7 @@ function attachEventListeners() {
     if (el.id === 'bk-cash-on-day') { // update the two nodes in place: a re-render would wipe the typed fields
       bookCashOnDay = el.checked;
       var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp();
+      var warn = document.getElementById('bk-cash-warn'); if (warn) { warn.textContent = bookCashWarn(); warn.hidden = !warn.textContent; }
       var cb = document.querySelector('.ch-modal [data-action="confirmBook"]'); if (cb) cb.textContent = bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking';
       return;
     }

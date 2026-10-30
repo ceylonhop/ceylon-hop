@@ -191,11 +191,33 @@ test('cash on the day: an ops-role session (no payments:act) does not see the ch
 });
 
 test('cash on the day: the server refusing a non-founder shows its message', async ({ page }) => {
-  const msg = 'Only a founder or finance can book a customer as cash on the day. Ask one of them to do it.';
+  const msg = 'Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.';
   const posts = await openBookModalAs(page, null, json({ error: 'forbidden', reason: 'pay_on_day_founder_only', message: msg }, 403));
   await page.locator('#bk-cash-on-day').check();
   await page.locator('[data-action="confirmBook"]').click();
   await expect.poll(() => posts.length).toBe(1);
   await expect(toast(page)).toHaveClass(/bad/);
   await expect(toastMsg(page)).toHaveText('Could not book — ' + msg);
+});
+
+const bookingWithTotal = (total) => (r) => r.fulfill(json({ booking: { id: 'b1', status: 'payment_pending', total, input: { customer: {
+  firstName: 'Lena', lastName: 'Weber', email: 'lena.weber@example.com', whatsapp: '+4915100000000', country: 'Germany',
+} } } }));
+
+test('cash on the day: the existing booking total differs from the quote: helper uses the booking, a warning names both', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  await page.route('**/admin/ops/bookings/b1', bookingWithTotal(34200));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await page.locator('#bk-cash-on-day').check();
+  await expect(page.locator('#bk-cash-help')).toContainText('pay $342.00 in US dollars');
+  await expect(page.locator('#bk-cash-warn')).toHaveText('Heads up: the customer’s existing booking is $342.00, not the $149.00 on this quote. The email will ask for $342.00.');
+});
+
+test('cash on the day: the booking total matches the quote: no warning', async ({ page }) => {
+  await openSentQuote(page, { ...SENT_QUOTE, convertedBookingId: 'b1' }, json({}), []);
+  await page.route('**/admin/ops/bookings/b1', bookingWithTotal(14900));
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await page.locator('#bk-cash-on-day').check();
+  await expect(page.locator('#bk-cash-help')).toContainText('pay $149.00 in US dollars');
+  await expect(page.locator('#bk-cash-warn')).toBeHidden();
 });
