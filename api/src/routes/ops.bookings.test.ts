@@ -330,6 +330,18 @@ describe('ops fulfilment milestones email the customer', () => {
     expect(notice).toHaveLength(1);
   });
 
+  it('tells a pay-on-the-day customer nothing was charged on → no_show', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, bookings } = appWith(email);
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await post(app, b.id, 'vehicle_confirmed');
+    await post(app, b.id, 'no_show');
+    const notice = email.sent.filter((m) => m.to === 'm@x.com' && /Nothing was charged/.test(m.text ?? ''));
+    expect(notice).toHaveLength(1);
+  });
+
   it('a non-milestone advance (pickup_confirmed) sends no email', async () => {
     const email = new FakeEmailAdapter();
     const { app, bookings } = appWith(email);

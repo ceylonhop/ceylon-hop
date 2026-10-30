@@ -235,6 +235,7 @@ export async function reconcileBookingTracking(
   try {
     const bookings = await deps.bookings.list();
     const payments = await deps.payments.findByBookingIds(bookings.map((booking) => booking.id));
+    const payOnTheDay = new Set(bookings.filter((booking) => booking.paymentArrangement).map((booking) => booking.id));
     // A balance never moves the booking — the deposit did (spec 2026-10-07).
     const withEvidence = await Promise.all(payments.filter((payment) => payment.status === 'succeeded' && payment.purpose !== 'balance').map(async (payment) => ({
       payment,
@@ -244,6 +245,9 @@ export async function reconcileBookingTracking(
     // cannot be called inconsistent. A missing settlement timestamp is legacy/unknown too.
     captured = withEvidence
       .filter(({ evidence }) => evidence?.settledAt && evidence.settledAt >= new Date(TRACKING_HISTORY_AVAILABLE_SINCE.bookingTransitions))
+      // Pay on the day: the Ceylon Hop team records the cash by hand after the booking is confirmed,
+      // so no status ever moves to paid for it. Gateway money on such a booking is still checked.
+      .filter(({ payment, evidence }) => !(payOnTheDay.has(payment.bookingId) && evidence?.settlementSource === 'manual'))
       .map(({ payment }) => ({ id: payment.id, bookingId: payment.bookingId }));
   } catch (error) {
     console.error('booking tracking reconciliation failed: payments', error);

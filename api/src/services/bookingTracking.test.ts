@@ -246,6 +246,77 @@ describe('reconcileBookingTracking', () => {
     expect(missing).toEqual([expect.objectContaining({ paymentId: full.id })]);
   });
 
+  // Pay on the day (0077): the trip is confirmed first and the cash is recorded by hand later, so no
+  // status moves to paid and no paid event can exist for that payment.
+  describe('pay on the day', () => {
+    async function confirmedOnTheDay() {
+      const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true, now: () => NOW });
+      const booking = await bookings.create(draft);
+      await bookings.setStatus(booking.id, 'payment_pending', undefined, {
+        source: 'website', actorType: 'customer',
+      });
+      await bookings.setPaymentArrangement(booking.id, 'on_the_day');
+      await bookings.setStatus(booking.id, 'confirmed', undefined, {
+        source: 'ops', actorType: 'staff', actorId: 'ops',
+      });
+      return { bookings, booking };
+    }
+
+    it('does not report manual cash recorded on a confirmed pay-on-the-day booking', async () => {
+      const { bookings, booking } = await confirmedOnTheDay();
+      const payments = new InMemoryPaymentRepo();
+      const cash = await payments.create({
+        bookingId: booking.id, provider: 'cash', orderId: `${booking.reference}-CASH`,
+        amount: booking.total, currency: booking.currency, idempotencyKey: `cash:${booking.id}`,
+      });
+      await payments.markSucceededManually(cash.id, { reference: null, settledBy: 'f@x.com' });
+
+      const result = await reconcileBookingTracking(NOW, {
+        bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+      });
+
+      expect(result.findings).not.toContainEqual(expect.objectContaining({ kind: 'captured_payment_missing_transition' }));
+    });
+
+    it('still reports a gateway payment on a pay-on-the-day booking with no paid transition', async () => {
+      const { bookings, booking } = await confirmedOnTheDay();
+      const payments = new InMemoryPaymentRepo();
+      const gateway = await payments.create({
+        bookingId: booking.id, provider: 'payhere', orderId: booking.reference,
+        amount: booking.total, currency: booking.currency, idempotencyKey: `checkout:${booking.id}`,
+      });
+      await payments.markSucceeded(gateway.id);
+      payments.provenanceFor = async () => ({
+        createdAt: NOW, settledAt: NOW, settlementSource: 'webhook', settledBy: null, gatewayPaymentId: 'PH-1',
+      });
+
+      const result = await reconcileBookingTracking(NOW, {
+        bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+      });
+
+      expect(result.findings.filter((f) => f.kind === 'captured_payment_missing_transition'))
+        .toEqual([expect.objectContaining({ paymentId: gateway.id })]);
+    });
+
+    it('still reports a manual payment on an ordinary booking with no paid transition', async () => {
+      const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true, now: () => NOW });
+      const booking = await bookings.create(draft);
+      const payments = new InMemoryPaymentRepo();
+      const bank = await payments.create({
+        bookingId: booking.id, provider: 'bank_transfer', orderId: `${booking.reference}-BANK`,
+        amount: booking.total, currency: booking.currency, idempotencyKey: `bank:${booking.id}`,
+      });
+      await payments.markSucceededManually(bank.id, { reference: 'BANK-2', settledBy: 'f@x.com' });
+
+      const result = await reconcileBookingTracking(NOW, {
+        bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+      });
+
+      expect(result.findings.filter((f) => f.kind === 'captured_payment_missing_transition'))
+        .toEqual([expect.objectContaining({ paymentId: bank.id })]);
+    });
+  });
+
   it('an abandoned pending attempt is history, not a finding', async () => {
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();

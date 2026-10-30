@@ -1,4 +1,4 @@
-# Pay on the day (cash to driver) — Implementation Plan
+# Pay on the day (cash to the Ceylon Hop team) — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,7 +20,7 @@ plain JS in `api/src/routes/ops-ui.html` · web-tests (vitest + Playwright).
 
 ## Global Constraints
 
-- Owner decisions (2026-10-29): **USD cash** to the driver; the confirmation email **sends automatically**.
+- Owner decisions (2026-10-29): **USD cash** to the Ceylon Hop team (copy never says "the driver" — owner 2026-10-29); the confirmation email **sends automatically**.
 - Money = integer minor units + ISO currency (`USD`). IDs = uuid.
 - Allowed `payment_arrangement` values: **`'on_the_day'` only** (no `invoice` until someone needs it — widening the CHECK is a one-line migration).
 - Never infer "money taken" from booking status in new code — read the ledger (`paidCents` in `api/src/domain/balance.ts`).
@@ -171,7 +171,7 @@ git commit -m "feat(ops): pre-fill Mark booked from the customer's pay-page deta
 
 ```sql
 -- 0077 — Pay on the day (2026-10-29). How the customer will pay when it isn't "now, by card".
--- Null = the normal flow (every existing row). 'on_the_day' = cash to the driver (USD); the only
+-- Null = the normal flow (every existing row). 'on_the_day' = USD cash to the Ceylon Hop team; the only
 -- thing that lets a booking go payment_pending → confirmed without a payment (domain/status.ts).
 -- Hand-written: drizzle-kit generate needs a TTY. Rollback: drop the column + constraint, restore
 -- the previous customer_communications_kind_valid list.
@@ -269,7 +269,7 @@ Every task: failing test first, then the fix, `npm run check`, commit.
 
 ```ts
 // Pay on the day (0077): the trip goes ahead before any money, so owed = total − ledger, even once
-// the trip is over (the driver may hold the cash before ops records it). Cancelled/no-show owe nothing.
+// the trip is over (the team may hold the cash before ops records it). Cancelled/no-show owe nothing.
 if (booking.paymentArrangement && booking.status !== 'cancelled' && booking.status !== 'refunded' && booking.status !== 'no_show') {
   return Math.max(0, booking.total - paidCents(payments));
 }
@@ -280,7 +280,7 @@ Tests: confirmed + on_the_day + no payments → `total`; + cash payment of total
 
 ### Task 2.2: Payment lookup — no false "paid without payment"
 
-**File:** `api/src/domain/paymentCase.ts:219`. Skip `paid_status_without_payment` when the booking has a `paymentArrangement`; instead push `'cash_due_on_the_day'` when `!moneyIn`. Add the copy for it next to `ops-ui.html:3513`: *"Pay on the day — $X cash due to the driver; record it with Mark paid when collected."* Test in `paymentCase.test.ts`.
+**File:** `api/src/domain/paymentCase.ts:219`. Skip `paid_status_without_payment` when the booking has a `paymentArrangement`; instead push `'cash_due_on_the_day'` when `!moneyIn`. Add the copy for it next to `ops-ui.html:3513`: *"Pay on the day — $X cash due to the Ceylon Hop team; record it with Mark paid when collected."* Test in `paymentCase.test.ts`.
 
 ### Task 2.3: Tracking reconciliation accepts cash recorded after confirmation
 
@@ -324,11 +324,11 @@ Open PR 2.
 
 **Files:** `api/src/services/notifications.ts` (new `sendPayOnDayConfirmed`), `adapters/email.ts` kind union, `domain/trackingContract.ts` + its test, `notifications.ts` `trackingDefaults` (`{ templateKey: 'booking-pay-on-day', source: 'quote_conversion', actorType: 'staff' }`), `db/notificationLogRepo.ts` kind union, `routes/devEmails.ts` preview entry. Test `notifications.test.ts`.
 
-Built from `sendBookingConfirmed` (BADGE_CONFIRMED, `ticketCard`, `infoBox`, `cancellationPolicy`, manage button). Subject: `You're confirmed — ${reference}`. Money via `totalBlock('To pay on the day', money(total))` and the line **"Please pay $342.00 in US dollars, cash, to your driver at pickup."** Must **not** contain "paid"/"Total paid". Tests assert html + text contain `To pay on the day`, `$342.00`, `US dollars`, and do not match `/paid/i`.
+Built from `sendBookingConfirmed` (BADGE_CONFIRMED, `ticketCard`, `infoBox`, `cancellationPolicy`, manage button). Subject: `You're confirmed — ${reference}`. Money via `totalBlock('To pay on the day', money(total))` and the line **"Please pay $342.00 in US dollars, cash, to the Ceylon Hop team at your first pickup."** Must **not** contain "paid"/"Total paid". Tests assert html + text contain `To pay on the day`, `$342.00`, `US dollars`, and do not match `/paid/i`.
 
 ### Task 3.3: Trip reminder — badge and cash line from the ledger
 
-**Files:** `notifications.ts:750` `sendTripReminder(booking, email, links, opts?: { cashDueCents?: number })`; `scheduler.ts:176` computes `cashDueCents = balanceDueCents(b, payments)` when `b.paymentArrangement` (payments already loaded at `:142`). Badge: `BADGE_CONFIRMED` + "Have $X in US dollars cash ready for your driver" when `cashDueCents > 0`; `BADGE_PAID` otherwise. Tests: on_the_day unpaid → no "Paid", has cash line; paid booking → unchanged.
+**Files:** `notifications.ts:750` `sendTripReminder(booking, email, links, opts?: { cashDueCents?: number })`; `scheduler.ts:176` computes `cashDueCents = balanceDueCents(b, payments)` when `b.paymentArrangement` (payments already loaded at `:142`). Badge: `BADGE_CONFIRMED` + "Have $X in US dollars cash ready for the Ceylon Hop team" when `cashDueCents > 0`; `BADGE_PAID` otherwise. Tests: on_the_day unpaid → no "Paid", has cash line; paid booking → unchanged.
 
 ### Task 3.4: No-show notice wording
 
@@ -351,7 +351,7 @@ Open PR 3.
 - `stageLabel(t)`: when `t.paymentArrangement && !t.paid` and stage is `paid`, label **"Confirmed · cash due"** (drawer header pill, queue pill, pipeline step 2161/2359/2621/4165/4314).
 - `reason(t)`: `t.cashDueCents>0 && t.date===TODAY` → **"Collect $X cash — travels today"**; before that date → **"Cash on the day — $X"**.
 - Drawer: show the Mark paid row (`#paidmethod` + button) when `isPending || (t.paymentArrangement && !t.paid)`, button text **"Record cash collected"** in the latter case; confirm copy "Record $X received in cash. Status stays as it is."
-- Payment section note (4426): for pay-on-the-day, "Pay on the day — $X USD cash to the driver" instead of the pay-link text.
+- Payment section note (4426): for pay-on-the-day, "Pay on the day — $X USD cash to the Ceylon Hop team" instead of the pay-link text.
 - No-show confirm copy (4887): drop "isn't refundable" when nothing was paid.
 
 ### Task 4.3: Mark booked modal — "Customer pays cash on the day" checkbox
@@ -366,7 +366,7 @@ Verify in the browser preview (screenshot to owner). Open PR 4.
 
 ### Task 5.1: Pay link shows "pay on the day", never "Paid"
 
-**Files:** `api/src/routes/quotePay.ts` `stateFor` (~212-230, 314-330), `pay.html` `renderPaid` (~764). New state `'pay_on_day'` when the converted booking has `paymentArrangement` and no succeeded payment: "You're booked — pay $X in US dollars cash to your driver". Tests: `quotePay.test.ts` + `web-tests/unit/pay-page-*.test.js`.
+**Files:** `api/src/routes/quotePay.ts` `stateFor` (~212-230, 314-330), `pay.html` `renderPaid` (~764). New state `'pay_on_day'` when the converted booking has `paymentArrangement` and no succeeded payment: "You're booked — pay $X in US dollars cash to the Ceylon Hop team". Tests: `quotePay.test.ts` + `web-tests/unit/pay-page-*.test.js`.
 
 ### Task 5.2: Manage page balance
 
