@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runScheduledNotifications, sweepStaleSharedHolds } from './scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds, STALE_HOLD_BY, STALE_HOLD_REASON } from './scheduler';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
@@ -213,6 +213,21 @@ describe('sweepStaleSharedHolds', () => {
         requestId: 'req-job', runId: 'run-job',
       }),
     ]);
+  });
+
+  // Owner 2026-10-29: CH-NQ66B showed cancelled in ops with no reason and no "by" — the
+  // sweep was the only canceller that saved neither, so nobody could tell why it closed.
+  it('saves why and by whom on the booking itself', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 1);
+    const now = hoursFromNow(25);
+
+    await sweepStaleSharedHolds({ bookings, departures, now });
+    const after = (await bookings.get(b.id))!;
+    expect(after.cancellationReason).toBe(STALE_HOLD_REASON);
+    expect(after.cancelledBy).toBe(STALE_HOLD_BY);
+    expect(after.cancelledAt).toBe(now.toISOString());
   });
 
   it('sweeps a stale payment_pending hold too (checkout started, never paid)', async () => {
