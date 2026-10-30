@@ -88,22 +88,22 @@ const m = html.match(/function bookPrefill\(st, booking\) \{[\s\S]*?\n\}/);
 const bookPrefill = new Function('isValidEmail', 'isValidPhone', 'return (' + m[0] + ')')(
   (s) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(s), (s) => /^\+?[\d\s-]{7,}$/.test(s));
 
-const st = { firstName: 'Sandy', lastName: '', contact: '+49 1515 642 4312', legs: [{ date: '2026-11-28' }] };
-const booking = { input: { customer: { firstName: 'Sandy', lastName: 'Schwarz', email: 'sandy@ts-schwarz.de',
-  whatsapp: '+4915156424312', country: 'Germany' } } };
+const st = { firstName: 'Lena', lastName: '', contact: '+49 151 0000 0000', legs: [{ date: '2026-11-28' }] };
+const booking = { input: { customer: { firstName: 'Lena', lastName: 'Weber', email: 'lena.weber@example.com',
+  whatsapp: '+4915100000000', country: 'Germany' } } };
 
 describe('bookPrefill', () => {
   it('prefers what the customer typed on the pay page', () => {
-    expect(bookPrefill(st, booking)).toEqual({ first: 'Sandy', last: 'Schwarz', email: 'sandy@ts-schwarz.de',
-      whatsapp: '+4915156424312', country: 'Germany', date: '2026-11-28' });
+    expect(bookPrefill(st, booking)).toEqual({ first: 'Lena', last: 'Weber', email: 'lena.weber@example.com',
+      whatsapp: '+4915100000000', country: 'Germany', date: '2026-11-28' });
   });
   it('falls back to the quote when there is no booking', () => {
-    expect(bookPrefill(st, null)).toEqual({ first: 'Sandy', last: '', email: '',
-      whatsapp: '+49 1515 642 4312', country: '', date: '2026-11-28' });
+    expect(bookPrefill(st, null)).toEqual({ first: 'Lena', last: '', email: '',
+      whatsapp: '+49 151 0000 0000', country: '', date: '2026-11-28' });
   });
   it('never blanks a quote value with an empty booking value', () => {
-    const b = { input: { customer: { firstName: '', lastName: 'Schwarz', email: '', whatsapp: '', country: '' } } };
-    expect(bookPrefill(st, b).first).toBe('Sandy');
+    const b = { input: { customer: { firstName: '', lastName: 'Weber', email: '', whatsapp: '', country: '' } } };
+    expect(bookPrefill(st, b).first).toBe('Lena');
   });
 });
 ```
@@ -146,7 +146,7 @@ if (state.convertedBookingId) {
 }
 ```
 
-- [ ] **Step 4: Run unit test — expect PASS.** Extend `ops-book-error-message.spec.js` with a case that stubs `**/admin/ops/bookings/b1` returning the Sandy booking, sets `convertedBookingId: 'b1'` on the stubbed quote, opens Mark booked, and asserts `#bk-last` = `Schwarz`, `#bk-country` = `Germany`. Run `cd web-tests && npm run test:all`.
+- [ ] **Step 4: Run unit test — expect PASS.** Extend `ops-book-error-message.spec.js` with a case that stubs `**/admin/ops/bookings/b1` returning the Lena booking, sets `convertedBookingId: 'b1'` on the stubbed quote, opens Mark booked, and asserts `#bk-last` = `Weber`, `#bk-country` = `Germany`. Run `cd web-tests && npm run test:all`.
 - [ ] **Step 5: Verify in the browser preview**, then commit:
 
 ```bash
@@ -316,7 +316,7 @@ Open PR 2.
 
 - Schema: `paymentArrangement: z.enum(PAYMENT_ARRANGEMENTS).optional()`.
 - New booking path: after `payment_pending`, if `paymentArrangement` → `setPaymentArrangement` then `setStatus(id, 'confirmed', undefined, { source: 'quote_conversion', actorType: 'staff', actorId, requestId, reason: 'pay_on_the_day', relatedEntityType: 'quote', relatedEntityId: quote.id })`.
-- Re-book path (the customer's own pay-attempt booking, e.g. Sandy's CH-D9GR2): same two steps after `refreshPayerDetails`, only if `prior.status === 'payment_pending'`.
+- Re-book path (the customer's own pay-attempt booking, e.g. the customer's own booking): same two steps after `refreshPayerDetails`, only if `prior.status === 'payment_pending'`.
 - Then `claimWonQuote`-equivalent patch already happens (quote → won). Send the email (Task 3.2) via the notification log claim `'pay_on_day_confirmed'` so a retry never sends twice.
 - Tests: with `paymentArrangement:'on_the_day'` → 201, `status:'confirmed'`, `paymentArrangement:'on_the_day'`, no payment rows, status events `[→payment_pending, →confirmed reason pay_on_the_day]`, one email; re-book of a prior payment_pending booking → same; retry → still one email; without the field → unchanged behaviour (`payment_pending`, no email).
 
@@ -376,9 +376,9 @@ Open PR 5.
 
 ---
 
-## For Sandy (CH-D9GR2) meanwhile
+## The first real case, meanwhile
 
 Her trip is 28 Nov. **Don't press Mark booked until PR 3 ships**: once the quote is `won` the
 button disappears, and her booking would sit in `payment_pending` with no way to switch it to pay on
-the day (this plan doesn't add a "switch existing booking" action). After PR 3–4: open Q-J4MHH →
+the day (this plan doesn't add a "switch existing booking" action). After PR 3–4: open its quote →
 Mark booked → tick cash on the day → she's confirmed and emailed. Settle the $342 vs $312 question first.
