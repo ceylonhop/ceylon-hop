@@ -588,6 +588,26 @@ function tripGapsProblem(t: TripInput): string | null {
   return null;
 }
 
+// Stops on the way (TripInput.through): wire i continues the same leg onto wire i+1, so stops[i+1]
+// is a stop, not an overnight. Each rule here is a shape the planner never produces; a violation
+// means a hand-built or stale request, and pricing it would silently merge or split legs.
+function tripThroughProblem(t: TripInput): string | null {
+  const through = t.through ?? [];
+  if (!through.length) return null;
+  const wires = t.stops.length - 1;
+  if (new Set(through).size !== through.length) return 'each wire can be listed once';
+  if (through.some((w) => w >= wires - 1)) return `only wires 0–${Math.max(0, wires - 2)} can continue onto a next wire`;
+  const gaps = new Set(t.gaps ?? []);
+  if (through.some((w) => gaps.has(w) || gaps.has(w + 1))) return 'a stop on the way cannot sit on a self-arranged stretch';
+  if (through.some((w) => (t.nights[w + 1] ?? 0) !== 0)) return 'a stop on the way has no nights';
+  const dates = t.dates ?? [];
+  if (through.some((w) => dates[w] && dates[w + 1] && dates[w] !== dates[w + 1])) return 'a leg with stops runs on one date';
+  const rv = t.routeVariants ?? [];
+  const inRun = new Set(through.flatMap((w) => [w, w + 1]));
+  if ([...inRun].some((w) => rv[w] === 'no_tolls')) return 'a leg with stops has no road choice';
+  return null;
+}
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -724,6 +744,8 @@ function invalidRequest(error: ZodError) {
     if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const gapsProblem = tripGapsProblem(parsed.data);
     if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
+    const throughProblem = tripThroughProblem(parsed.data);
+    if (throughProblem) return c.json({ error: 'invalid_request', message: `through: ${throughProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
