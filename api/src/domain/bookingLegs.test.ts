@@ -278,3 +278,52 @@ describe('deriveTripLegs — defensive', () => {
     expect(legs.map((l) => l.travelDate)).toEqual(['2026-08-22', null]);
   });
 });
+
+describe('deriveTripLegs — through (stops on the way)', () => {
+  it('private: a through-run is one leg with viaStops, dated by its first wire', () => {
+    const legs = deriveTripLegs({
+      stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'],
+      dates: ['2026-12-01', '2026-12-01', '2026-12-03'],
+      through: [0],
+      serviceType: 'private',
+    });
+    expect(legs).toEqual([
+      { seq: 1, kind: 'leg', fromPlace: 'Kandy', toPlace: 'Sigiriya', viaStops: ['Pinnawala'], travelDate: '2026-12-01', pickupTime: null },
+      { seq: 2, kind: 'leg', fromPlace: 'Sigiriya', toPlace: 'Ella', viaStops: [], travelDate: '2026-12-03', pickupTime: null },
+    ]);
+  });
+
+  it('private: a round trip through a stop is one leg from and to the same place', () => {
+    const legs = deriveTripLegs({ stops: ['Kandy', 'Pinnawala', 'Kandy'], through: [0], serviceType: 'private' });
+    expect(legs).toEqual([
+      { seq: 1, kind: 'leg', fromPlace: 'Kandy', toPlace: 'Kandy', viaStops: ['Pinnawala'], travelDate: null, pickupTime: null },
+    ]);
+  });
+
+  it('chauffeur: a through wire joins the day even when the trip has no dates at all', () => {
+    const legs = deriveTripLegs({ stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'], through: [0], serviceType: 'chauffeur' });
+    expect(legs.map((l) => [l.kind, l.fromPlace, l.toPlace, l.viaStops])).toEqual([
+      ['day', 'Kandy', 'Sigiriya', ['Pinnawala']],
+      ['day', 'Sigiriya', 'Ella', []],
+    ]);
+  });
+  it('private: several through wires in a row make one leg with every stop on the way', () => {
+    const legs = deriveTripLegs({ stops: ['Kandy', 'Pinnawala', 'Dambulla', 'Sigiriya'], through: [0, 1], serviceType: 'private' });
+    expect(legs).toEqual([
+      { seq: 1, kind: 'leg', fromPlace: 'Kandy', toPlace: 'Sigiriya', viaStops: ['Pinnawala', 'Dambulla'], travelDate: null, pickupTime: null },
+    ]);
+  });
+
+  it('chauffeur: a dated through-run is one day on its first wire\'s date', () => {
+    const legs = deriveTripLegs({
+      stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'],
+      dates: ['2026-12-01', '2026-12-01', '2026-12-03'],
+      through: [0],
+      serviceType: 'chauffeur',
+    });
+    expect(legs).toEqual([
+      { seq: 1, kind: 'day', fromPlace: 'Kandy', toPlace: 'Sigiriya', viaStops: ['Pinnawala'], travelDate: '2026-12-01', pickupTime: null },
+      { seq: 2, kind: 'day', fromPlace: 'Sigiriya', toPlace: 'Ella', viaStops: [], travelDate: '2026-12-03', pickupTime: null },
+    ]);
+  });
+});

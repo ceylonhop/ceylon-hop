@@ -101,6 +101,25 @@ describe('quoteToBooking', () => {
     expect(m.distanceKm).toBe(380); // 115 + 90 + 175, summed via rideRawKm
   });
 
+  it('marks every segment inside a 3+-stop ride as through, so the booking keeps it as one leg', () => {
+    const out = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+      { stops: ['Kandy', 'Pinnawala', 'Sigiriya'], segmentKms: [40, 70] },
+      { from: 'Sigiriya', to: 'Ella', distanceKm: 180 },
+    ] }), DETAILS);
+    expect(out.mode).toBe('trip');
+    if (out.mode === 'trip') expect(out.input).toMatchObject({ stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'], through: [0] });
+  });
+
+  it("chauffeur: a 3+-stop day's inner segments are through too", () => {
+    const out = quoteToBooking(q({ product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-08-01', lastDate: '2026-08-02',
+      travelDays: [
+        { date: '2026-08-01', stops: ['Kandy', 'Pinnawala', 'Sigiriya'], segmentKms: [40, 70] },
+        { date: '2026-08-02', from: 'Sigiriya', to: 'Ella', distanceKm: 180 },
+      ] }), DETAILS);
+    expect(out.mode).toBe('trip');
+    if (out.mode === 'trip') expect(out.input).toMatchObject({ stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'], through: [0] });
+  });
+
   // Was: "pins the pre-existing quirk (GC-13)". GC-13 dropped a non-chaining leg's own origin,
   // so this booking used to read ['CMB','Kandy','Galle'] — 'Ella' gone and a leg Kandy → Galle
   // that nobody drives invented. That reached the driver's drawer and the customer's email, so
