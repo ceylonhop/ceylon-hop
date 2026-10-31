@@ -4,11 +4,29 @@ import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { measureLeg } from '../quote/routeChoice';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import type { QuoteRequest, QuoteResult, ChauffeurTravelDay, LineItem } from '../quote/types';
+import type { QuoteRequest, QuoteResult, ChauffeurRideDay, LineItem } from '../quote/types';
 import { SHARED_EXTRA_LABELS, type SHARED_EXTRA_CODES } from '../domain/shared';
 
 type SharedExtraCode = typeof SHARED_EXTRA_CODES[number];
 import type { DiscountRequest } from '../quote/discount';
+import type { Ride } from '../quote/types';
+
+// The rides a trip's wires form. A wire in `through` continues the current ride onto the next
+// wire; a gap wire belongs to no ride. Each ride remembers its wires so dates and road choices
+// can be read per wire.
+function tripRides(input: TripInput): { wires: number[] }[] {
+  const gaps = new Set(input.gaps ?? []);
+  const through = new Set(input.through ?? []);
+  const rides: { wires: number[] }[] = [];
+  let cur: { wires: number[] } | null = null;
+  for (let i = 0; i < input.stops.length - 1; i++) {
+    if (gaps.has(i)) { cur = null; continue; }
+    if (!cur) { cur = { wires: [] }; rides.push(cur); }
+    cur.wires.push(i);
+    if (!through.has(i)) cur = null;
+  }
+  return rides;
+}
 
 // GL-3 — the M11 quote engine is the pricing truth for public bookings (owner decision
 // 2026-07-02). Distances come from the maps adapter; anything unresolvable comes back as
@@ -125,18 +143,18 @@ function addDays(ymd: string, days: number): string {
 // The engine only uses chauffeur dates for the day-span + idle-day count, so when the
 // customer left the trip flexible we synthesize a span: `days` long (default one day per
 // leg), legs on consecutive days, extra legs sharing the last day.
-function chauffeurDates(input: TripInput, legs: { from: string; to: string; distanceKm: number }[]): {
+function chauffeurDates(input: TripInput, legs: { wire: number; ride: Ride }[]): {
   firstDate: string;
   lastDate: string;
-  travelDays: ChauffeurTravelDay[];
+  travelDays: ChauffeurRideDay[];
 } {
-  const real = input.dates?.slice(0, legs.length);
-  if (real && real.length === legs.length && real.every(isUsableDate)) {
-    const sorted = [...real].sort();
+  const real = legs.map((l) => input.dates?.[l.wire]);
+  if (real.every((d) => d && isUsableDate(d))) {
+    const sorted = [...(real as string[])].sort();
     return {
       firstDate: sorted[0],
       lastDate: sorted[sorted.length - 1],
-      travelDays: legs.map((leg, i) => ({ date: real[i], ...leg })),
+      travelDays: legs.map((l, i) => ({ date: real[i] as string, ...l.ride })),
     };
   }
   const days = input.days ?? legs.length;
@@ -144,7 +162,7 @@ function chauffeurDates(input: TripInput, legs: { from: string; to: string; dist
   return {
     firstDate: SYNTHETIC_FIRST_DATE,
     lastDate,
-    travelDays: legs.map((leg, i) => ({ date: i < days ? addDays(SYNTHETIC_FIRST_DATE, i) : lastDate, ...leg })),
+    travelDays: legs.map((l, i) => ({ date: i < days ? addDays(SYNTHETIC_FIRST_DATE, i) : lastDate, ...l.ride })),
   };
 }
 
@@ -154,27 +172,28 @@ export async function priceTrip(
   rateCard: RateCard = RATE_CARD,
   discount?: DiscountRequest,
 ): Promise<PriceOutcome> {
-  const legs: { from: string; to: string; distanceKm: number }[] = [];
-  const gaps = new Set(input.gaps ?? []);
-  for (let i = 0; i < input.stops.length - 1; i++) {
-    // A gap is the traveller's own stretch: not a leg we drive, so never measured or charged.
-    // (Chauffeur trips can't carry gaps — the route refuses them.)
-    if (gaps.has(i)) continue;
-    const from = input.stops[i];
-    const to = input.stops[i + 1];
-    let leg = null;
-    try {
-      leg = await measureLeg(maps, from, to, input.routeVariants?.[i]);
-    } catch {
-      leg = null;
+  const legs: { wire: number; ride: Ride }[] = [];
+  for (const r of tripRides(input)) {
+    const stops = [input.stops[r.wires[0]], ...r.wires.map((w) => input.stops[w + 1])];
+    const segmentKms: number[] = [];
+    for (const i of r.wires) {
+      const from = input.stops[i];
+      const to = input.stops[i + 1];
+      let leg = null;
+      try {
+        leg = await measureLeg(maps, from, to, input.routeVariants?.[i]);
+      } catch {
+        leg = null;
+      }
+      if (!leg) return unpriced(`distance unresolved: ${from} → ${to}`);
+      if (leg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
+      // A booking NEVER silently switches road (spec §4.2): the customer saw the local-road price.
+      if (input.routeVariants?.[i] === 'no_tolls' && leg.variant !== 'no_tolls') {
+        throw new InvalidPricingRequestError(ROUTE_CHOICE_UNAVAILABLE);
+      }
+      segmentKms.push(leg.km);
     }
-    if (!leg) return unpriced(`distance unresolved: ${from} → ${to}`);
-    if (leg.estimated) return unpriced(`${ESTIMATED_DISTANCE}: ${from} → ${to}`);
-    // A booking NEVER silently switches road (spec §4.2): the customer saw the local-road price.
-    if (input.routeVariants?.[i] === 'no_tolls' && leg.variant !== 'no_tolls') {
-      throw new InvalidPricingRequestError(ROUTE_CHOICE_UNAVAILABLE);
-    }
-    legs.push({ from, to, distanceKm: leg.km });
+    legs.push({ wire: r.wires[0], ride: { stops, segmentKms } });
   }
 
   const vehicle = input.vehicleType === 'van' ? 'van' : 'car';
@@ -183,7 +202,9 @@ export async function priceTrip(
     return runEngine({ product: 'chauffeur', vehicle, pax: input.pax, bags: 0, ...chauffeurDates(input, legs) }, rateCard, discount);
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
-  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs }, rateCard, discount);
+  // Every ride is the Ride shape now; a 2-stop Ride prices identically to the old {from,to,distanceKm}
+  // (types.ts normalizeRide), which the pairwise test above pins at 8900.
+  return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs: legs.map((l) => l.ride) }, rateCard, discount);
 }
 
 // A shared seat is priced from the corridor's per-seat DB price × the number of seats —
