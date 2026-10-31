@@ -945,6 +945,12 @@ function render(){
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = badges[i];
     const dup = legChainDuplicate(leg);
+    const ask = !dup ? legLongDay(leg) : null;
+    const askHtml = ask ? (()=>{
+      const chain=legRouteChain(leg), hrs=Math.round(ask.minutes/60);
+      const at = ask.splitAt!=null ? chain[ask.splitAt] : null;
+      return `<div class="leg-warn long-day" role="status"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span><b>Long day on the road.</b> ${escAttr(chain.join(' → '))} is about ${hrs} hours of driving${chain.length>2?', before any time at the stops':''}.${at?` Most travellers split this with a night in ${escAttr(at)}.`:''}</span></div><div class="lw-actions">${at?`<button type="button" class="dw-btn dw-split" data-k="${ask.splitAt}">Split it — end this leg at ${escAttr(at)}</button>`:''}<button type="button" class="dw-btn dw-keep">Keep it as one day</button></div></div>`;
+    })() : '';
 
     // body differs by type: a transfer has pick-up→drop-off + distance;
     // a stay has one place and a nights count (no intercity travel). Dates
@@ -974,7 +980,8 @@ function render(){
           </div>
         </div>
         ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4?'hidden':''} ${dup?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}
-        ${dup?`<div class="leg-warn stop" role="alert"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> ${escAttr(dupPairText(leg))} — remove one, or change it.</span></div></div>`:''}`;
+        ${dup?`<div class="leg-warn stop" role="alert"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> ${escAttr(dupPairText(leg))} — remove one, or change it.</span></div></div>`:''}
+        ${askHtml}`;
 
     const stayBody = `
         <div class="loc-row stay">
@@ -1033,8 +1040,8 @@ function render(){
       }
       fromI.addEventListener('input',recompute);
       toI.addEventListener('input',recompute);
-      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; renderAfterPress(); });
-      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; renderAfterPress(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].ack=null; renderAfterPress(); });
+      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; state.legs[i].ack=null; renderAfterPress(); });
       // chain helpers: k indexes [from, ...via, to]
       const getChain=()=>legChain(state.legs[i]);
       const setChain=(c)=>{ state.legs[i].from=c[0]; state.legs[i].to=c[c.length-1]; state.legs[i].via=c.slice(1,-1); state.legs[i].ack=null; };
@@ -1061,6 +1068,17 @@ function render(){
         const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
         const inputs=c?c.querySelectorAll('.leg-via'):[]; const last=inputs[inputs.length-1];
         if(last){ last.dataset.suppressMenu='1'; last.focus({ preventScroll:true }); }
+      });
+      const keep=wrap.querySelector('.dw-keep');
+      if(keep) keep.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].ack='long_day'; render(); });
+      const split=wrap.querySelector('.dw-split');
+      if(split) split.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=legRouteChain(state.legs[i]), k=+split.dataset.k;
+        const first=c.slice(0,k+1), second=c.slice(k);
+        state.legs[i]={ ...state.legs[i], from:first[0], to:first[first.length-1], via:first.slice(1,-1), ack:null };
+        state.legs.splice(i+1,0,{ type:'transfer', from:second[0], to:second[second.length-1], via:second.slice(1,-1), date:null, nights:1, ack:null });
+        render();
       });
     } else {
       // stay wiring — one place (mirrors to drop-off so chaining continues)
@@ -1219,8 +1237,26 @@ function legBlockers(){
   state.legs.forEach((l,i)=>{ if(l.type!=='stay') n++; if(legChainDuplicate(l)) out.push({ i, legNo:n, reason:'duplicate' }); });
   return out;
 }
-// The long-day asks arrive in Task 21; until then there are none.
-function pendingAsks(){ return []; }
+const LONG_DAY_MIN = 360; // ops "Long drive warning": legDriveHours(leg) >= 6 (ops-ui.html:10793)
+// A leg that would be a long day on the road. splitAt is the chain index of the stop that leaves
+// the two halves closest to equal time — the place "Split it" turns into this leg's drop-off.
+// It indexes legRouteChain (blank stop rows dropped), so a blank row is never a split point.
+function legLongDay(leg){
+  if(leg.type==='stay' || leg.ack==='long_day') return null;
+  const minutes=legDrivingMinutes(leg);
+  if(minutes==null || minutes<LONG_DAY_MIN) return null;
+  const chain=legRouteChain(leg); let splitAt=null;
+  if(chain.length>2){
+    let best=Infinity, acc=0;
+    for(let k=0;k<chain.length-2;k++){ acc+=dayDrivingMinutes(chain[k],chain[k+1])||0; const d=Math.abs(acc-(minutes-acc)); if(d<best){ best=d; splitAt=k+1; } }
+  }
+  return { minutes, splitAt };
+}
+function pendingAsks(){
+  const out=[]; let n=0;
+  state.legs.forEach((l,i)=>{ if(l.type!=='stay'){ n++; if(legLongDay(l)) out.push({ i, legNo:n }); } });
+  return out;
+}
 // highlight an incomplete leg card, scroll it into view and focus the empty field
 function flagIncompleteLeg(i){
   const card=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
@@ -1740,6 +1776,7 @@ const PAX_HINT='Pick how many are travelling — choose your travellers above to
 function showDatesStep(){
   // blockers first, matching the Next hint in updateSummary
   const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
+  const asks=pendingAsks(); if(asks.length){ flagIncompleteLeg(asks[0].i); return; }
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
   const seq=routeSeq();

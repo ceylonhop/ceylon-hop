@@ -44,12 +44,15 @@ for (const vp of VIEWPORTS) {
 
     test('hands the stop to booking as through, and back again on edit', async ({ page }) => {
       await page.goto(url());
+      // Kandy → Sigiriya → Ella is a ≥ 6 h day: answer the long-day ask before Next.
+      await page.locator('.leg-warn.long-day .dw-keep').click();
       await page.locator('#request-btn').click();
       await page.locator('#dates-continue').click();
       await page.waitForURL('**/booking.html?**');
       const q = new URL(page.url()).searchParams;
       expect(q.get('stops')).toBe(CHAIN);
       expect(q.get('through')).toBe('0');
+      expect(q.get('ack')).toBe('0');
       await page.locator('.tr-edit').click();
       await page.waitForURL('**/plan.html?**');
       await expect(page.locator('#rail .leg-card')).toHaveCount(1);
@@ -181,14 +184,19 @@ test('kill switch off: the same URL loads as two plain legs and offers no add-st
 test('ack names the head wire of a run and round-trips to booking unchanged', async ({ page }) => {
   const stops = 'Kandy|Sigiriya / Dambulla|Ella|Galle';
   await page.goto('/plan.html?stops=' + encodeURIComponent(stops) + '&nights=0,0,0,0&through=0&ack=2&pax=2&vehicle=car');
-  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  const cards = page.locator('#rail .leg-card');
+  await expect(cards).toHaveCount(2);
+  // the first leg (Kandy → Sigiriya → Ella, ≥ 6 h) still asks; the second arrived acked
+  await expect(cards.nth(0).locator('.leg-warn.long-day')).toHaveCount(1);
+  await expect(cards.nth(1).locator('.leg-warn.long-day')).toHaveCount(0);
+  await cards.nth(0).locator('.dw-keep').click();
   await page.locator('#request-btn').click();
   await page.locator('#dates-continue').click();
   await page.waitForURL('**/booking.html?**');
   const q = new URL(page.url()).searchParams;
   expect(q.get('stops')).toBe(stops);
   expect(q.get('through')).toBe('0');
-  expect(q.get('ack')).toBe('2');
+  expect(q.get('ack')).toBe('0,2');
 });
 
 // `dates` is per WIRE too: every wire of a run carries its leg's date. Kandy→Sigiriya→Ella
@@ -198,6 +206,9 @@ test('dates are read by each leg\'s head wire and round-trip to booking unchange
   const dates = '2026-12-01,2026-12-01,2026-12-03';
   await page.goto('/plan.html?stops=' + encodeURIComponent(stops) + '&nights=0,0,0,0&through=0&dates=' + dates + '&pax=2&vehicle=car');
   await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  // only the first leg (Kandy → Sigiriya → Ella) is a ≥ 6 h day: keep it to reach Next
+  await expect(page.locator('.leg-warn.long-day')).toHaveCount(1);
+  await page.locator('#rail .leg-card').nth(0).locator('.dw-keep').click();
   await page.locator('#request-btn').click();
   await page.locator('#dates-continue').click();
   await page.waitForURL('**/booking.html?**');

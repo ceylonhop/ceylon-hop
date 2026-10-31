@@ -51,8 +51,9 @@ for (const vp of VIEWPORTS) {
       await card.locator('.add-via').click();
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'true');
       await expect(page.locator('#route-incomplete-hint')).toContainText('Add a pick-up and drop-off to every leg to continue');
-      await card.locator('.leg-via').fill('Sigiriya');
-      await page.locator('.place-option', { hasText: 'Sigiriya' }).first().click();
+      // Kandy → Nuwara Eliya → Ella stays under 6 h, so no long-day ask gates Next
+      await card.locator('.leg-via').fill('Nuwara Eliya');
+      await page.locator('.place-option', { hasText: 'Nuwara Eliya' }).first().click();
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'false');
       const via = card.locator('.rb-field.via');
       await via.hover();
@@ -62,6 +63,42 @@ for (const vp of VIEWPORTS) {
       await expect(card.locator('.rb-field.via')).toHaveCount(1);
       await expect.poll(() => new URL(page.url()).searchParams.get('stops')).toBe('Kandy|Ella');
       expect(new URL(page.url()).searchParams.get('through')).toBeNull();
+    });
+
+    test('a ≥ 6 h leg asks; Keep enables Next and reaches booking as ack; Split makes two legs', async ({ page }) => {
+      // CMB → Ella → Arugam Bay is well over 6 h on the modelled km/42 clock.
+      const go = () => page.goto('/plan.html?stops=' + enc('Colombo Airport (CMB)|Ella|Arugam Bay') + '&nights=0,0,0&through=0&pax=2&vehicle=car');
+      await go();
+      const card = page.locator('#rail .leg-card').first();
+      const ask = card.locator('.leg-warn.long-day');
+      await expect(ask).toContainText('Long day on the road');
+      await expect(ask.locator('.dw-split')).toContainText('end this leg at Ella');
+      await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'true');
+      await expect(page.locator('#route-incomplete-hint')).toContainText('Answer the note on Leg 1');
+      await ask.locator('.dw-keep').click();
+      await expect(card.locator('.leg-warn')).toHaveCount(0);
+      await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'false');
+      await page.locator('#request-btn').click();
+      await page.locator('#dates-continue').click();
+      await page.waitForURL('**/booking.html?**');
+      expect(new URL(page.url()).searchParams.get('ack')).toBe('0');
+
+      await go();
+      await page.locator('.leg-warn.long-day .dw-split').click();
+      await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+      await expect(page.locator('#rail .leg-card').nth(0).locator('.leg-to')).toHaveValue('Ella');
+      await expect(page.locator('#rail .leg-card').nth(1).locator('.leg-from')).toHaveValue('Ella');
+      await expect(page.locator('#rail .leg-card').nth(1).locator('.leg-to')).toHaveValue('Arugam Bay');
+      await expect(page.locator('#rail .leg-via')).toHaveCount(0);
+    });
+
+    test('editing a kept leg asks again', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + enc('Colombo Airport (CMB)|Ella|Arugam Bay') + '&nights=0,0,0&through=0&ack=0&pax=2&vehicle=car');
+      await expect(page.locator('.leg-warn.long-day')).toHaveCount(0);
+      const via = page.locator('#rail .leg-via');
+      await via.fill('Kandy');
+      await page.locator('.place-option', { hasText: 'Kandy' }).first().click();
+      await expect(page.locator('.leg-warn.long-day')).toHaveCount(1);
     });
   });
 }
