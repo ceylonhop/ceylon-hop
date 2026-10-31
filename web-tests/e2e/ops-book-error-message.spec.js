@@ -221,3 +221,14 @@ test('cash on the day: the booking total matches the quote: no warning', async (
   await expect(page.locator('#bk-cash-help')).toContainText('pay $149.00 in US dollars');
   await expect(page.locator('#bk-cash-warn')).toBeHidden();
 });
+
+// Time is optional (owner 2026-10-31): the server never required it, and a multi-stop trip drops it
+// entirely, but the modal refused to book without one — Sandy's cash-on-the-day booking was blocked.
+test('no time typed: Mark booked still goes out, without a time', async ({ page }) => {
+  const posts = await openBookModalAs(page, null);
+  await page.locator('#bk-time').fill('');
+  await page.locator('[data-action="confirmBook"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(JSON.parse(posts[0])).not.toHaveProperty('time');
+  await expect(toastMsg(page)).toHaveText('Booked · CH-CASH1');
+});

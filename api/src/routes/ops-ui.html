@@ -7692,8 +7692,8 @@ async function bookQuote() {
   var cashOnDay = bookCashOnDay && canBookCashOnDay();
   if (cashOnDay) b.paymentArrangement = 'on_the_day';
   // Client-side required-field guard (server re-validates via Zod).
-  if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
-    showToast('Fill in name, email, WhatsApp, country, date and time', 'error');
+  if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date) {
+    showToast('Fill in name, email, WhatsApp, country and date', 'error');
     return;
   }
   // <input type="email"> hands back whatever was typed, so "roshen@gmail" passed the
@@ -11840,7 +11840,7 @@ function renderBookModal() {
     field('Pax', false, '<input class="ch-input" id="bk-pax" type="number" min="1" value="' + esc(st.passengerCount) + '" />'),
     field('Bags', false, '<input class="ch-input" id="bk-bags" type="number" min="0" value="' + esc(st.luggageCount) + '" />'),
     field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(p.date) + '" />'),
-    field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
+    field('Time', false, '<input class="ch-input" id="bk-time" type="time" value="" />'),
     '</div>',
     canBookCashOnDay() ? '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">'
       + '<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="bk-cash-on-day"' + (bookCashOnDay ? ' checked' : '') + ' /> Customer pays cash on the day</label>'
