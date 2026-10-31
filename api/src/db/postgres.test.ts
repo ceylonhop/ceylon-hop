@@ -1414,6 +1414,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     token: string,
     leg: Record<string, unknown> & { from: string; to: string } = { from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 },
   ) {
+    const via = Array.isArray(leg.stops) ? (leg.stops as string[]).slice(1, -1) : [];
     const intent: WebQuoteIntent = {
       product: 'private',
       routeId: `integration-${Date.now()}-${Math.random()}`,
@@ -1422,7 +1423,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       bags: 1,
       date: '2026-09-10',
       time: '09:00',
-      legs: [{ from: leg.from, to: leg.to }],
+      // A Ride-shaped stored leg (stops/segmentKms) only converts when the intent names the same
+      // inner stops as `via` (quoteConversionRepo storedEngineMatchesIntent, PR 1 #1117).
+      legs: [{ from: leg.from, to: leg.to, ...(via.length ? { via } : {}) }],
       extras: [],
     };
     const rateCardVersion = 'conversion-integration-v1';
