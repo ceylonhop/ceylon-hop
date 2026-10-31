@@ -34,7 +34,7 @@ async function openPlanner(page) {
 // The swap control now sits inside the row (.stop-ctl) rather than straddling the divider
 // between the two fields — where the later drop-off field once painted over the arrow's lower
 // half and ate the press. Every point of the button must still reach it.
-test('the whole swap arrow is pressable, including the half over the drop-off field', async ({ page }) => {
+test('the whole swap button is pressable, including its bottom edge', async ({ page }) => {
   await openPlanner(page);
   const leg = page.locator('#rail .leg-card').first();
 

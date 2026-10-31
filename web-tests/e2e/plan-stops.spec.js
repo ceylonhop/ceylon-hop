@@ -132,6 +132,23 @@ for (const vp of VIEWPORTS) {
       expect(new URL(page.url()).searchParams.get('roads')).toBeNull();
     });
 
+    // A leg loaded with a stop (a through URL) cannot carry a road: the batch never asks for its
+    // from→to pair and the "Two roads to X" popup never opens for it.
+    test('a leg loaded with a stop is never batched for a road nor offered the popup', async ({ page }) => {
+      await stubRoadChoice(page);
+      const bodies = [];
+      page.on('request', (req) => {
+        if (req.url().includes('/quote/v2/estimate-batch')) bodies.push(JSON.parse(req.postData() || '{}'));
+      });
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Hikkaduwa|Galle') + '&nights=0,0,0&through=0&pax=2&vehicle=car');
+      await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+      await expect(page.locator('#rail .leg-via')).toHaveValue('Hikkaduwa');
+      await page.waitForTimeout(1200);   // longer than the 800 ms road debounce
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      const pairs = bodies.flatMap((b) => (b.intents || []).flatMap((it) => (it.legs || []).map((l) => l.from + '>' + l.to)));
+      expect(pairs).not.toContain('Colombo Airport (CMB)>Galle');
+    });
+
     // A blank stop row is not a stop: the leg keeps its price, its road chip and the chosen road.
     test('an empty stop row keeps the leg\'s price and its chosen road', async ({ page }) => {
       await stubRoadChoice(page);

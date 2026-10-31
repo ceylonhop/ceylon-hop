@@ -727,7 +727,7 @@ function maybeOfferRoad(){
   const RC=window.CH_ROUTE_CHOICE; if(!RC) return;
   const cands=[];
   state.legs.forEach(l=>{
-    if(l.type==='stay') return;
+    if(l.type==='stay' || legVia(l).length) return;   // a leg with stops carries no road
     const key=liveRouteKey(l.from,l.to);
     if(cands.includes(key)) return;
     const o=roadOffer(key);
@@ -773,7 +773,7 @@ function sendRoadBatch(){
   const editing=ae && ae.closest && ae.closest('#rail .leg') && ae.matches('.place-input') ? +ae.closest('#rail .leg').dataset.i : -1;
   const drives=[];
   state.legs.forEach((l,i)=>{
-    if(l.type==='stay') return;
+    if(l.type==='stay' || legVia(l).length) return;   // a leg with stops carries no road
     if(i===editing){ roadSkipped=true; return; }
     const from=(l.from||'').trim(), to=(l.to||'').trim();
     if(!from || !to || norm(from)===norm(to) || !isCatalogueTown(from) || !isCatalogueTown(to)) return;
