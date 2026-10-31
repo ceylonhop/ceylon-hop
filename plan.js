@@ -245,7 +245,7 @@ const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).fil
 // Wires that continue the same leg (stops[i+1] is a stop on the way), and the head wire of each
 // run the traveller kept as one long day — both in the same wire index space as `gaps`.
 const throughParam = PLANNER_STOPS ? (params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
-const ackParam = (params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+const ackParam = PLANNER_STOPS ? (params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
 // Restore the travel dates the customer already chose: the booking step passes them back
 // as `dates`, one per WIRE (every wire of a run carries its leg's date), so buildLegs reads
 // each transfer leg's date at its HEAD wire. We deliberately do NOT auto-fill from `start` —
@@ -589,7 +589,7 @@ function routeSeqDetailed(){
         wiresHere.push(w);
       }
       wiresHere.slice(0,-1).forEach(w=>throughSet.add(w)); // every wire but the last continues the leg
-      if(l.ack==='long_day' && wiresHere.length) acks.push(wiresHere[0]); // ack = the run's head wire
+      if(PLANNER_STOPS && l.ack==='long_day' && wiresHere.length) acks.push(wiresHere[0]); // ack = the run's head wire
     }
   });
   // roads: per wire, 'no_tolls' where the drive is priced and drawn on the local road, else empty —
@@ -937,6 +937,7 @@ function render(){
   const n=state.legs.length;
   const badges=legBadges();
 
+  const atPlaceCap = routeSeq().length>=12; // the server's MAX_TRIP_STOPS = 12 places per trip
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
     const route=!isStay?legRoute(leg):null;
@@ -981,7 +982,7 @@ function render(){
               <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>${ctl(chainLen-1)}</div>
           </div>
         </div>
-        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4?'hidden':''} ${dup?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}
+        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4||atPlaceCap?'hidden':''} ${dup?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}
         ${dup?`<div class="leg-warn stop" role="alert"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> ${escAttr(dupPairText(leg))} — remove one, or change it.</span></div></div>`:''}
         ${askHtml}`;
 
@@ -1064,7 +1065,7 @@ function render(){
       }));
       const addVia=wrap.querySelector('.add-via');
       if(addVia) addVia.addEventListener('click',()=>{
-        if((state.legs[i].via||[]).length>=4) return;
+        if((state.legs[i].via||[]).length>=4 || routeSeq().length>=12) return; // MAX_TRIP_STOPS = 12 (server cap)
         markRouteCustomized();
         state.legs[i].via=(state.legs[i].via||[]).concat(['']); state.legs[i].ack=null; render();
         const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
@@ -1227,6 +1228,7 @@ function firstIncompleteLeg(){
 // Consecutive repeats only (ops legChainDuplicate; engine validateRide): Kandy → Pinnawala →
 // Kandy is a round trip and fine; Kandy → Kandy, or a stop equal to the drop-off, is an error.
 function legChainDuplicate(leg){
+  if(!PLANNER_STOPS) return false; // kill switch: today's planner had no same-place check
   if(leg.type==='stay') return false;
   const c=legChain(leg).map(norm);
   for(let k=0;k<c.length-1;k++) if(c[k] && c[k+1] && c[k]===c[k+1]) return true;
@@ -1244,6 +1246,7 @@ const LONG_DAY_MIN = 360; // ops "Long drive warning": legDriveHours(leg) >= 6 (
 // the two halves closest to equal time — the place "Split it" turns into this leg's drop-off.
 // It indexes legRouteChain (blank stop rows dropped), so a blank row is never a split point.
 function legLongDay(leg){
+  if(!PLANNER_STOPS) return null; // kill switch: no ask, no Next gate
   if(leg.type==='stay' || leg.ack==='long_day') return null;
   const minutes=legDrivingMinutes(leg);
   if(minutes==null || minutes<LONG_DAY_MIN) return null;

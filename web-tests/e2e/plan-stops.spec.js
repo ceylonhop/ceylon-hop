@@ -203,6 +203,30 @@ test('kill switch off: the same URL loads as two plain legs and offers no add-st
   await expect(page.locator('.add-via')).toHaveCount(0);
 });
 
+test('kill switch off: a 7 h plain leg does not ask and the hand-off carries no ack', async ({ page }) => {
+  await page.addInitScript(() => { window.__CH_PLANNER_STOPS_OFF = true; });
+  await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Arugam Bay') + '&pax=2&vehicle=car&ack=0');
+  await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+  await expect(page.locator('.leg-warn.long-day')).toHaveCount(0);
+  await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'false');
+  await page.locator('#request-btn').click();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+  expect(new URL(page.url()).searchParams.get('ack')).toBeNull();
+});
+
+// The API refuses more than 12 places per trip (MAX_TRIP_STOPS), so the planner stops offering a stop at 12.
+test('a trip with 12 places offers no add-stop link; 11 places still does', async ({ page }) => {
+  const twelve = ['Kandy', 'Sigiriya / Dambulla', 'Anuradhapura', 'Trincomalee', 'Ella', 'Galle', 'Mirissa', 'Tangalle', 'Nuwara Eliya', 'Negombo', 'Hikkaduwa', 'Colombo'];
+  const go = (places) => page.goto('/plan.html?stops=' + encodeURIComponent(places.join('|')) + '&nights=' + places.map(() => 0).join(',') + '&pax=2&vehicle=car');
+  await go(twelve);
+  await expect(page.locator('#rail .leg-card')).toHaveCount(11);
+  await expect(page.locator('.add-via:not([hidden])')).toHaveCount(0);
+  await go(twelve.slice(0, 11));
+  await expect(page.locator('#rail .leg-card')).toHaveCount(10);
+  expect(await page.locator('.add-via:not([hidden])').count()).toBeGreaterThan(0);
+});
+
 // `ack` is a wire index, like `through` and `gaps`: the run whose HEAD wire it names. Two runs —
 // Kandy→Sigiriya→Ella (wires 0,1) and Ella→Galle (wire 2) — so ack=2 is the SECOND leg, not leg 2.
 test('ack names the head wire of a run and round-trips to booking unchanged', async ({ page }) => {
