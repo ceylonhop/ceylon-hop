@@ -6,6 +6,9 @@
      • a distance Google calculates & fills in automatically
    Hotels are the traveller's own. Quote = sum of private legs.
    ============================================================ */
+// Stops on the way inside one leg (spec 2026-10-30-planner-stops-within-a-leg-design.md). One
+// constant turns the feature off: no add-stop link, and a `through` URL loads as separate legs.
+const PLANNER_STOPS = !window.__CH_PLANNER_STOPS_OFF;
 initChrome({ active:'plan.html', footerCta:false, navCta:false, breadcrumbs:[['Home','index.html'],['Trip planner']] });
 mountWA();
 
@@ -68,6 +71,8 @@ const liveRouteCache = new Map();
 const liveRoutePending = new Set();
 const liveRouteWaiters = new Map();
 function liveRouteKey(a,b){ return norm(a)+'|'+norm(b); }
+// The ordered places a transfer drives through: pick-up, each stop on the way, drop-off.
+function legChain(leg){ return [leg.from||''].concat(leg.via||[], [leg.to||'']); }
 function localRouteEstimate(a,b){
   const g1=resolve(a), g2=resolve(b);
   if(!g1 || !g2) return null;
@@ -205,27 +210,40 @@ const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)|
 // Wire indices the traveller arranges themselves (a leg's drop-off ≠ the next leg's pick-up).
 // Restored from the URL so returning from booking doesn't re-invent a connector leg for the gap.
 const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+// Wires that continue the same leg (stops[i+1] is a stop on the way), and the head wire of each
+// run the traveller kept as one long day — both in the same wire index space as `gaps`.
+const throughParam = PLANNER_STOPS ? (params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
+const ackParam = (params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
 // The local roads chosen on an earlier pass (booking's Back, a reload): `roads` is index-aligned
 // with the stop wires, 'no_tolls' or empty. It takes effect only once the batch confirms the
 // drive still has a cheaper local road; one that comes back without it is dropped.
 (params.get('roads')||'').split(',').forEach((r,i)=>{
   if(r==='no_tolls' && i<startStops.length-1 && !gapsParam.includes(i)) roadChoice.set(liveRouteKey(startStops[i],startStops[i+1]),'no_tolls');
 });
-function buildLegs(stops, nights, gaps){
+function buildLegs(stops, nights, gaps, through, acks){
   const hasNights = nights && nights.some(n=>n>0);
   if(!stops.length) return [];  // fresh planner — the empty state invites the first leg
-  if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1 }];
+  if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1, via:[], ack:null }];
   const isGap = new Set(gaps||[]); // wire i (stops[i]→stops[i+1]) the traveller arranges themselves
+  const isThrough = new Set(through||[]);
+  const isAck = new Set(acks||[]);
   const N = i => (nights && nights[i]>0) ? nights[i] : 0;
   const legs=[];
   // a night at the origin becomes a leading stay so the reviewed day-count is preserved
   if(hasNights && N(0)>0) legs.push({ type:'stay', from:stops[0], to:stops[0], date:null, nights:N(0) });
-  for(let i=0;i<stops.length-1;i++){
+  let i=0;
+  while(i<stops.length-1){
     // a gap wire is NOT a transfer we run — the traveller connects it themselves, so we never
     // re-invent (and never later price) a leg they didn't create.
-    if(!isGap.has(i)) legs.push({ type:'transfer', from:stops[i], to:stops[i+1], date:null, nights:1 });
-    // stay at each intermediate destination (skip the final stop — you depart from there)
-    if(hasNights && i+1<stops.length-1 && N(i+1)>0) legs.push({ type:'stay', from:stops[i+1], to:stops[i+1], date:null, nights:N(i+1) });
+    let end=i;
+    if(!isGap.has(i)){
+      // a through wire continues this leg onto the next wire: stops[i+1] is a stop on the way
+      while(end<stops.length-2 && isThrough.has(end) && !isGap.has(end+1)) end++;
+      legs.push({ type:'transfer', from:stops[i], to:stops[end+1], via:stops.slice(i+1,end+1), date:null, nights:1, ack:isAck.has(i)?'long_day':null });
+    }
+    // stay at the drop-off (skip the final stop — you depart from there)
+    if(hasNights && end+1<stops.length-1 && N(end+1)>0) legs.push({ type:'stay', from:stops[end+1], to:stops[end+1], date:null, nights:N(end+1) });
+    i=end+1;
   }
   return legs;
 }
@@ -234,7 +252,7 @@ const state = {
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
   pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
-  legs: buildLegs(startStops, nightsParam, gapsParam),
+  legs: buildLegs(startStops, nightsParam, gapsParam, throughParam, ackParam),
   hideTemplates: params.has('stops') || params.has('nights') || params.has('dates'),
   // The WHEN step's first question: null = not answered yet (show the fork alone),
   // 'known' = show the per-leg list, 'later' = every leg flexible. See renderDatesStep.
@@ -432,7 +450,7 @@ document.getElementById('add-stop').addEventListener('click',()=>{
   if(state.legs.length>=10) return;
   markRouteCustomized();
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
-  state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1 });
+  state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1, via:[], ack:null });
   render();
   // render() rebuilds the whole rail, so the card we just added is the last one. Grow it in
   // rather than letting it appear at full size — a leg used to arrive between one frame and
@@ -487,7 +505,7 @@ function routeSeq(){
   };
   state.legs.forEach(l=>{
     if(l.type==='stay'){ addPlace(l.from||'', l.nights||0); }
-    else { addPlace(l.from||'',0); addPlace(l.to||'',0); }
+    else { legChain(l).forEach(p=>addPlace(p,0)); }
   });
   return seq;
 }
@@ -495,7 +513,7 @@ function routeSeq(){
 // Each transfer leg's date lands on the wire it creates, so dates set in the
 // “When” step flow through to the booking itinerary in the right place.
 function routeSeqDetailed(){
-  const seq=[]; const wires=[]; const wireKm=[]; const wireRoad=[]; const wireChosen=[]; const claimed=new Set();
+  const seq=[]; const wires=[]; const wireKm=[]; const wireRoad=[]; const wireChosen=[]; const claimed=new Set(); const throughSet=new Set(); const acks=[];
   const addPlace=(place,nights)=>{
     if(!place) return false;
     if(seq.length && norm(seq[seq.length-1].place)===norm(place)){ seq[seq.length-1].nights+=nights; return false; }
@@ -504,22 +522,30 @@ function routeSeqDetailed(){
   state.legs.forEach(l=>{
     if(l.type==='stay'){ addPlace(l.from||'', l.nights||0); }
     else {
-      addPlace(l.from||'',0);
-      addPlace(l.to||'',0);
-      // Date AND measured distance both land on the wire this transfer creates, keyed by the
-      // same seq position, so the two arrays stay index-aligned with `seq` even when the route
-      // is discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous
-      // drop-off inserts an extra "phantom" wire that correctly gets no date and no km).
-      if(seq.length>=2){
-        const w=seq.length-2;
+      // Date AND measured distance both land on each wire this transfer creates, keyed by the
+      // same seq position, so the arrays stay index-aligned with `seq` even when the route is
+      // discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous drop-off
+      // inserts an extra "phantom" wire that correctly gets no date and no km). A leg with stops
+      // on the way creates one wire per pair of its chain; all but the last are `through`.
+      const chain=legChain(l);
+      chain.forEach(p=>addPlace(p,0));
+      const wiresHere=[];
+      for(let k=0;k<chain.length-1;k++){
+        // wire between chain[k] and chain[k+1] in seq space: the chain's wires are the last
+        // chain.length-1 wires of seq (for a plain leg, seq.length-2 — the wire it just created)
+        const w=seq.length-chain.length+k;
+        if(w<0) continue;
         claimed.add(w); // this transfer's own wire; any UNclaimed wire is a "gap" the traveller arranges
         wires[w] = l.date ? fmtISO(l.date) : '';
-        const route=legRouteEstimate(l.from,l.to);
+        const route=legRouteEstimate(chain[k],chain[k+1]);
         const km=route ? route.distanceKm : null;
         wireKm[w] = km!=null ? String(km) : '';
         wireRoad[w] = route && route.road==='no_tolls' ? 'no_tolls' : '';
-        wireChosen[w] = roadChoice.get(liveRouteKey(l.from,l.to))==='no_tolls' ? 'no_tolls' : '';
+        wireChosen[w] = roadChoice.get(liveRouteKey(chain[k],chain[k+1]))==='no_tolls' ? 'no_tolls' : '';
+        wiresHere.push(w);
       }
+      wiresHere.slice(0,-1).forEach(w=>throughSet.add(w)); // every wire but the last continues the leg
+      if(l.ack==='long_day' && wiresHere.length) acks.push(wiresHere[0]); // ack = the run's head wire
     }
   });
   // roads: per wire, 'no_tolls' where the drive is priced and drawn on the local road, else empty —
@@ -531,10 +557,10 @@ function routeSeqDetailed(){
     dates.push(wires[i]||''); kms.push(wireKm[i]||''); roads.push(wireRoad[i]||''); chosenRoads.push(wireChosen[i]||'');
     if(!claimed.has(i)) gaps.push(i);
   }
-  return { seq, dates, kms, gaps, roads, chosenRoads };
+  return { seq, dates, kms, gaps, roads, chosenRoads, through:[...throughSet].sort((a,b)=>a-b), acks };
 }
 function syncPlanUrl(){
-  const { seq, dates, gaps, chosenRoads } = routeSeqDetailed();
+  const { seq, dates, gaps, chosenRoads, through, acks } = routeSeqDetailed();
   if(seq.length){
     const p=new URLSearchParams(location.search);
     p.set('stops', seq.map(s=>s.place).join('|'));
@@ -542,6 +568,8 @@ function syncPlanUrl(){
     p.set('dates', dates.join(','));
     if(gaps.length) p.set('gaps', gaps.join(',')); else p.delete('gaps');
     if(chosenRoads.some(Boolean)) p.set('roads', chosenRoads.join(',')); else p.delete('roads');
+    if(through.length) p.set('through', through.join(',')); else p.delete('through');
+    if(acks.length) p.set('ack', acks.join(',')); else p.delete('ack');
     // pax stays out of the URL until it's actually picked — String(null) wrote the literal
     // "null", which booking.js would later parse as 1 traveller.
     if(state.pax!=null) p.set('pax', String(state.pax)); else p.delete('pax');
@@ -1632,7 +1660,7 @@ function goToBooking(){
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
-  const { seq, dates, kms, gaps, roads } = routeSeqDetailed();
+  const { seq, dates, kms, gaps, roads, through, acks } = routeSeqDetailed();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   // Backstop for the showDatesStep gate (?step=dates deep-links land here too): never hand
   // booking pax=null — it parses "null" as 1 traveller and there is no later step to fix it.
@@ -1655,6 +1683,8 @@ function goToBooking(){
   });
   // the local roads chosen, index-aligned with the wires like kms (whose km they already carry)
   if(roads.some(Boolean)) p.set('roads', roads.join(','));
+  if(through.length) p.set('through', through.join(','));
+  if(acks.length) p.set('ack', acks.join(','));
   window.location.href='booking.html?'+p.toString();
 }
 document.getElementById('request-btn').addEventListener('click',showDatesStep);
