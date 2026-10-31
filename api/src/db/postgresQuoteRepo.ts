@@ -4,6 +4,7 @@ import { quotes, quoteRevisions, quoteDiscounts } from './schema';
 import { genReference, parseDateFilter, LIVE_STATUSES, isUnpricedShell, sameQuoteContent } from './quoteRepo';
 import { quoteRouteText, requestLegs } from './quoteRouteText';
 import { quoteTravelDate } from './quoteTravelDate';
+import { isReferenceCollision } from './postgresBookingRepo';
 import type {
   DiscountIntent,
   QuoteRepo,
@@ -22,18 +23,9 @@ import type {
 type Row = typeof quotes.$inferSelect;
 const DECIDED: readonly QuoteStatus[] = ['won', 'lost', 'expired'];
 
-// Postgres unique-violation error code. See:
-// https://www.postgresql.org/docs/current/errcodes-appendix.html
-const UNIQUE_VIOLATION = '23505';
+// Retry budget for a Q-XXXXX reference collision. The collision check walks Drizzle's
+// `.cause` chain (shared with the booking repo — see pgUniqueViolation there).
 const MAX_REFERENCE_ATTEMPTS = 5;
-
-function isReferenceCollision(err: unknown): boolean {
-  if (!err || typeof err !== 'object') return false;
-  const e = err as { code?: unknown; constraint_name?: unknown; constraint?: unknown };
-  const code = e.code;
-  const constraint = String(e.constraint_name ?? e.constraint ?? '');
-  return code === UNIQUE_VIOLATION && constraint.includes('reference');
-}
 
 export function quoteRowToSaved(r: Row): SavedQuote {
   return {
