@@ -88,7 +88,7 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripThrough=new Set(), tripAcks=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 // The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
@@ -145,30 +145,43 @@ function repaintTripDrives(){
     if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
+// A through wire continues the leg onto the next wire (spec 2026-10-30 §4.3): the run that starts
+// at `head` owns every wire up to the first non-through one. tripLegs stays indexed PER WIRE so
+// nothing that reads tripLegs[i] by data-wire changes; a continuation wire is marked `cont`.
+function tripIsCont(i){ return i>0 && tripThrough.has(i-1) && !tripGaps.has(i); }
+function tripRunOf(i){
+  let head=i; while(tripIsCont(head)) head--;
+  const wires=[head]; let w=head;
+  while(tripThrough.has(w) && w+1<tripStops.length-1 && !tripGaps.has(w+1)){ w++; wires.push(w); }
+  return { head, wires, stops:[tripStops[head]].concat(wires.map(x=>tripStops[x+1])) };
+}
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
   // With gaps present we must walk the per-wire loop (which skips them) rather than trust
   // baked.total, which prices every consecutive stop-pair including the gap.
-  if(!tripGaps.size && !tripKms.some(km=>km!=null)) return baked;
+  if(!tripGaps.size && !tripThrough.size && !tripKms.some(km=>km!=null)) return baked;
   const legs=[];
   let total=0, totalKm=0, hasEst=false;
   for(let i=0;i<Math.max(0,tripStops.length-1);i++){
     // A gap wire is a stretch the traveller arranges themselves — carried through for display,
     // but NEVER a priced leg (it must not enter the quote, the booking, or the total).
     if(tripGaps.has(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], gap:true, km:null, price:0 }); continue; }
+    if(tripIsCont(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], cont:true, km:null, price:0 }); continue; }
+    const run=tripRunOf(i);
     const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:'',price:55,est:true};
-    const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
-    // A leg with no resolvable distance must still charge the baked estimate (never $0),
-    // exactly as T.tripQuote does — otherwise a single unpriceable leg silently drops out
-    // of the total and the customer is quoted (and charged) for one fewer leg than they take.
+    // A run's km is the sum over its wires — or null while ANY wire is unmeasured (a partial sum
+    // would price part of a route as the whole leg; ops legKm has the same rule).
+    let km=0;
+    for(const w of run.wires){ const k=tripKms[w]!=null ? tripKms[w] : (w===i ? bakedLeg.km : null); if(k==null){ km=null; break; } km+=k; }
     let price, est=false;
     if(km!=null){ price=T.legPrice(km, veh); totalKm+=km; }
     else { price=(bakedLeg.price!=null ? bakedLeg.price : 55); est=true; hasEst=true; }
     total+=price;
     legs.push({
-      from:bakedLeg.from || tripStops[i],
-      to:bakedLeg.to || tripStops[i+1],
+      from:run.stops[0],
+      to:run.stops[run.stops.length-1],
+      via:run.stops.slice(1,-1),
       km,
       duration:km!=null ? T.durationText(km) : bakedLeg.duration,
       price,
@@ -186,6 +199,8 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripThrough=new Set((params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripAcks=new Set((params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
   tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
@@ -737,9 +752,11 @@ if(isTrip){
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
+    if(leg.cont) return;
     const dt=fmtLeg(tripDates[i]);
+    const viaHtml=(leg.via&&leg.via.length) ? `<span class="tr-via"> <span class="tr-ar">→</span> ${leg.via.map(escHtml).join(' <span class="tr-ar">→</span> ')}</span>` : '';
     html+=`<div class="tr-leg" data-wire="${i}">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)}${viaHtml} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
@@ -1771,7 +1788,7 @@ let promoRefusedAtBooking = {};
 // The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
 // choice only applies to private transfers.
 // A gap wire is the traveller's own stretch, so it never asks for a road either.
-function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i) || tripThrough.has(i) || tripIsCont(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
 // The priced (non-gap) wires the customer chose the local road for, whatever the service.
 function tripLocalWires(){
   const out=[];
@@ -1801,7 +1818,7 @@ function dropLocalRoad(estLegs){
   }
   let dropped=false;
   for(let i=0, j=0; i<tripStops.length-1; i++){
-    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    if(tripGaps.has(i) || tripIsCont(i)) continue; // the estimate has no leg for a gap wire
     const leg=estLegs ? estLegs[j++] : null;
     if(tripRoads[i]!=='no_tolls') continue;
     if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
