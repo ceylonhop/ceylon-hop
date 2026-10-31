@@ -284,6 +284,8 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
         // Same rule for the self-arranged stretches (0076_trip_request_gaps).
         ...(tr.gaps?.length ? { gaps: tr.gaps } : {}),
+        // Same rule for wires that continue the leg (0078_trip_request_through).
+        ...(tr.through?.length ? { through: tr.through } : {}),
         customer,
       },
     };
@@ -511,6 +513,7 @@ export class PostgresBookingRepo implements BookingRepo {
           driverNights: t.driverNights ?? null,
           routeVariants: t.routeVariants ?? null,
           gaps: t.gaps?.length ? t.gaps : null,
+          through: t.through?.length ? t.through : null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;
