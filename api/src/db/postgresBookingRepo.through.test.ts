@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
@@ -13,11 +13,15 @@ const customer = { firstName: 'Via', lastName: 'Test', email: 'via@example.com',
 describe.skipIf(!TEST_URL)('trip_request.through round-trips and derives viaStops (integration)', () => {
   let bookings: PostgresBookingRepo;
   let db: ReturnType<typeof drizzle<typeof schema>>;
+  let sql: ReturnType<typeof postgres>;
   beforeAll(async () => {
-    const sql = postgres(TEST_URL as string);
+    sql = postgres(TEST_URL as string);
     db = drizzle(sql, { schema });
     await migrate(db, { migrationsFolder: 'drizzle' });
     bookings = new PostgresBookingRepo(db);
+  });
+  afterAll(async () => {
+    await sql.end();
   });
 
   it('stores through, reads it back, and writes one booking_legs row with via_stops', async () => {

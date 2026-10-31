@@ -4,12 +4,11 @@ import type { MapsAdapter } from '../adapters/maps';
 import { quote } from '../quote/engine';
 import { measureLeg } from '../quote/routeChoice';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
-import type { QuoteRequest, QuoteResult, ChauffeurRideDay, LineItem } from '../quote/types';
+import type { QuoteRequest, QuoteResult, ChauffeurRideDay, LineItem, Ride } from '../quote/types';
 import { SHARED_EXTRA_LABELS, type SHARED_EXTRA_CODES } from '../domain/shared';
 
 type SharedExtraCode = typeof SHARED_EXTRA_CODES[number];
 import type { DiscountRequest } from '../quote/discount';
-import type { Ride } from '../quote/types';
 
 // The rides a trip's wires form. A wire in `through` continues the current ride onto the next
 // wire; a gap wire belongs to no ride. Each ride remembers its wires so dates and road choices
@@ -203,7 +202,7 @@ export async function priceTrip(
   }
   // Public trips don't collect a bag count — 0 lets pax alone drive the vehicle floor.
   // Every ride is the Ride shape now; a 2-stop Ride prices identically to the old {from,to,distanceKm}
-  // (types.ts normalizeRide), which the pairwise test above pins at 8900.
+  // (types.ts normalizeRide), pinned at 8900 by the pairwise test in pricing.test.ts.
   return runEngine({ product: 'private', vehicle, pax: input.pax, bags: 0, legs: legs.map((l) => l.ride) }, rateCard, discount);
 }
 

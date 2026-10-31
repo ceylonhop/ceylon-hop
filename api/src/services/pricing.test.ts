@@ -382,4 +382,21 @@ describe('priceTrip — through (stops on the way)', () => {
       { date: '2026-12-03', stops: ['Ella', 'Galle'], segmentKms: [c.km] },
     ]);
   });
+
+  it('chauffeur without dates: the synthetic-date fallback counts rides, not wires', async () => {
+    const a = (await maps.distance(chain[0], chain[1]))!;
+    const b = (await maps.distance(chain[1], chain[2]))!;
+    const c = (await maps.distance(chain[2], 'Galle'))!;
+    const p = await priceTrip({ ...knownTrip, stops: [...chain, 'Galle'], through: [0], serviceType: 'chauffeur' }, maps);
+    expect(p.priced).toBe(true);
+    if (!p.priced) return;
+    const engine = p.breakdown!.engine;
+    expect(engine.product).toBe('chauffeur');
+    if (engine.product !== 'chauffeur') return;
+    expect(engine.travelDays).toHaveLength(2);
+    expect(engine.travelDays).toEqual([
+      { date: expect.any(String), stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], segmentKms: [a.km, b.km] },
+      { date: expect.any(String), stops: ['Ella', 'Galle'], segmentKms: [c.km] },
+    ]);
+  });
 });

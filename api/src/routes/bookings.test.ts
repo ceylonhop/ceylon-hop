@@ -1032,6 +1032,8 @@ describe('POST /bookings/trip — through (stops on the way)', () => {
     ['a different date on the continuing wire', { through: [0], dates: [futureIsoDate(30), futureIsoDate(31)] }],
     ['a date on the continuing wire only', { through: [0], dates: ['', futureIsoDate(30)] }],
     ['a road choice on a wire inside the run', { through: [0], routeVariants: ['no_tolls', 'fastest'] }],
+    ['a road choice on the continuing wire', { through: [0], routeVariants: ['fastest', 'no_tolls'] }],
+    ['a gap on the continuing wire', { through: [0], gaps: [1] }],
   ])('refuses %s', async (_label, patch) => {
     const res = await send(app(), { ...base(), ...patch });
     expect(res.status).toBe(400);
