@@ -169,6 +169,13 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('#rail .leg-from')).toHaveValue('Kandy');
       await expect(page.locator('#rail .leg-to')).toHaveValue('Ella');
     });
+
+    // spec §3.3 asked for one pin per place in the SVG fallback; the owner chose to keep numbered pins in rail order (matches plan-pricing-map and the Google map) — the round-trip pin merge is a ch-map proposal
+    test('the map draws one line through the stop and one numbered pin per route point', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Kandy') + '&nights=0,0,0&through=0&pax=2&vehicle=car');
+      await expect(page.locator('#trip-map .tm-route')).toHaveCount(2);
+      await expect(page.locator('#trip-map .tm-pin-label')).toHaveCount(3);
+    });
   });
 }
 
