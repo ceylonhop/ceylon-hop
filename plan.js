@@ -1231,7 +1231,8 @@ function flagIncompleteLeg(i){
   const f=card.querySelector('.leg-from'), t=card.querySelector('.leg-to');
   const target=(f&&!f.value.trim())?f:(t&&!t.value.trim()?t:f);
   if(target) target.focus({preventScroll:true});
-  setTimeout(()=>card.classList.remove('leg-bad'),2200);
+  // a same-place-twice leg owns leg-bad until its chain changes (the next render re-evaluates it)
+  if(!legChainDuplicate(state.legs[i])) setTimeout(()=>card.classList.remove('leg-bad'),2200);
 }
 
 // Count a summary stat from whatever is on screen to its new value. Unlike the price (which
@@ -1735,9 +1736,10 @@ function showRouteHint(msg){
 // books as 1 traveller in a 3-seat car.
 const PAX_HINT='Pick how many are travelling — choose your travellers above to continue.';
 function showDatesStep(){
+  // blockers first, matching the Next hint in updateSummary
+  const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
-  const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
   const seq=routeSeq();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   if(state.pax==null){ showRouteHint(PAX_HINT); return; }

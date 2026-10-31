@@ -24,6 +24,14 @@ for (const vp of VIEWPORTS) {
       await expect(card.locator('.add-via')).toBeDisabled();
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'true');
       await expect(page.locator('#route-incomplete-hint')).toContainText('Fix Leg 1 to continue');
+      // pressing Next flags the leg; the duplicate keeps its red border past the flag's 2.2 s flash
+      // aria-disabled reads as disabled to Playwright's actionability check; force sends the real click
+      await page.locator('#request-btn').click({ force: true });
+      await page.waitForTimeout(2600);
+      await expect(card).toHaveClass(/leg-bad/);
+      await expect(card.locator('.leg-warn.stop')).toHaveCount(1);
+      // the flag focuses the From field, whose place list then covers the stop row
+      await page.keyboard.press('Escape');
       const via = card.locator('.rb-field.via');
       await via.hover();
       await via.locator('.stop-rm').click();
