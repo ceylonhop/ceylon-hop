@@ -51,6 +51,9 @@ for (const vp of VIEWPORTS) {
       await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&pax=2&vehicle=car');
       const card = page.locator('#rail .leg-card').first();
       await expect(card.locator('.add-via')).toHaveText(/Add a stop on the way/);
+      // the direct Kandy→Ella figure, so the chain sum below is proven to replace it
+      const kmOf = async () => Number(((await card.locator('.lm-dist').textContent()) || '').match(/([\d,]+)\s*km/)[1].replace(/,/g, ''));
+      const directKm = await kmOf();
       await card.locator('.add-via').click();
       const via = card.locator('.leg-via');
       await expect(via).toBeFocused();
@@ -59,6 +62,8 @@ for (const vp of VIEWPORTS) {
       await page.locator('.place-option', { hasText: 'Sigiriya' }).first().click();
       await expect(card.locator('.add-via')).toHaveText(/Add another stop/);
       await expect(card.locator('.leg-meta')).toContainText('km');
+      // Kandy→Sigiriya→Ella is longer than Kandy→Ella: the card prices the summed chain
+      await expect.poll(kmOf).toBeGreaterThan(directKm);
       await expect(page.locator('#st-stops')).toHaveText('3');
       await expect(page.locator('#st-legs')).toHaveText('1');
       // controls: hover (or always, on touch) shows swap + remove on every row
@@ -95,6 +100,30 @@ for (const vp of VIEWPORTS) {
       await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Anuradhapura|Trincomalee|Ella|Galle') + '&nights=0,0,0,0,0,0&through=0,1,2,3&pax=2&vehicle=car');
       await expect(page.locator('#rail .leg-via')).toHaveCount(4);
       await expect(page.locator('.add-via')).toBeHidden();
+    });
+
+    test('a leg with a stop drops its road chip and sends no road', async ({ page }) => {
+      // the engine offers CMB→Galle a local road, so the plain leg shows its chip first —
+      // without this the chip never renders offline and the count-0 check below is vacuous
+      await page.route('**/quote/v2/estimate-batch', async (r) => {
+        const body = JSON.parse(r.request().postData() || '{}');
+        const results = (body.intents || []).map(() => ({ totalCents: 9000, currency: 'USD', routeChoice: {
+          fastest: { distanceKm: 130, durationMin: 120, totalCents: 9000 },
+          noTolls: { distanceKm: 116, durationMin: 170, totalCents: 8000 } } }));
+        await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
+      });
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Galle') + '&roads=no_tolls&pax=2&vehicle=car');
+      const card = page.locator('#rail .leg-card').first();
+      await expect(card.locator('.lm-road')).toHaveCount(1);
+      await card.locator('.add-via').click();
+      const via = card.locator('.leg-via');
+      await via.fill('Hikkaduwa');
+      await page.locator('.place-option', { hasText: 'Hikkaduwa' }).first().click();
+      await expect(card.locator('.lm-road')).toHaveCount(0);
+      await page.locator('#request-btn').click();
+      await page.locator('#dates-continue').click();
+      await page.waitForURL('**/booking.html?**');
+      expect(new URL(page.url()).searchParams.get('roads')).toBeNull();
     });
 
     // Guards the Task 17 fix: a blank stop row is filtered out of the wire chain, so the leg

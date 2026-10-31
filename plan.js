@@ -127,6 +127,35 @@ function dayDrivingMinutes(a,b){
   const extra=Number.isFinite(opt.noTolls.min) && Number.isFinite(opt.fastest.min) ? Math.max(0, opt.noTolls.min-opt.fastest.min) : 0;
   return minutes+extra;
 }
+// A leg with stops is measured per consecutive pair and summed — or null while ANY pair is still
+// unknown, so a partial route is never priced as the whole leg (ops legKm, ops-ui.html:5790).
+// A chain never carries a road (ops GC-10), so only a plain leg reads legRouteEstimate's road.
+function legRoute(leg){
+  const chain=legChain(leg);
+  if(chain.length===2) return legRouteEstimate(chain[0],chain[1]);
+  let km=0, min=0, state='browse', source='reviewed', durationComplete=true;
+  for(let k=0;k<chain.length-1;k++){
+    const r=baseRouteEstimate(chain[k],chain[k+1]);
+    if(!r || r.distanceKm==null) return null;
+    km+=r.distanceKm;
+    if(r.durationMin>0) min+=r.durationMin; else durationComplete=false;
+    if(r.state==='estimated') state='estimated';
+    if(r.source==='google') source='google'; else if(r.source==='estimated' && source!=='google') source='estimated';
+  }
+  return { distanceKm:km, durationMin:durationComplete?min:null, state, source };
+}
+function legDrivingMinutes(leg){
+  const chain=legChain(leg); let total=0;
+  for(let k=0;k<chain.length-1;k++){ const m=dayDrivingMinutes(chain[k],chain[k+1]); if(m==null) return null; total+=m; }
+  return total;
+}
+function requestLiveChain(leg, cb){
+  const chain=legChain(leg);
+  for(let k=0;k<chain.length-1;k++){
+    const r=baseRouteEstimate(chain[k],chain[k+1]);
+    if((!r || r.state==='estimated') && chain[k] && chain[k+1]) requestLiveRoute(chain[k],chain[k+1],cb);
+  }
+}
 function requestLiveRoute(a,b,cb){
   if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
   const local=localRouteEstimate(a,b);
@@ -784,9 +813,9 @@ function refreshRoads(){
     const leg=state.legs[+el.dataset.i];
     const distEl=el.querySelector('[data-dist]');
     if(!leg || leg.type==='stay' || !distEl) return;
-    const route=legRouteEstimate(leg.from,leg.to);
+    const route=legRoute(leg);
     const km=route?route.distanceKm:null;
-    distEl.innerHTML=distHtml(route, km!=null?legPrice(km,state.vehicle):null, liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=distHtml(route, km!=null?legPrice(km,state.vehicle):null, (leg.via||[]).length?null:liveRouteKey(leg.from,leg.to));
     distEl.classList.toggle('on', km!=null);
   });
   updateSummary();
@@ -810,7 +839,7 @@ function distHtml(route, price, key){
          `<span class="lm-src" title="${sourceTitle}">${source}</span>`+
          `<span class="lm-sep">·</span>`+
          `<span class="lm-price">from ${vehiclePriceIcon()} <b data-live-price>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`+
-         roadChipHtml(key);
+         (key ? roadChipHtml(key) : '');
 }
 
 // remove any portaled date popovers left over from the previous render
@@ -903,9 +932,9 @@ function render(){
 
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
-    const route=!isStay?legRouteEstimate(leg.from,leg.to):null;
+    const route=!isStay?legRoute(leg):null;
     const km=route?route.distanceKm:null;
-    if(!isStay && (!route || route.state==='estimated') && leg.from && leg.to) requestLiveRoute(leg.from, leg.to, ()=>render());
+    if(!isStay) requestLiveChain(leg, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = badges[i];
 
@@ -964,7 +993,7 @@ function render(){
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
-            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price,liveRouteKey(leg.from,leg.to))}</div>`}
+            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price,(leg.via||[]).length?null:liveRouteKey(leg.from,leg.to))}</div>`}
           <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
@@ -982,10 +1011,10 @@ function render(){
       function recompute(){
         markRouteCustomized();
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
-        const route=legRouteEstimate(fromI.value,toI.value);
+        const route=legRoute(state.legs[i]);
         const k=route?route.distanceKm:null;
         const pr=k!=null?legPrice(k,state.vehicle):null;
-        distEl.innerHTML=distHtml(route,pr,liveRouteKey(fromI.value,toI.value));
+        distEl.innerHTML=distHtml(route,pr,(state.legs[i].via||[]).length?null:liveRouteKey(fromI.value,toI.value));
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
@@ -1105,7 +1134,7 @@ function render(){
   syncTemplateStrip();
   // A drive the traveller edited away loses its road: its key is gone from the legs. Pruned
   // before the URL is written, so `roads` never names a drive the plan no longer has.
-  const driveKeys=new Set(state.legs.filter(l=>l.type!=='stay').map(l=>liveRouteKey(l.from,l.to)));
+  const driveKeys=new Set(state.legs.filter(l=>l.type!=='stay' && !(l.via||[]).length).map(l=>liveRouteKey(l.from,l.to)));
   [...roadChoice.keys()].forEach(k=>{ if(!driveKeys.has(k)) roadChoice.delete(k); });
   syncPlanUrl();
   checkRoads();
@@ -1134,10 +1163,10 @@ function refreshVehiclePricing(){
     if(!leg || leg.type==='stay') return;
     const distEl=el.querySelector('[data-dist]');
     if(!distEl) return;
-    const route=legRouteEstimate(leg.from,leg.to);
+    const route=legRoute(leg);
     const km=route?route.distanceKm:null;
     const price=km!=null?legPrice(km,state.vehicle):null;
-    distEl.innerHTML=distHtml(route,price,liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=distHtml(route,price,(leg.via||[]).length?null:liveRouteKey(leg.from,leg.to));
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
     const from=before.get(el.dataset.i);
@@ -1208,7 +1237,7 @@ function updateSummary(opts={}){
   state.legs.forEach(l=>{
     if(l.type==='stay'){ return; }
     transferLegs++;
-    const route=legRouteEstimate(l.from,l.to);
+    const route=legRoute(l);
     const km=route?route.distanceKm:null;
     if(km!=null){
       totalKm+=km;
@@ -1615,7 +1644,7 @@ function sameDayDrivingIssue(){
   const byDate=new Map();
   state.legs.forEach(leg=>{
     if(leg.type==='stay' || !leg.date) return;
-    const minutes=dayDrivingMinutes(leg.from, leg.to);
+    const minutes=legDrivingMinutes(leg);
     if(minutes==null) return;
     const key=fmtISO(leg.date);
     const day=byDate.get(key) || { minutes:0, count:0 };
