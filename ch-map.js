@@ -628,12 +628,32 @@
     return placesReady;
   }
 
+  /* Every autocomplete request is billed unless the customer ends the session by picking a
+     Google row, and few do (Oct 2026: 11,803 requests for 216 picks, ~$18/month). The callers
+     ask on every keystroke and again on focus, so suggest() budgets its own requests: it needs
+     3 characters, waits for typing to pause, and answers a text it has already asked about from
+     memory. A call overtaken by a newer one resolves [] — booking.js, site.js and plan.js all
+     drop a stale answer by sequence number. The wait is tuned for phones (~2/3 of booking
+     visits), where keystrokes come further apart. */
+  const SUGGEST_MIN_CHARS = 3;
+  const SUGGEST_WAIT_MS = 400;
+  const suggestMemo = new Map();
+  let cancelPendingSuggest = null;
+  const typingPause = () => new Promise((resolve) => {
+    if (cancelPendingSuggest) cancelPendingSuggest();
+    const timer = setTimeout(() => { cancelPendingSuggest = null; resolve(true); }, SUGGEST_WAIT_MS);
+    cancelPendingSuggest = () => { clearTimeout(timer); resolve(false); };
+  });
+
   // Live suggestions restricted to Sri Lanka. Returns [] on any failure so the
   // caller can fall back to its offline list.
   async function suggest(input) {
     const key = window.CEYLON_MAPS_KEY;
     const text = (input || '').trim();
-    if (!key || text.length < 1 || !mapsAllowed()) return [];
+    if (!key || text.length < SUGGEST_MIN_CHARS || !mapsAllowed()) return [];
+    const memoKey = text.toLowerCase();
+    if (suggestMemo.has(memoKey)) return suggestMemo.get(memoKey);
+    if (!(await typingPause())) return [];
     try {
       const { AutocompleteSuggestion, AutocompleteSessionToken } = await loadPlaces(key);
       if (!sessionToken) sessionToken = new AutocompleteSessionToken();
@@ -642,7 +662,7 @@
         includedRegionCodes: ['lk'],
         sessionToken,
       });
-      return (suggestions || [])
+      const rows = (suggestions || [])
         .map((s) => s.placePrediction)
         .filter(Boolean)
         .map((p) => ({
@@ -651,13 +671,17 @@
           secondary: ftext(p.secondaryText),
           _p: p,
         }));
+      suggestMemo.set(memoKey, rows);   // a failure is never remembered: the catch returns first
+      return rows;
     } catch (e) {
       return [];
     }
   }
 
-  // Resolve a picked suggestion to coordinates; ends the billing session.
+  // Resolve a picked suggestion to coordinates; ends the billing session. Remembered rows carry
+  // the ended session's token, so they are forgotten with it.
   async function resolvePick(item) {
+    suggestMemo.clear();
     try {
       const place = item._p.toPlace();
       await place.fetchFields({ fields: ['location', 'displayName', 'formattedAddress'] });
