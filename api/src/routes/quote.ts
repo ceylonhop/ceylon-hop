@@ -429,7 +429,8 @@ export function quoteRoutes(deps: {
         // leg would bill its own comparison outside MAX_COMPARE_PER_BATCH — so a road is refused here.
         if (carriesRoad(parsed.data)) return null;
         if (lifted.compare && parsed.data.legs.length !== 1) return null;
-        if (!parsed.data.legs.every((l) => isCatalogTown(l.from) && isCatalogTown(l.to))) return null;
+        // Every place in the chain, stops included: a batch may never fan arbitrary addresses out to Google.
+        if (!parsed.data.legs.every((l) => [l.from, ...(l.via ?? []), l.to].every(isCatalogTown))) return null;
         const compare = lifted.compare && compareSlots-- > 0;
         const resolved = await engineRequestFor(parsed.data, maps);
         if (!resolved || resolved.estimated) return null;

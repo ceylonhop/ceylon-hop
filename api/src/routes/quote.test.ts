@@ -470,6 +470,28 @@ describe('public quote v2 estimate-batch', () => {
     expect(asked).toEqual([]);
   });
 
+  it('prices a via intent when every place in the chain is a catalogue town', async () => {
+    const { app } = batchApp();
+    const via = { ...intent('Kandy', 'Ella'), legs: [{ from: 'Kandy', to: 'Ella', via: ['Sigiriya / Dambulla'] }] };
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', { intents: [via] })).json();
+    expect(results[0]).not.toBeNull();
+    const one = await (await post(app, '/quote/v2/estimate', via)).json();
+    expect(results[0].totalCents).toBe(one.totalCents);
+  });
+
+  it('nulls a via intent whose stop is not a catalogue town, without touching the adapter', async () => {
+    const inner = new FakeMapsAdapter();
+    const asked: string[] = [];
+    const spy: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: (a: string, b: string) => { asked.push(`${a}|${b}`); return inner.distance(a, b); },
+    });
+    const { app } = batchApp(spy);
+    const via = { ...intent('Kandy', 'Ella'), legs: [{ from: 'Kandy', to: 'Ella', via: ['Pinnawala Elephant Orphanage'] }] };
+    const { results } = await (await post(app, '/quote/v2/estimate-batch', { intents: [via] })).json();
+    expect(results[0]).toBeNull();
+    expect(asked).toEqual([]);
+  });
+
   it('nulls an estimated distance rather than advertising a price built on one', async () => {
     const inner = new FakeMapsAdapter();
     const est: MapsAdapter = Object.assign(Object.create(inner), {
