@@ -98,6 +98,25 @@ describe('web quote v2 — stops on the way (via)', () => {
     expect(intentSegments(WebQuoteIntentSchema.parse(twelve))).toBe(12);
   });
 
+  it('does not cap an intent without stops: a 14-day chauffeur intent still parses', () => {
+    const travelDays = Array.from({ length: 14 }, (_, i) => ({ date: `2026-12-${String(i + 1).padStart(2, '0')}`, from: 'Kandy', to: 'Ella' }));
+    const base = { product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-12-01', lastDate: '2026-12-14', extras: [] };
+    expect(WebQuoteIntentSchema.safeParse({ ...base, travelDays }).success).toBe(true);
+  });
+
+  it('caps a chauffeur intent with stops at 12 segments, reported on travelDays', () => {
+    const travelDays = Array.from({ length: 13 }, (_, i) => ({
+      date: `2026-12-${String(i + 1).padStart(2, '0')}`, from: 'Kandy', to: 'Ella', ...(i === 0 ? { via: ['x'] } : {}),
+    }));
+    const base = { product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-12-01', lastDate: '2026-12-13', extras: [] };
+    const r = WebQuoteIntentSchema.safeParse({ ...base, travelDays });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0].message).toMatch(/12 segments/);
+      expect(r.error.issues[0].path).toEqual(['travelDays']);
+    }
+  });
+
   it('keeps every existing intent fingerprint: an absent via is not written as []', () => {
     const existing = { ...privateIntent, extras: [] };
     expect(fingerprintIntent(WebQuoteIntentSchema.parse(existing))).toBe(fingerprintIntent(existing));

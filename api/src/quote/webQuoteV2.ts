@@ -84,8 +84,15 @@ export function intentSegments(intent: WebQuoteIntent): number {
 }
 
 export const WebQuoteIntentSchema = IntentUnion.superRefine((intent, ctx) => {
+  // The money bound applies only once stops are in play; an intent without any parsed before this cap existed.
+  const legs = intent.product === 'private' ? intent.legs : intent.travelDays;
+  if (!legs.some((l) => l.via?.length)) return;
   if (intentSegments(intent) > MAX_SEGMENTS_PER_INTENT) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: `at most ${MAX_SEGMENTS_PER_INTENT} segments per quote`, path: ['legs'] });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `at most ${MAX_SEGMENTS_PER_INTENT} segments per quote`,
+      path: [intent.product === 'private' ? 'legs' : 'travelDays'],
+    });
   }
 });
 
