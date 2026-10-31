@@ -29,4 +29,13 @@ describe('TripInput', () => {
       TripInput.safeParse({ ...valid, customer: { ...valid.customer, email: 'nope' } }).success,
     ).toBe(false);
   });
+
+  it('accepts through wire indexes', () => {
+    expect(TripInput.safeParse({ ...valid, through: [0] }).success).toBe(true);
+  });
+
+  it('refuses a negative or fractional through index', () => {
+    expect(TripInput.safeParse({ ...valid, through: [-1] }).success).toBe(false);
+    expect(TripInput.safeParse({ ...valid, through: [0.5] }).success).toBe(false);
+  });
 });
