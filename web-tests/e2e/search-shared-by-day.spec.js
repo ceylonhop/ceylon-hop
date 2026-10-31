@@ -106,3 +106,18 @@ test('switching date lands back on the shared card, now bookable', async ({ page
   await expect(page.locator('#results .opt-private')).not.toHaveClass(/is-pending/);
   await expect(card(page).getByRole('link', { name: /Book a seat/ })).toBeInViewport();
 });
+
+// Customers could not tell where the shared taxi sets them down: the card named the boarding
+// point and stopped (owner, 2026-10-29). It now names the drop-off point too, and every
+// point links to Google Maps.
+test('a running day: the card names the pick-up and drop-off points, each linking to Maps', async ({ page }) => {
+  await gotoBooking(page, { path: '/search.html', query: 'from=sigiriya&to=kandy&date=2099-08-15' });
+  const c = card(page);
+  await expect(c).toContainText('from Barista Cafe, Sigiriya');
+  await expect(c).toContainText('Drop-off at Kandy City Centre');
+  const maps = await c.locator('a.pt-map').evaluateAll((as) => as.map((a) => a.href));
+  expect(maps).toEqual([
+    'https://www.google.com/maps/search/?api=1&query=Barista%20Cafe%2C%20Sigiriya%2C%20Sri%20Lanka',
+    'https://www.google.com/maps/search/?api=1&query=Kandy%20City%20Centre%2C%20Sri%20Lanka',
+  ]);
+});
