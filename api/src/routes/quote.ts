@@ -63,8 +63,24 @@ const V2UpdateSchema = z.object({
   intent: WebQuoteIntentSchema,
 }).strict();
 
-export interface ResolvedLeg { from: string; to: string; distanceKm: number; durationMin: number; routeVariant?: RouteVariant }
+export interface ResolvedLeg { from: string; to: string; via?: string[]; distanceKm: number; durationMin: number; routeVariant?: RouteVariant }
 export interface ResolvedIntent { request: QuoteRequest; estimated: boolean; legs: ResolvedLeg[] }
+
+// One billed lookup per consecutive pair of the leg's chain. A chain has no road choice (ops
+// GC-10, refused upstream by viaWithRoad), so segments are always measured on the default road.
+async function measureChain(
+  maps: MapsAdapter,
+  chain: string[],
+): Promise<{ segmentKms: number[]; km: number; durationMin: number; estimated: boolean } | null> {
+  const segments = await Promise.all(chain.slice(1).map((to, i) => maps.distance(chain[i]!, to)));
+  if (segments.some((s) => !s)) return null;
+  return {
+    segmentKms: segments.map((s) => s!.km),
+    km: segments.reduce((n, s) => n + s!.km, 0),
+    durationMin: segments.reduce((n, s) => n + s!.durationMin, 0),
+    estimated: segments.some((s) => s!.estimated === true),
+  };
+}
 
 export async function engineRequestFor(
   intent: WebQuoteIntent,
@@ -72,17 +88,27 @@ export async function engineRequestFor(
 ): Promise<ResolvedIntent | null> {
   if (intent.product === 'private') {
     const resolved = await Promise.all(
-      intent.legs.map(async (leg) => ({ leg, distance: await measureLeg(maps, leg.from, leg.to, leg.routeVariant) })),
+      intent.legs.map(async (leg) => {
+        if (leg.via?.length) {
+          const chain = [leg.from, ...leg.via, leg.to];
+          const m = await measureChain(maps, chain);
+          return m ? { leg, chain, km: m.km, durationMin: m.durationMin, estimated: m.estimated, segmentKms: m.segmentKms, variant: undefined } : null;
+        }
+        const d = await measureLeg(maps, leg.from, leg.to, leg.routeVariant);
+        return d ? { leg, chain: null, km: d.km, durationMin: d.durationMin, estimated: d.estimated === true, segmentKms: [d.km], variant: d.variant } : null;
+      }),
     );
-    if (resolved.some(({ distance }) => !distance)) return null;
-    const estimated = resolved.some(({ distance }) => distance!.estimated === true);
-    const legs: ResolvedLeg[] = resolved.map(({ leg, distance }) => ({
-      from: leg.from,
-      to: leg.to,
-      distanceKm: distance!.km,
-      durationMin: distance!.durationMin,
+    if (resolved.some((r) => !r)) return null;
+    const rs = resolved.map((r) => r!);
+    const estimated = rs.some((r) => r.estimated);
+    const legs: ResolvedLeg[] = rs.map((r) => ({
+      from: r.leg.from,
+      to: r.leg.to,
+      ...(r.chain ? { via: r.leg.via } : {}),
+      distanceKm: r.km,
+      durationMin: r.durationMin,
       // Echoed ONLY when asked, so every existing caller's response is byte-identical.
-      ...(leg.routeVariant ? { routeVariant: distance!.variant } : {}),
+      ...(r.leg.routeVariant ? { routeVariant: r.variant } : {}),
     }));
     return {
       estimated,
@@ -92,21 +118,29 @@ export async function engineRequestFor(
         vehicle: intent.vehicle,
         pax: intent.pax,
         bags: intent.bags,
-        legs: legs.map(({ from, to, distanceKm }) => ({ from, to, distanceKm })),
+        // A chain is ONE ride (spec 2026-10-30 §2): the engine prices its segment sum with one
+        // minimum. A plain leg keeps the old shape so stored quotes stay byte-identical.
+        legs: rs.map((r) => (r.chain ? { stops: r.chain, segmentKms: r.segmentKms } : { from: r.leg.from, to: r.leg.to, distanceKm: r.km })),
         extras: intent.extras,
       },
     };
   }
   const resolved = await Promise.all(
-    intent.travelDays.map(async (day) => ({ day, distance: await maps.distance(day.from, day.to) })),
+    intent.travelDays.map(async (day) => {
+      const chain = [day.from, ...(day.via ?? []), day.to];
+      const m = await measureChain(maps, chain);
+      return m ? { day, chain: day.via?.length ? chain : null, ...m } : null;
+    }),
   );
-  if (resolved.some(({ distance }) => !distance)) return null;
-  const estimated = resolved.some(({ distance }) => distance!.estimated === true);
-  const legs: ResolvedLeg[] = resolved.map(({ day, distance }) => ({
-    from: day.from,
-    to: day.to,
-    distanceKm: distance!.km,
-    durationMin: distance!.durationMin,
+  if (resolved.some((r) => !r)) return null;
+  const rs = resolved.map((r) => r!);
+  const estimated = rs.some((r) => r.estimated);
+  const legs: ResolvedLeg[] = rs.map((r) => ({
+    from: r.day.from,
+    to: r.day.to,
+    ...(r.chain ? { via: r.day.via } : {}),
+    distanceKm: r.km,
+    durationMin: r.durationMin,
   }));
   return {
     estimated,
@@ -118,12 +152,9 @@ export async function engineRequestFor(
       bags: intent.bags,
       firstDate: intent.firstDate,
       lastDate: intent.lastDate,
-      travelDays: resolved.map(({ day, distance }) => ({
-        date: day.date,
-        from: day.from,
-        to: day.to,
-        distanceKm: distance!.km,
-      })),
+      travelDays: rs.map((r) => (r.chain
+        ? { date: r.day.date, stops: r.chain, segmentKms: r.segmentKms }
+        : { date: r.day.date, from: r.day.from, to: r.day.to, distanceKm: r.km })),
       extras: intent.extras,
     },
   };
@@ -149,6 +180,7 @@ export async function routeChoiceFor(
   if (resolved.estimated) return null;
   const req = resolved.request;
   const leg = intent.legs[0]!;
+  if (leg.via?.length) return null; // a chain is one ride on the default road — nothing to compare
   const measured = resolved.legs[0]!;
   // A leg already priced on the LOCAL road has no "fastest" to compare against here.
   if (measured.routeVariant === 'no_tolls') return null;
@@ -163,6 +195,11 @@ export async function routeChoiceFor(
 // it would charge the local-road price and tell ops nothing. Estimate-only until that carries it.
 function carriesRoad(intent: WebQuoteIntent): boolean {
   return intent.product === 'private' && intent.legs.some((l) => l.routeVariant !== undefined);
+}
+
+// A leg with stops on the way has no road choice (ops GC-10: adding a stop clears the road).
+export function viaWithRoad(intent: WebQuoteIntent): boolean {
+  return intent.product === 'private' && intent.legs.some((l) => (l.via?.length ?? 0) > 0 && l.routeVariant !== undefined);
 }
 
 // D9: the founder-only "Ella premium +15%" zone annotation (meta.hotZone) is a margin-class
@@ -311,6 +348,7 @@ export function quoteRoutes(deps: {
     if (!parsed.success) {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
+    if (viaWithRoad(parsed.data)) return c.json({ error: 'route_choice_not_supported' }, 400);
     if (lifted.compare && (parsed.data.product !== 'private' || parsed.data.legs.length !== 1)) {
       return c.json({ error: 'invalid_request' }, 400);
     }
@@ -391,7 +429,8 @@ export function quoteRoutes(deps: {
         // leg would bill its own comparison outside MAX_COMPARE_PER_BATCH — so a road is refused here.
         if (carriesRoad(parsed.data)) return null;
         if (lifted.compare && parsed.data.legs.length !== 1) return null;
-        if (!parsed.data.legs.every((l) => isCatalogTown(l.from) && isCatalogTown(l.to))) return null;
+        // Every place in the chain, stops included: a batch may never fan arbitrary addresses out to Google.
+        if (!parsed.data.legs.every((l) => [l.from, ...(l.via ?? []), l.to].every(isCatalogTown))) return null;
         const compare = lifted.compare && compareSlots-- > 0;
         const resolved = await engineRequestFor(parsed.data, maps);
         if (!resolved || resolved.estimated) return null;
@@ -413,7 +452,7 @@ export function quoteRoutes(deps: {
       return c.json({ error: 'invalid_request', details: parsed.error.flatten() }, 400);
     }
     // A locked quote converts to a booking through quoteToBooking, which has no road field.
-    if (carriesRoad(parsed.data)) return c.json({ error: 'route_choice_not_supported' }, 400);
+    if (carriesRoad(parsed.data) || viaWithRoad(parsed.data)) return c.json({ error: 'route_choice_not_supported' }, 400);
     const resolved = await engineRequestFor(parsed.data, deps.maps);
     // A LOCK is a commitment, so it still refuses an estimated distance — only /estimate may show one.
     if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
