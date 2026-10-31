@@ -15,6 +15,15 @@ test.beforeEach(async ({ page }) => {
 const CHAIN = 'Kandy|Sigiriya / Dambulla|Ella';
 const url = (extra = '') => '/plan.html?stops=' + encodeURIComponent(CHAIN) + '&nights=0,0,0&through=0&pax=2&vehicle=car' + extra;
 
+// The engine offers every leg a road choice, so a plain leg renders its .lm-road chip offline.
+const stubRoadChoice = (page) => page.route('**/quote/v2/estimate-batch', async (r) => {
+  const body = JSON.parse(r.request().postData() || '{}');
+  const results = (body.intents || []).map(() => ({ totalCents: 9000, currency: 'USD', routeChoice: {
+    fastest: { distanceKm: 130, durationMin: 120, totalCents: 9000 },
+    noTolls: { distanceKm: 116, durationMin: 170, totalCents: 8000 } } }));
+  await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
+});
+
 for (const vp of VIEWPORTS) {
   test.describe(vp.name, () => {
     test.use({ viewport: vp.viewport, hasTouch: !!vp.hasTouch, isMobile: !!vp.isMobile });
@@ -105,13 +114,7 @@ for (const vp of VIEWPORTS) {
     test('a leg with a stop drops its road chip and sends no road', async ({ page }) => {
       // the engine offers CMB→Galle a local road, so the plain leg shows its chip first —
       // without this the chip never renders offline and the count-0 check below is vacuous
-      await page.route('**/quote/v2/estimate-batch', async (r) => {
-        const body = JSON.parse(r.request().postData() || '{}');
-        const results = (body.intents || []).map(() => ({ totalCents: 9000, currency: 'USD', routeChoice: {
-          fastest: { distanceKm: 130, durationMin: 120, totalCents: 9000 },
-          noTolls: { distanceKm: 116, durationMin: 170, totalCents: 8000 } } }));
-        await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
-      });
+      await stubRoadChoice(page);
       await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Galle') + '&roads=no_tolls&pax=2&vehicle=car');
       const card = page.locator('#rail .leg-card').first();
       await expect(card.locator('.lm-road')).toHaveCount(1);
@@ -124,6 +127,25 @@ for (const vp of VIEWPORTS) {
       await page.locator('#dates-continue').click();
       await page.waitForURL('**/booking.html?**');
       expect(new URL(page.url()).searchParams.get('roads')).toBeNull();
+    });
+
+    // A blank stop row is not a stop: the leg keeps its price, its road chip and the chosen road.
+    test('an empty stop row keeps the leg\'s price and its chosen road', async ({ page }) => {
+      await stubRoadChoice(page);
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&roads=no_tolls&pax=2&vehicle=car');
+      const card = page.locator('#rail .leg-card').first();
+      await expect(card.locator('.lm-road')).toHaveCount(1);
+      await card.locator('.add-via').click();
+      await expect(card.locator('.leg-via')).toHaveValue('');
+      await expect(card.locator('.leg-meta')).toContainText('km');
+      await expect(card.locator('.leg-meta')).not.toContainText('Pick both points');
+      await expect(card.locator('.lm-road')).toHaveCount(1);
+      const viaRow = card.locator('.rb-field.via');
+      await viaRow.hover();
+      await viaRow.locator('.stop-rm').click();
+      await expect(card.locator('.leg-via')).toHaveCount(0);
+      await expect(card.locator('.lm-road')).toHaveCount(1);
+      expect(new URL(page.url()).searchParams.get('roads') || '').toContain('no_tolls');
     });
 
     // Guards the Task 17 fix: a blank stop row is filtered out of the wire chain, so the leg
