@@ -126,9 +126,12 @@ function faresCard(T, from, to, q, shared, p) {
    to keep the sticky bar off it, so both hooks must stay where they are. */
 function sharedSection(T, from, to, shared, p) {
   if (!shared) return '';
+  // Every published point links to Google Maps, and the drop-off is named too: customers could
+  // not tell where to stand or where they would be set down from town names (owner, 2026-10-29).
+  const ptLink = (pt) => `<a class="pt-map" href="${esc(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pt + ', Sri Lanka').replace(/'/g, '%27')}`)}" target="_blank" rel="noopener">${esc(pt)}</a>`;
   const stops = shared.pickups
-    .map(s => `<li><b>${esc(fmtTime(s.time))}</b> ${esc(s.point || T.byId[from].name)}</li>`)
-    .join('');
+    .map(s => `<li><b>${esc(fmtTime(s.time))}</b> ${s.point ? ptLink(s.point) : esc(T.byId[from].name)}</li>`)
+    .join('') + (shared.dropoff ? `<li class="drop"><b>Drop-off</b> ${ptLink(shared.dropoff)}</li>` : '');
   const days = daysLong(shared.days);
   const seatHref = `${p}booking.html?${new URLSearchParams({
     from, to, mode: 'shared', price: String(shared.seat),
@@ -349,7 +352,7 @@ function faqItems(from, to, q, shared) {
     // The shared taxi on its days, paid at booking; the ride board for any other day, on the
     // board's own terms. Two products, never one described with the other's promise.
     shared
-      ? [`How does the ${from} to ${to} shared taxi work?`, `The shared taxi runs every ${daysLong(shared.days).join(' and ')}, leaving ${shared.pickup} at ${fmtTime(shared.times[0])}. A seat is $${price(shared.seat)}, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once ${MIN_SEATS} travellers are going, and you're only charged once it's confirmed.`]
+      ? [`How does the ${from} to ${to} shared taxi work?`, `The shared taxi runs every ${daysLong(shared.days).join(' and ')}, leaving ${shared.pickup} at ${fmtTime(shared.times[0])}${shared.dropoff ? `, and drops you at ${shared.dropoff}` : ''}. A seat is $${price(shared.seat)}, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once ${MIN_SEATS} travellers are going, and you're only charged once it's confirmed.`]
       // Asked in the searcher's own words. The old site's best-known page was a Kandy → Ella
       // "shared taxi" we no longer run; the honest way to stay relevant to that search is to
       // answer it, not to imply a seat in the title.
@@ -588,6 +591,8 @@ ${headAssets}
   .pickups{list-style:none;margin:.7rem 0 0;padding:0;display:grid;gap:.25rem}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
+  .pickups .pt-map{color:inherit;text-decoration:underline;text-decoration-color:var(--line,#e7e3d6);text-underline-offset:3px}
+  .pickups .pt-map:hover{color:var(--teal-deep,#1f6f78);text-decoration-color:currentColor}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
   .share-board{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e7e3d6)}
   .share-board h3{margin:0 0 .3rem;font-family:var(--body);font-size:.98rem;font-weight:600}

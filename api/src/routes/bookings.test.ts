@@ -1007,3 +1007,36 @@ describe('POST /bookings/* — an unusable phone number is refused with a messag
     expect((await res.json()).input.customer.whatsapp).toBe('+94 77 123 4567');
   });
 });
+
+describe('POST /bookings/trip — through (stops on the way)', () => {
+  const send = (app: ReturnType<typeof createApp>, body: unknown) =>
+    app.request('/bookings/trip', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const base = () => ({
+    stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], nights: [0, 0, 0], pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+  });
+  const app = () => createApp({ bookings: new InMemoryBookingRepo() });
+
+  it('accepts a through wire and stores it on the booking', async () => {
+    const res = await send(app(), { ...base(), through: [0] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.through).toEqual([0]);
+  });
+
+  it.each([
+    ['the last wire (nothing to continue onto)', { through: [1] }],
+    ['a wire past the end', { through: [5] }],
+    ['a duplicate', { through: [0, 0] }],
+    ['a wire that is also a gap', { through: [0], gaps: [0] }],
+    ['a night at the stop on the way', { through: [0], nights: [0, 1, 0] }],
+    ['a different date on the continuing wire', { through: [0], dates: [futureIsoDate(30), futureIsoDate(31)] }],
+    ['a date on the continuing wire only', { through: [0], dates: ['', futureIsoDate(30)] }],
+    ['a road choice on a wire inside the run', { through: [0], routeVariants: ['no_tolls', 'fastest'] }],
+    ['a road choice on the continuing wire', { through: [0], routeVariants: ['fastest', 'no_tolls'] }],
+    ['a gap on the continuing wire', { through: [0], gaps: [1] }],
+  ])('refuses %s', async (_label, patch) => {
+    const res = await send(app(), { ...base(), ...patch });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/^through: /);
+  });
+});

@@ -184,6 +184,18 @@ export function bookingFromLockedQuote(
   };
 }
 
+/**
+ * A via leg is stored as an engine Ride `{stops, segmentKms}` (no from/to): its stops must equal
+ * the intent's chain exactly. An old-shape `{from, to}` row only matches an intent leg without via.
+ */
+function stopsMatch(row: Record<string, unknown>, leg: { from: string; to: string; via?: string[] }): boolean {
+  if ('stops' in row) {
+    const chain = [leg.from, ...(leg.via ?? []), leg.to];
+    return Array.isArray(row.stops) && row.stops.length === chain.length && row.stops.every((stop, i) => stop === chain[i]);
+  }
+  return row.from === leg.from && row.to === leg.to && !leg.via?.length;
+}
+
 function storedEngineMatchesIntent(engineValue: unknown, intent: WebQuoteIntent): boolean {
   if (!engineValue || typeof engineValue !== 'object') return false;
   const engine = engineValue as Record<string, unknown>;
@@ -202,8 +214,7 @@ function storedEngineMatchesIntent(engineValue: unknown, intent: WebQuoteIntent)
       legs.length === intent.legs.length &&
       legs.every((leg, index) => {
         if (!leg || typeof leg !== 'object') return false;
-        const row = leg as Record<string, unknown>;
-        return row.from === intent.legs[index].from && row.to === intent.legs[index].to;
+        return stopsMatch(leg as Record<string, unknown>, intent.legs[index]);
       })
     );
   }
@@ -217,7 +228,7 @@ function storedEngineMatchesIntent(engineValue: unknown, intent: WebQuoteIntent)
       if (!day || typeof day !== 'object') return false;
       const row = day as Record<string, unknown>;
       const expected = intent.travelDays[index];
-      return row.date === expected.date && row.from === expected.from && row.to === expected.to;
+      return row.date === expected.date && stopsMatch(row, expected);
     })
   );
 }
