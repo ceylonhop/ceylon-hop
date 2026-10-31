@@ -52,6 +52,90 @@ describe('public quote v2 lock', () => {
     return { app, quotes };
   }
 
+  describe('stops on the way (via)', () => {
+    const chain = ['Kandy', 'Sigiriya / Dambulla', 'Ella'];
+    const viaIntent = { ...V2_PRIVATE, routeId: undefined, legs: [{ from: chain[0], to: chain[2], via: [chain[1]] }] };
+    const pairwise = { ...V2_PRIVATE, routeId: undefined, legs: [{ from: chain[0], to: chain[1] }, { from: chain[1], to: chain[2] }] };
+    const est = (app: Hono, body: unknown) =>
+      app.request('/quote/v2/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('prices the chain as ONE ride (segment sum, one minimum) and echoes the stops', async () => {
+      const { app } = v2App();
+      const maps = new FakeMapsAdapter();
+      const a = (await maps.distance(chain[0], chain[1]))!;
+      const b = (await maps.distance(chain[1], chain[2]))!;
+      const res = await est(app, viaIntent);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      const oneRide = priceQuote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ stops: chain, segmentKms: [a.km, b.km] }], extras: [] }, RATE_CARD);
+      expect(body.totalCents).toBe(oneRide.totalCents);
+      expect(body.legs).toEqual([{ from: chain[0], to: chain[2], via: [chain[1]], distanceKm: a.km + b.km, durationMin: a.durationMin + b.durationMin }]);
+    });
+
+    it('is cheaper than, or equal to, the same places booked as separate legs (one floor, not two)', async () => {
+      // Weligama → Mirissa → Weligama: two tiny segments. Pairwise = two legs, each at the car
+      // minimum; as one ride the floor applies once. If the fake adapter does not know one of
+      // these towns the test fails on status, not on the assertion — pick another short pair.
+      const { app } = v2App();
+      const short = { ...viaIntent, legs: [{ from: 'Weligama', to: 'Weligama', via: ['Mirissa'] }] };
+      const twoLegs = { ...viaIntent, legs: [{ from: 'Weligama', to: 'Mirissa' }, { from: 'Mirissa', to: 'Weligama' }] };
+      const one = await (await est(app, short)).json();
+      const two = await (await est(app, twoLegs)).json();
+      expect(one.totalCents).toBeLessThan(two.totalCents);
+    });
+
+    it('refuses a road choice on a leg that has stops (ops GC-10)', async () => {
+      const { app } = v2App();
+      const res = await est(app, { ...viaIntent, legs: [{ ...viaIntent.legs[0], routeVariant: 'no_tolls' }] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('route_choice_not_supported');
+    });
+
+    // postLock hits the LEGACY /quote/lock; the v2 lock is a different route, so post to it directly.
+    const lockV2 = (app: Hono, body: unknown) =>
+      app.request('/quote/v2/lock', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+    it('lock refuses the same', async () => {
+      const { app } = v2App();
+      const res = await lockV2(app, { ...viaIntent, legs: [{ ...viaIntent.legs[0], routeVariant: 'no_tolls' }] });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('route_choice_not_supported');
+    });
+
+    it('a via leg never gets a route comparison (compareRoutes is ignored, not an error)', async () => {
+      const { app } = v2App();
+      const body = await (await est(app, { ...viaIntent, compareRoutes: true })).json();
+      expect(body.routeChoice).toBeUndefined();
+    });
+
+    it('a chauffeur day with stops prices as one ride day', async () => {
+      const { app } = v2App();
+      const day = { product: 'chauffeur', vehicle: 'car', pax: 2, bags: 2, firstDate: '2026-12-01', lastDate: '2026-12-01',
+        travelDays: [{ date: '2026-12-01', from: chain[0], to: chain[2], via: [chain[1]] }], extras: [] };
+      const res = await est(app, day);
+      expect(res.status).toBe(200);
+      expect((await res.json()).legs[0].via).toEqual([chain[1]]);
+    });
+
+    it('locks and converts a via quote with the stops intact', async () => {
+      const { app, quotes } = v2App();
+      const res = await lockV2(app, viaIntent);
+      expect(res.status).toBe(201);
+      const saved = await quotes.get((await quotes.list())[0]!.id);
+      const engine = (saved!.request as { engine: { legs: unknown[] } }).engine;
+      expect(engine.legs[0]).toMatchObject({ stops: chain });
+    });
+
+    // Also pin the unchanged path: a plain two-place leg still produces the old leg shape, byte
+    // for byte, so every existing stored quote and every ops drawer reads as before.
+    it('leaves a plain leg in the old {from,to,distanceKm} shape', async () => {
+      const { app } = v2App();
+      const body = await (await est(app, pairwise)).json();
+      expect(body.legs[0]).not.toHaveProperty('via');
+      expect(body.legs[0]).not.toHaveProperty('stops');
+    });
+  });
+
   it('is default-off and leaves the legacy lock unchanged', async () => {
     const app = createApp({ quotes: new InMemoryQuoteRepo() });
     expect(
