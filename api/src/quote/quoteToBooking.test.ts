@@ -81,6 +81,16 @@ describe('quoteToBooking', () => {
     expect(m.distanceKm).toBe(255);
   });
 
+  it('a web via-leg converts to a trip whose stops include the stop on the way, with no gap', () => {
+    const m = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1,
+      legs: [{ stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], segmentKms: [90, 180] }] }), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') {
+      expect(m.input).toMatchObject({ stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], nights: [0, 0] });
+      expect((m.input as { gaps?: number[] }).gaps).toBeUndefined();
+    }
+  });
+
   it('private multi-ride trip: chain = rides[0].stops + each later ride.stops.slice(1)', () => {
     const m = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
       { stops: ['CMB', 'Kandy', 'Sigiriya'], segmentKms: [115, 90] }, // 3-stop ride
