@@ -22,8 +22,9 @@ async function typeDropoff(page, text) {
   // the exact-spot fields live on the "Where" step (2), same as pickPlace() in _stubs.js
   await page.evaluate(() => window.goStep && window.goStep(2));
   await page.fill('#loc-to', text);
-  // the local rows paint synchronously; the Google merge lands a microtask later
-  await page.waitForTimeout(150);
+  // The local rows paint synchronously; the Google rows land once CH_MAP.suggest's typing pause
+  // (400ms) has passed, which is when the "Searching Google…" row goes.
+  await expect(page.locator('#ac-to .ac-item.loading')).toHaveCount(0);
 }
 
 test('finishing the name of a popular place does not take its suggestions away', async ({ page }) => {
