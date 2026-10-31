@@ -601,7 +601,7 @@ function tripThroughProblem(t: TripInput): string | null {
   if (through.some((w) => gaps.has(w) || gaps.has(w + 1))) return 'a stop on the way cannot sit on a self-arranged stretch';
   if (through.some((w) => (t.nights[w + 1] ?? 0) !== 0)) return 'a stop on the way has no nights';
   const dates = t.dates ?? [];
-  if (through.some((w) => dates[w] && dates[w + 1] && dates[w] !== dates[w + 1])) return 'a leg with stops runs on one date';
+  if (through.some((w) => (dates[w] || dates[w + 1]) && (dates[w] ?? '') !== (dates[w + 1] ?? ''))) return 'a leg with stops runs on one date';
   const rv = t.routeVariants ?? [];
   const inRun = new Set(through.flatMap((w) => [w, w + 1]));
   if ([...inRun].some((w) => rv[w] === 'no_tolls')) return 'a leg with stops has no road choice';

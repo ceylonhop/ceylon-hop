@@ -21,7 +21,7 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache, usageCounters } from './schema';
+import { bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
 import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
 import { usageCounterRepoContract } from './usageCounterRepo.test';
 import { eq } from 'drizzle-orm';
@@ -1408,7 +1408,12 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
   });
 
-  async function lockedWebQuote(token: string) {
+  // `leg` is the stored engine leg; the intent asks for its from/to (a multi-stop ride's inner
+  // stops live only on the engine side, exactly as a saved web quote holds them).
+  async function lockedWebQuote(
+    token: string,
+    leg: Record<string, unknown> & { from: string; to: string } = { from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 },
+  ) {
     const intent: WebQuoteIntent = {
       product: 'private',
       routeId: `integration-${Date.now()}-${Math.random()}`,
@@ -1417,7 +1422,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       bags: 1,
       date: '2026-09-10',
       time: '09:00',
-      legs: [{ from: 'Kandy', to: 'Nanu Oya' }],
+      legs: [{ from: leg.from, to: leg.to }],
       extras: [],
     };
     const rateCardVersion = 'conversion-integration-v1';
@@ -1450,7 +1455,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
           vehicle: 'car',
           pax: 2,
           bags: 1,
-          legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 }],
+          legs: [leg],
           extras: [],
         },
       },
@@ -1510,6 +1515,27 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         amountDueNowCents: 12_345,
       },
     });
+  });
+
+  // Final review 2026-10-31: insertLockedBooking writes trip_request field by field, so a column
+  // it forgets is silently dropped on this path even though booking_legs (derived in memory) has it.
+  it('keeps through on the trip_request a converted multi-stop ride writes', async () => {
+    const locked = await lockedWebQuote(`through-${Date.now()}`, {
+      from: 'Kandy',
+      to: 'Sigiriya',
+      stops: ['Kandy', 'Pinnawala', 'Sigiriya'],
+      segmentKms: [40, 70],
+    });
+    const converted = await new PostgresQuoteConversionRepo(
+      db,
+      bookings,
+      () => new Date('2026-09-01T00:00:00.000Z'),
+    ).convert(locked.request);
+    const [row] = await db
+      .select({ stops: tripRequests.stops, through: tripRequests.through })
+      .from(tripRequests)
+      .where(eq(tripRequests.bookingId, converted.booking.id));
+    expect(row).toEqual({ stops: ['Kandy', 'Pinnawala', 'Sigiriya'], through: [0] });
   });
 
   it.each(['after_booking_insert', 'after_quote_update'] as const)(
