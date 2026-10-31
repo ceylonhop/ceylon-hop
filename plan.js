@@ -913,17 +913,30 @@ function render(){
     // a stay has one place and a nights count (no intercity travel). Dates
     // are collected in a later step, so cards carry no date field here.
 
+    const SWAP_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>';
+    const X_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    const via = PLANNER_STOPS ? (leg.via||[]) : [];
+    const chainLen = via.length+2;
+    // every row gets ⇅; × only when the leg has more than two places (a leg needs two)
+    const ctl = (k) => `<span class="stop-ctl"><button type="button" class="stop-swap" data-k="${k}" aria-label="${k===chainLen-1?'Swap with the place above':'Swap with the place below'}" title="Swap">${SWAP_ICO}</button>${chainLen>2?`<button type="button" class="stop-rm" data-k="${k}" aria-label="Remove this place" title="Remove">${X_ICO}</button>`:''}</span>`;
+    const rails = ['<span class="rb-pin from"></span>'].concat(via.map(()=>'<span class="rb-wire"></span><span class="rb-pin via"></span>'), ['<span class="rb-wire"></span><span class="rb-pin to"></span>']).join('');
+    const viaRows = via.map((v,k)=>`
+            <div class="rb-divider plain"></div>
+            <div class="rb-field via" data-k="${k+1}"><div class="rb-f"><label>Stop on the way</label>
+              <input class="leg-via place-input" required placeholder="Where do you want to stop?" data-k="${k+1}" value="${escAttr(v)}"></div>${ctl(k+1)}</div>`).join('');
     const transferBody = `
         <div class="route-block">
-          <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+          <div class="rb-rail">${rails}</div>
           <div class="rb-fields">
-            <div class="rb-field"><label>Pick-up</label>
-              <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>
-            <div class="rb-divider"><button type="button" class="rb-swap" aria-label="Swap pick-up and drop-off" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></div>
-            <div class="rb-field"><label>Drop-off</label>
-              <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>
+            <div class="rb-field" data-k="0"><div class="rb-f"><label>Pick-up</label>
+              <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>${ctl(0)}</div>
+            ${viaRows}
+            <div class="rb-divider plain"></div>
+            <div class="rb-field" data-k="${chainLen-1}"><div class="rb-f"><label>Drop-off</label>
+              <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>${ctl(chainLen-1)}</div>
           </div>
-        </div>`;
+        </div>
+        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4?'hidden':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}`;
 
     const stayBody = `
         <div class="loc-row stay">
@@ -961,7 +974,7 @@ function render(){
 
     const card=wrap.querySelector('.leg-card');
     const fromI=wrap.querySelector('.leg-from'), toI=wrap.querySelector('.leg-to');
-    [fromI,toI].forEach(input=>{ if(input) wirePlaceSearch(input); });
+    wrap.querySelectorAll('.place-input').forEach(wirePlaceSearch);
 
     if(!isStay){
       // transfer wiring — live distance recompute without re-render (keeps focus)
@@ -984,8 +997,33 @@ function render(){
       toI.addEventListener('input',recompute);
       fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; renderAfterPress(); });
       toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; renderAfterPress(); });
-      const swap=wrap.querySelector('.rb-swap');
-      if(swap) swap.addEventListener('click',()=>{ markRouteCustomized(); const t=state.legs[i].from; state.legs[i].from=state.legs[i].to; state.legs[i].to=t; render(); });
+      // chain helpers: k indexes [from, ...via, to]
+      const getChain=()=>legChain(state.legs[i]);
+      const setChain=(c)=>{ state.legs[i].from=c[0]; state.legs[i].to=c[c.length-1]; state.legs[i].via=c.slice(1,-1); state.legs[i].ack=null; };
+      wrap.querySelectorAll('.leg-via').forEach(inp=>{
+        const k=+inp.dataset.k;
+        inp.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].via[k-1]=inp.value; recompute(); });
+        inp.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].via[k-1]=inp.value; state.legs[i].ack=null; renderAfterPress(); });
+      });
+      wrap.querySelectorAll('.stop-swap').forEach(btn=>btn.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=getChain(), k=+btn.dataset.k, j=(k===c.length-1)?k-1:k+1;
+        [c[k],c[j]]=[c[j],c[k]]; setChain(c); render();
+      }));
+      wrap.querySelectorAll('.stop-rm').forEach(btn=>btn.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=getChain(); if(c.length<=2) return;
+        c.splice(+btn.dataset.k,1); setChain(c); render();
+      }));
+      const addVia=wrap.querySelector('.add-via');
+      if(addVia) addVia.addEventListener('click',()=>{
+        if((state.legs[i].via||[]).length>=4) return;
+        markRouteCustomized();
+        state.legs[i].via=(state.legs[i].via||[]).concat(['']); state.legs[i].ack=null; render();
+        const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
+        const inputs=c?c.querySelectorAll('.leg-via'):[]; const last=inputs[inputs.length-1];
+        if(last){ last.dataset.suppressMenu='1'; last.focus({ preventScroll:true }); }
+      });
     } else {
       // stay wiring — one place (mirrors to drop-off so chaining continues)
       fromI.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; updateSummary(); });

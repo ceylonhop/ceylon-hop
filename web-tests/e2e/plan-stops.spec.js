@@ -46,6 +46,75 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('#rail .leg-card')).toHaveCount(1);
       await expect(page.locator('#rail .leg-via')).toHaveCount(1);
     });
+
+    test('adds a stop on the way, prices the whole chain, and removes it again', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&pax=2&vehicle=car');
+      const card = page.locator('#rail .leg-card').first();
+      await expect(card.locator('.add-via')).toHaveText(/Add a stop on the way/);
+      await card.locator('.add-via').click();
+      const via = card.locator('.leg-via');
+      await expect(via).toBeFocused();
+      await via.fill('Sigiriya');
+      await expect(page.locator('.place-menu')).toBeVisible();
+      await page.locator('.place-option', { hasText: 'Sigiriya' }).first().click();
+      await expect(card.locator('.add-via')).toHaveText(/Add another stop/);
+      await expect(card.locator('.leg-meta')).toContainText('km');
+      await expect(page.locator('#st-stops')).toHaveText('3');
+      await expect(page.locator('#st-legs')).toHaveText('1');
+      // controls: hover (or always, on touch) shows swap + remove on every row
+      const dropRow = card.locator('.rb-field').last();
+      await dropRow.hover();
+      await expect(dropRow.locator('.stop-swap')).toBeVisible();
+      await expect(dropRow.locator('.stop-rm')).toBeVisible();
+      // remove the stop → back to a plain leg
+      const viaRow = card.locator('.rb-field.via');
+      await viaRow.hover();
+      await viaRow.locator('.stop-rm').click();
+      await expect(card.locator('.leg-via')).toHaveCount(0);
+      await expect(card.locator('.stop-rm')).toHaveCount(0); // a two-place leg has no ×
+      await expect(page.locator('#st-stops')).toHaveText('2');
+    });
+
+    test('⇅ on a row swaps it with the row below; on the last row, with the row above', async ({ page }) => {
+      await page.goto(url());
+      const card = page.locator('#rail .leg-card').first();
+      const rows = card.locator('.rb-field');
+      await rows.nth(0).hover();
+      await rows.nth(0).locator('.stop-swap').click();
+      await expect(card.locator('.leg-from')).toHaveValue('Sigiriya / Dambulla');
+      await expect(card.locator('.leg-via')).toHaveValue('Kandy');
+      await rows.nth(2).hover();
+      await rows.nth(2).locator('.stop-swap').click();
+      await expect(card.locator('.leg-via')).toHaveValue('Ella');
+      await expect(card.locator('.leg-to')).toHaveValue('Kandy');
+    });
+
+    test('a stay card has no add-stop link; the cap hides it at 4 stops', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&nights=1,0&pax=2&vehicle=car');
+      await expect(page.locator('.leg.is-stay .add-via')).toHaveCount(0);
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Anuradhapura|Trincomalee|Ella|Galle') + '&nights=0,0,0,0,0,0&through=0,1,2,3&pax=2&vehicle=car');
+      await expect(page.locator('#rail .leg-via')).toHaveCount(4);
+      await expect(page.locator('.add-via')).toBeHidden();
+    });
+
+    // Guards the Task 17 fix: a blank stop row is filtered out of the wire chain, so the leg
+    // stays one Kandy→Ella wire in the URL (no gap, no through) and reloads as one leg.
+    // render() ends with syncPlanUrl(), so the add-via click has already rewritten the URL.
+    test('a blank stop on the way leaves the leg intact in the URL', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&pax=2&vehicle=car');
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.add-via').click();
+      await expect(card.locator('.leg-via')).toHaveCount(1);
+      await expect(card.locator('.leg-via')).toHaveValue('');
+      const q = new URL(page.url()).searchParams;
+      expect(q.has('gaps')).toBe(false);
+      expect(q.has('through')).toBe(false);
+      expect(q.get('stops')).toBe('Kandy|Ella');
+      await page.reload();
+      await expect(page.locator('#rail .leg-card')).toHaveCount(1);
+      await expect(page.locator('#rail .leg-from')).toHaveValue('Kandy');
+      await expect(page.locator('#rail .leg-to')).toHaveValue('Ella');
+    });
   });
 }
 

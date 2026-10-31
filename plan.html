@@ -234,6 +234,28 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rb-swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
   .rb-swap:active{transform:translateY(-50%) rotate(180deg)}
   .rb-swap svg{width:15px;height:15px}
+  /* stops on the way (spec 2026-10-30): a stop is a row on the same rail */
+  .rb-pin.via{width:10px;height:10px;border:none;background:var(--teal-deep);margin:1px}
+  .rb-field{display:flex;align-items:center;gap:8px}
+  .rb-field>.rb-f{flex:1;min-width:0}
+  .rb-field.via label{color:var(--teal-deep)}
+  .stop-ctl{flex:none;display:inline-flex;gap:6px;opacity:0;transition:opacity .15s}
+  .rb-field:hover .stop-ctl,.rb-field:focus-within .stop-ctl{opacity:1}
+  @media(hover:none){.stop-ctl{opacity:1}}
+  @media(prefers-reduced-motion:reduce){.stop-ctl{transition:none}}
+  .stop-swap,.stop-rm{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft)}
+  .stop-swap{color:var(--accent-deep)}
+  .stop-swap:hover{border-color:var(--accent)}
+  .stop-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .stop-swap svg,.stop-rm svg{width:11px;height:11px}
+  .leg-foot.stops{justify-content:flex-end;margin-top:8px}
+  .add-via{display:inline-flex;align-items:center;gap:.4rem;background:none;border:none;color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.82rem;padding:4px 2px;cursor:pointer;border-radius:6px}
+  .add-via[hidden]{display:none} /* the display above beats the UA [hidden] rule */
+  .add-via:hover{text-decoration:underline}
+  .add-via:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  .add-via svg{width:14px;height:14px}
+  .add-via[disabled]{color:var(--ink-soft);opacity:.6;cursor:default;text-decoration:none}
+  .rb-divider.plain .rb-swap{display:none}
 
   /* leg meta (distance · time · price) sits in the card header, using the spare space */
   .leg-head-right{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0;justify-content:flex-end}
@@ -733,6 +755,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=81515c7d35"></script>
+<script src="plan.js?v=dcefad2e1f"></script>
 </body>
 </html>

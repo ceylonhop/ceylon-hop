@@ -31,22 +31,22 @@ async function openPlanner(page) {
   await expect(page.locator('#rail .leg-card')).toHaveCount(2);
 }
 
-// The arrow straddles the divider between the two fields. Both fields are position:relative
-// and the drop-off one comes later in the DOM, so it painted over the arrow's lower half: a
-// press there hit the field — or its <label>, which focuses the drop-off input instead.
+// The swap control now sits inside the row (.stop-ctl) rather than straddling the divider
+// between the two fields — where the later drop-off field once painted over the arrow's lower
+// half and ate the press. Every point of the button must still reach it.
 test('the whole swap arrow is pressable, including the half over the drop-off field', async ({ page }) => {
   await openPlanner(page);
   const leg = page.locator('#rail .leg-card').first();
 
-  for (const y of [6, 24]) {
-    const hit = await leg.locator('.rb-swap').evaluate((b, dy) => {
+  for (const y of [3, 21]) {
+    const hit = await leg.locator('.stop-swap').first().evaluate((b, dy) => {
       const r = b.getBoundingClientRect();
       return b.contains(document.elementFromPoint(r.x + r.width / 2, r.y + dy));
     }, y);
-    expect(hit, `press at y=${y} of the 30px arrow reaches the button`).toBe(true);
+    expect(hit, `press at y=${y} of the 24px button reaches the button`).toBe(true);
   }
 
-  await leg.locator('.rb-swap').click({ position: { x: 15, y: 24 } });
+  await leg.locator('.stop-swap').first().click({ position: { x: 12, y: 21 } });
   const swapped = page.locator('#rail .leg-card').first();
   await expect(swapped.locator('.leg-from')).toHaveValue('Kandy');
   await expect(swapped.locator('.leg-to')).toHaveValue('Colombo');
@@ -59,7 +59,7 @@ test('the swap arrow works when pressed straight after editing a field', async (
   // Retype the drop-off and do NOT pick from the menu — the edit is still uncommitted when
   // the arrow is pressed, so the press itself is what blurs the field.
   await leg.locator('.leg-to').fill('Galle');
-  await leg.locator('.rb-swap').click();
+  await leg.locator('.stop-swap').first().click();
 
   const swapped = page.locator('#rail .leg-card').first();
   await expect(swapped.locator('.leg-from')).toHaveValue('Galle');
@@ -88,7 +88,7 @@ test('an edit still re-renders when the press is dragged off the button', async 
 
   // hover() scrolls the arrow into view and proves the pointer is really over it — raw
   // boundingBox coordinates landed on <html> and the test passed against broken code.
-  await leg.locator('.rb-swap').hover({ position: { x: 15, y: 6 } });
+  await leg.locator('.stop-swap').first().hover({ position: { x: 12, y: 6 } });
   await page.mouse.down();
   await leg.locator('.leg-head').hover();
   await page.mouse.up();
