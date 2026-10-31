@@ -51,6 +51,7 @@ describe('toBackfillRow', () => {
         driverNights: null,
         routeVariants: null,
         gaps: null,
+        through: null,
       },
     );
     expect(row).toEqual({
@@ -117,7 +118,7 @@ describe('planBackfill', () => {
     const row = toBackfillRow({ id: 'b10', mode: 'trip' }, undefined, {
       id: 'tr10', bookingId: 'b10', serviceType: 'private', pax: 2, vehicleType: 'car',
       stops: ['A', 'B', 'C'], nights: [0, 0], dates: null, days: null, driverNights: null,
-      routeVariants: null, gaps: [0],
+      routeVariants: null, gaps: [0], through: null,
     });
     expect(row.trip?.gaps).toEqual([0]);
   });
