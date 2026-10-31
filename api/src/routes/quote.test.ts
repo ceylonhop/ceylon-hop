@@ -73,14 +73,29 @@ describe('public quote v2 lock', () => {
     });
 
     it('is cheaper than, or equal to, the same places booked as separate legs (one floor, not two)', async () => {
-      // Weligama → Mirissa → Weligama: two tiny segments. Pairwise = two legs, each at the car
+      // Weligama → Mirissa → Weligama: two short segments. Pairwise = two legs, each at the car
       // minimum; as one ride the floor applies once. If the fake adapter does not know one of
       // these towns the test fails on status, not on the assertion — pick another short pair.
+      // Pre-implementation a via leg priced as Weligama→Weligama (0 km → one minimum fare), so
+      // the bare `toBeLessThan` held already. The assertions below rule that out:
+      //  - distanceKm > 0: the chain is measured as real segments, not a 0 km round trip;
+      //  - totalCents === the engine's one-ride price over the summed segments: the segments are
+      //    summed and priced as one ride, which is neither the old 0 km fare nor two floors;
+      //  - toBeLessThan: separate legs still cost more than one ride (one floor, not two).
       const { app } = v2App();
       const short = { ...viaIntent, legs: [{ from: 'Weligama', to: 'Weligama', via: ['Mirissa'] }] };
       const twoLegs = { ...viaIntent, legs: [{ from: 'Weligama', to: 'Mirissa' }, { from: 'Mirissa', to: 'Weligama' }] };
       const one = await (await est(app, short)).json();
       const two = await (await est(app, twoLegs)).json();
+      expect(one.legs[0].distanceKm).toBeGreaterThan(0);
+      const maps = new FakeMapsAdapter();
+      const ab = (await maps.distance('Weligama', 'Mirissa'))!;
+      const ba = (await maps.distance('Mirissa', 'Weligama'))!;
+      const ride = priceQuote({ product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ stops: ['Weligama', 'Mirissa', 'Weligama'], segmentKms: [ab.km, ba.km] }], extras: [] }, RATE_CARD);
+      expect(one.totalCents).toBe(ride.totalCents);
+      // Guard the "one floor" wording: the summed km must price below the car minimum, so the
+      // floor is what the ride is charged at and it is applied once.
+      expect(ride.totalCents).toBe(RATE_CARD.floorCents.car);
       expect(one.totalCents).toBeLessThan(two.totalCents);
     });
 
