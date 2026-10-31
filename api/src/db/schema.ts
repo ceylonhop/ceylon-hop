@@ -81,7 +81,7 @@ export const bookings = pgTable(
     // text, at most 1,000 characters. Null when they left none, and on every older row.
     customerNotes: text('customer_notes'),
     // How the customer will pay when it isn't "now, by card" (0077). Null = the normal flow.
-    // 'on_the_day' = USD cash to the driver; the only thing that lets a booking be confirmed with
+    // 'on_the_day' = USD cash to the Ceylon Hop team at the first pickup; the only thing that lets a booking be confirmed with
     // no payment (domain/status.ts). Money facts come from the payments ledger, never this field.
     paymentArrangement: text('payment_arrangement'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

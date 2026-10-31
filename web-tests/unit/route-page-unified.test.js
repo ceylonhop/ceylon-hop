@@ -65,6 +65,33 @@ describe('route page — renders completely without JavaScript', () => {
   });
 });
 
+// Customers could not tell where the shared taxi sets them down (owner, 2026-10-29): the page
+// listed boarding points only. It now names the drop-off point, and every point links to Maps.
+describe('route page — names where the shared taxi stops, with map links', () => {
+  const mapsHref = (pt) => `https://www.google.com/maps/search/?api=1&amp;query=${encodeURIComponent(pt + ', Sri Lanka').replace(/'/g, '%27')}`;
+  it('names the drop-off point in static markup and in the FAQ', () => {
+    for (const [path, html] of pages) {
+      const [from, to] = legOf(path);
+      const s = T.sharedOption(from, to);
+      if (!s) continue;
+      const t = text(html);
+      expect(t, `${path} drop-off`).toContain(`Drop-off ${s.dropoff}`);
+      expect(t, `${path} FAQ drop-off`).toContain(`drops you at ${s.dropoff}`);
+    }
+  });
+
+  it('links every pick-up and drop-off point to Google Maps', () => {
+    for (const [path, html] of pages) {
+      const [from, to] = legOf(path);
+      const s = T.sharedOption(from, to);
+      if (!s) continue;
+      for (const pt of [...s.pickups.map((p) => p.point), s.dropoff].filter(Boolean)) {
+        expect(html, `${path} map link for ${pt}`).toContain(mapsHref(pt));
+      }
+    }
+  });
+});
+
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 describe('route page — the shared taxi on its days, the ride board for the rest', () => {
