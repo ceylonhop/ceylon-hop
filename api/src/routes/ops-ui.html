@@ -6787,6 +6787,7 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    bookingAwaitingPayment: false, // that booking is still payment_pending: a founder may re-book it as cash on the day
     payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
     balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
     balanceCents: null, // what is still owed on it, for the copy toast
@@ -7718,6 +7719,7 @@ async function bookQuote() {
   _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
+    state.bookingAwaitingPayment = !cashOnDay && res.status === 'payment_pending';
     showToast(cashOnDay
       ? 'Booked ' + res.reference + ': confirmed, cash on the day. A confirmation email is on its way to ' + (b.customer.firstName || 'the customer') + '.'
       : 'Booked · ' + res.reference);
@@ -7923,6 +7925,7 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+  state.bookingAwaitingPayment = false; // read below, after the quote renders
   state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
   state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
   state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
@@ -7979,6 +7982,17 @@ async function reopenQuote(id) {
   // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" here would be
   // misleading for a quote that hasn't actually left the review queue yet. "Opened" is honest.
   showToast('Opened ' + (q.reference || q.id));
+  // Booked without ticking cash on the day (owner, 2026-10-31): the quote is won but its booking
+  // still awaits payment, and the server accepts a re-book of it. Offer Mark booked again — only to
+  // who may book cash on the day, the one thing a re-book of an unpaid booking is for.
+  if (q.status === 'won' && q.convertedBookingId && canBookCashOnDay()) {
+    try {
+      var br = await api('/admin/ops/bookings/' + encodeURIComponent(q.convertedBookingId));
+      var bb = br.ok ? await jsonOrNull(br) : null;
+      if (seq !== _openSeq) return;
+      if (bb && bb.booking && bb.booking.status === 'payment_pending') { state.bookingAwaitingPayment = true; render(); }
+    } catch (e) { /* the button is a convenience; the quote stays as it opened */ }
+  }
 }
 
 // ── Leg tone helpers ──────────────────────────────────────────────────────────
@@ -11524,7 +11538,7 @@ function renderActionBar() {
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && (!state.convertedBookingId || state.bookingAwaitingPayment)) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
@@ -11536,7 +11550,7 @@ function renderActionBar() {
        like the pending_review row: the action-bar tests scan this bar line-by-line. */
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
-    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && (!state.convertedBookingId || state.bookingAwaitingPayment)) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
        says this particular quote qualifies — a single-leg, standard-priced, undiscounted private

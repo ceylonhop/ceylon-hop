@@ -37,7 +37,7 @@ const SENT_QUOTE = {
 };
 
 // Open `quote` (sent) in the builder, with /book answering `answer` and its POST bodies kept in `posts`.
-async function openSentQuote(page, quote, answer, posts, caps) {
+async function openSentQuote(page, quote, answer, posts, caps, more = {}) {
   await page.addInitScript(() => {
     window.google = { accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } }, maps: { importLibrary: async () => ({}) } };
   });
@@ -58,10 +58,11 @@ async function openSentQuote(page, quote, answer, posts, caps) {
     email: 'founder@e2e.test', role: 'founder',
     caps: caps || ['quote:manage', 'quote:approve', 'margin:view', 'bookings:read', 'bookings:operate', 'payments:act'],
   })));
+  if (more.routes) await more.routes(page); // after the **/admin/** catch-all: the newest route wins
   await page.goto(OPS_FILE + '#quotes');
   await page.locator('#view .qrow[data-qopen="q1"]').click();
   await page.waitForSelector('#quoteRoot .ch-app', { timeout: 10000 });
-  await expect(page.locator('.ch-status-pill')).toHaveText('Sent', { timeout: 10000 });
+  await expect(page.locator('.ch-status-pill')).toHaveText(more.pill || 'Sent', { timeout: 10000 });
   await page.waitForLoadState('networkidle');
 }
 
@@ -231,4 +232,40 @@ test('no time typed: Mark booked still goes out, without a time', async ({ page 
   await expect.poll(() => posts.length).toBe(1);
   expect(JSON.parse(posts[0])).not.toHaveProperty('time');
   await expect(toastMsg(page)).toHaveText('Booked · CH-CASH1');
+});
+
+// Booked without ticking cash on the day (owner, 2026-10-31, CH-D9GR2): the quote went won and Mark
+// booked vanished, though the booking was still awaiting payment and the server takes a re-book.
+// While it awaits payment, a founder gets Mark booked back to switch it to cash on the day.
+async function openWonQuote(page, booking, caps) {
+  const posts = [];
+  await openSentQuote(page, { ...SENT_QUOTE, status: 'won', convertedBookingId: 'b1' }, json({ id: 'b1', reference: 'CH-D9GR2' }, 200), posts, caps,
+    { pill: /Booked|Won/, routes: (p) => wonRoutes(p, booking) });
+  return posts;
+}
+const wonRoutes = async (page, booking) => {
+  await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json({ booking: { id: 'b1', reference: 'CH-D9GR2', total: 14900, ...booking, input: { customer: {
+    firstName: 'Sandy', lastName: 'Schwarz', email: 'sandy@example.com', whatsapp: '+4915100000000', country: 'Germany',
+  } } } })));
+};
+
+test('won but still awaiting payment: a founder gets Mark booked back and can book cash on the day', async ({ page }) => {
+  const posts = await openWonQuote(page, { status: 'payment_pending' });
+  await page.locator('.ch-actionbar [data-action="markWon"]').click();
+  await expect(page.locator('#bk-last')).toHaveValue('Schwarz');
+  await page.locator('#bk-date').fill(futureIsoDate(30));
+  await page.locator('#bk-cash-on-day').check();
+  await page.locator('[data-action="confirmBook"]').click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(JSON.parse(posts[0]).paymentArrangement).toBe('on_the_day');
+});
+
+test('won and already confirmed: no Mark booked', async ({ page }) => {
+  await openWonQuote(page, { status: 'confirmed', paymentArrangement: 'on_the_day' });
+  await expect(page.locator('.ch-actionbar [data-action="markWon"]')).toHaveCount(0);
+});
+
+test('won and awaiting payment, but an ops session (no payments:act): no Mark booked', async ({ page }) => {
+  await openWonQuote(page, { status: 'payment_pending' }, ['quote:manage', 'bookings:read', 'bookings:operate']);
+  await expect(page.locator('.ch-actionbar [data-action="markWon"]')).toHaveCount(0);
 });
