@@ -37,7 +37,7 @@ import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 // not on the webhook (payments.booking_id is NOT NULL, so settlement needs a booking to
 // land on). Idempotent per quote+revision, so a double tap resumes rather than duplicates.
 
-type PayState = 'balance' | 'paid' | 'revised' | 'payable' | 'unavailable';
+type PayState = 'balance' | 'pay_on_day' | 'paid' | 'revised' | 'payable' | 'unavailable';
 
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
@@ -76,6 +76,8 @@ const BalanceSchema = z.object({ t: z.string() }).strict();
 
 // A "Request info" tap on the paid confirmation (owner, 2026-10-15). Same limits the quote page's had.
 const InterestSchema = z.object({ t: z.string().max(2000), experienceId: z.string().uuid(), interested: z.boolean() }).strict();
+
+const PAY_ON_DAY_STATUSES: ReadonlySet<string> = new Set(['confirmed', 'in_progress', 'completed']);
 
 const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
 
@@ -205,7 +207,7 @@ export function quotePayRoutes(deps: {
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? (() => Date.now());
 
-  // State precedence per spec §4: balance → paid → revised → payable → unavailable. Paid is checked
+  // State precedence per spec §4: balance → pay_on_day → paid → revised → payable → unavailable. Paid is checked
   // FIRST so a customer reopening their link after paying always finds the keepsake — a
   // won quote must never read as a dead end, and a settled booking must never re-offer Pay.
   // `balance` sits before it for the same reason: a customer who paid a deposit reopens the link
@@ -222,6 +224,14 @@ export function quotePayRoutes(deps: {
         return { state: 'balance', paidVia: { bookingId: booking.id } };
       }
       const settled = rows.some((p) => p.status === 'succeeded');
+      // Pay on the day (owner 2026-10-29/30): booked with no money in. Until ops records the cash
+      // this link says what is owed and how — never "Paid", never a card checkout. Only while the
+      // trip is going ahead or done: a cancelled / no-show / refunded one is a dead link, not "booked".
+      if (booking?.paymentArrangement && !settled) {
+        return PAY_ON_DAY_STATUSES.has(booking.status)
+          ? { state: 'pay_on_day', paidVia: { bookingId: booking.id } }
+          : { state: 'unavailable' };
+      }
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
       }
@@ -311,6 +321,22 @@ export function quotePayRoutes(deps: {
       });
     }
 
+    if (state === 'pay_on_day' && quote && paidVia) {
+      const booking = await deps.bookings.get(paidVia.bookingId);
+      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const sold = soldViewFor(quote, booking);
+      return c.json({
+        state,
+        payOnDay: {
+          reference: booking?.reference ?? null,
+          firstName: prefillFor(quote).firstName || null,
+          // From the ledger: total − succeeded payments (balance.ts), the cash still to hand over.
+          amountUsd: usd(booking ? balanceDueCents(booking, rows) : sold.totalCents),
+          title: payPageCopy(sold, legSelectionOf(sold.payLinkSelection)).title,
+        },
+      });
+    }
+
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
       const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
@@ -384,7 +410,7 @@ export function quotePayRoutes(deps: {
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
     const stored = await deps.quotes.get(parsed.quoteId);
     const { state } = await stateFor(stored, parsed);
-    if (state === 'paid' || state === 'balance') return c.json({ error: 'already_paid' }, 409);
+    if (state === 'paid' || state === 'balance' || state === 'pay_on_day') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !stored) return c.json({ error: 'quote_unavailable' }, 409);
     // The quote AS SOLD on this link — see /view. null (nothing valid behind the selection) is the
