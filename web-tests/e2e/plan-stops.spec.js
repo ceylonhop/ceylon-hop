@@ -70,3 +70,18 @@ test('ack names the head wire of a run and round-trips to booking unchanged', as
   expect(q.get('through')).toBe('0');
   expect(q.get('ack')).toBe('2');
 });
+
+// `dates` is per WIRE too: every wire of a run carries its leg's date. Kandy→Sigiriya→Ella
+// (wires 0,1) is on 12-01 and Ella→Galle (wire 2) on 12-03, so the second leg reads dates[2].
+test('dates are read by each leg\'s head wire and round-trip to booking unchanged', async ({ page }) => {
+  const stops = 'Kandy|Sigiriya / Dambulla|Ella|Galle';
+  const dates = '2026-12-01,2026-12-01,2026-12-03';
+  await page.goto('/plan.html?stops=' + encodeURIComponent(stops) + '&nights=0,0,0,0&through=0&dates=' + dates + '&pax=2&vehicle=car');
+  await expect(page.locator('#rail .leg-card')).toHaveCount(2);
+  await page.locator('#request-btn').click();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+  const q = new URL(page.url()).searchParams;
+  expect(q.get('through')).toBe('0');
+  expect(q.get('dates')).toBe(dates);
+});

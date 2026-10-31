@@ -214,16 +214,30 @@ const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).fil
 // run the traveller kept as one long day — both in the same wire index space as `gaps`.
 const throughParam = PLANNER_STOPS ? (params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
 const ackParam = (params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+// Restore the travel dates the customer already chose: the booking step passes them back
+// as `dates`, one per WIRE (every wire of a run carries its leg's date), so buildLegs reads
+// each transfer leg's date at its HEAD wire. We deliberately do NOT auto-fill from `start` —
+// a tour hand-off carries a default start the customer never picked, so legs stay blank and
+// the WHEN step's question is genuinely open (fixes tour auto-dates). The trip-start anchor
+// below is the customer answering it, never a default.
+const datesParam = (params.get('dates')||'').split(',');
 // The local roads chosen on an earlier pass (booking's Back, a reload): `roads` is index-aligned
 // with the stop wires, 'no_tolls' or empty. It takes effect only once the batch confirms the
 // drive still has a cheaper local road; one that comes back without it is dropped.
 (params.get('roads')||'').split(',').forEach((r,i)=>{
   if(r==='no_tolls' && i<startStops.length-1 && !gapsParam.includes(i)) roadChoice.set(liveRouteKey(startStops[i],startStops[i+1]),'no_tolls');
 });
-function buildLegs(stops, nights, gaps, through, acks){
+function buildLegs(stops, nights, gaps, through, acks, dates){
   const hasNights = nights && nights.some(n=>n>0);
+  // dateAuto:false — a restored date was chosen by the customer on an earlier pass, so a later
+  // cascade anchors to it rather than overwriting it (see cascadeFrom).
+  const withDate = (leg, w) => {
+    const ds = ((dates||[])[w]||'').trim();
+    if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())){ leg.date=d; leg.dateAuto=false; } }
+    return leg;
+  };
   if(!stops.length) return [];  // fresh planner — the empty state invites the first leg
-  if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1, via:[], ack:null }];
+  if(stops.length<2) return [withDate({ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1, via:[], ack:null }, 0)];
   const isGap = new Set(gaps||[]); // wire i (stops[i]→stops[i+1]) the traveller arranges themselves
   const isThrough = new Set(through||[]);
   const isAck = new Set(acks||[]);
@@ -239,7 +253,7 @@ function buildLegs(stops, nights, gaps, through, acks){
     if(!isGap.has(i)){
       // a through wire continues this leg onto the next wire: stops[i+1] is a stop on the way
       while(end<stops.length-2 && isThrough.has(end) && !isGap.has(end+1)) end++;
-      legs.push({ type:'transfer', from:stops[i], to:stops[end+1], via:stops.slice(i+1,end+1), date:null, nights:1, ack:isAck.has(i)?'long_day':null });
+      legs.push(withDate({ type:'transfer', from:stops[i], to:stops[end+1], via:stops.slice(i+1,end+1), date:null, nights:1, ack:isAck.has(i)?'long_day':null }, i));
     }
     // stay at the drop-off (skip the final stop — you depart from there)
     if(hasNights && end+1<stops.length-1 && N(end+1)>0) legs.push({ type:'stay', from:stops[end+1], to:stops[end+1], date:null, nights:N(end+1) });
@@ -252,26 +266,12 @@ const state = {
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
   pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
-  legs: buildLegs(startStops, nightsParam, gapsParam, throughParam, ackParam),
+  legs: buildLegs(startStops, nightsParam, gapsParam, throughParam, ackParam, datesParam),
   hideTemplates: params.has('stops') || params.has('nights') || params.has('dates'),
   // The WHEN step's first question: null = not answered yet (show the fork alone),
   // 'known' = show the per-leg list, 'later' = every leg flexible. See renderDatesStep.
   datesMode: null
 };
-// Restore the travel dates the customer already chose: the booking step passes them back
-// as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
-// auto-fill from `start` — a tour hand-off carries a default start the customer never
-// picked, so legs stay blank and the WHEN step's question is genuinely open (fixes tour
-// auto-dates). The trip-start anchor below is the customer answering it, never a default.
-const datesParam = (params.get('dates')||'').split(',');
-let _tIdx = 0;
-state.legs.forEach(l=>{
-  if(l.type!=='transfer') return;
-  const ds = (datesParam[_tIdx++]||'').trim();
-  // dateAuto:false — a restored date was chosen by the customer on an earlier pass, so a later
-  // cascade anchors to it rather than overwriting it (see cascadeFrom).
-  if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())){ l.date=d; l.dateAuto=false; } }
-});
 if(state.pax>3) state.vehicle='van';
 
 // ---- hybrid place search: known Ceylon Hop places first, popular extras second ----
@@ -528,13 +528,22 @@ function routeSeqDetailed(){
       // inserts an extra "phantom" wire that correctly gets no date and no km). A leg with stops
       // on the way creates one wire per pair of its chain; all but the last are `through`.
       const chain=legChain(l);
-      chain.forEach(p=>addPlace(p,0));
+      // the seq index each chain place lands on: a blank place adds nothing (null), and a place
+      // equal to the previous entry merges into it (still seq.length-1), so neither shifts wires
+      const idx=chain.map(p=>{ addPlace(p,0); return p ? seq.length-1 : null; });
       const wiresHere=[];
       for(let k=0;k<chain.length-1;k++){
-        // wire between chain[k] and chain[k+1] in seq space: the chain's wires are the last
-        // chain.length-1 wires of seq (for a plain leg, seq.length-2 — the wire it just created)
-        const w=seq.length-chain.length+k;
-        if(w<0) continue;
+        let w;
+        if(chain.length===2){
+          // a plain leg: the wire it just created, seq.length-2 (unchanged for an incomplete leg)
+          w=seq.length-2;
+          if(w<0) continue;
+        } else {
+          // a chain pair is a wire only when both ends landed on adjacent seq entries; a pair
+          // with a blank or merged end creates no wire and is skipped
+          if(idx[k]==null || idx[k+1]==null || idx[k+1]!==idx[k]+1) continue;
+          w=idx[k];
+        }
         claimed.add(w); // this transfer's own wire; any UNclaimed wire is a "gap" the traveller arranges
         wires[w] = l.date ? fmtISO(l.date) : '';
         const route=legRouteEstimate(chain[k],chain[k+1]);
