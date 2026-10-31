@@ -42,3 +42,11 @@ test('a kept long day is written into the customer notes for ops', async ({ page
   await expect.poll(() => bookingBodies.length).toBe(1);
   expect(bookingBodies[0].customerNotes).toMatch(/Planner: kept a .* day \(Kandy → Sigiriya \/ Dambulla → Ella\)/);
 });
+
+test('a long chain title is not clipped on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  const q = 'mode=trip&stops=' + encodeURIComponent('Colombo Airport (CMB)|Kandy|Sigiriya / Dambulla|Ella') + '&nights=0,0,0,0&dates=,,&through=0,1&pax=2&vehicle=car';
+  await gotoBooking(page, { query: q });
+  await expect(page.locator('.tr-leg-title').first()).toContainText('Ella');
+  await expect.poll(() => page.locator('.tr-leg-title').first().evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
+});

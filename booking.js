@@ -148,7 +148,7 @@ function repaintTripDrives(){
 // A through wire continues the leg onto the next wire (spec 2026-10-30 §4.3): the run that starts
 // at `head` owns every wire up to the first non-through one. tripLegs stays indexed PER WIRE so
 // nothing that reads tripLegs[i] by data-wire changes; a continuation wire is marked `cont`.
-function tripIsCont(i){ return i>0 && tripThrough.has(i-1) && !tripGaps.has(i); }
+function tripIsCont(i){ return i>0 && tripThrough.has(i-1) && !tripGaps.has(i-1) && !tripGaps.has(i); }
 function tripRunOf(i){
   let head=i; while(tripIsCont(head)) head--;
   const wires=[head]; let w=head;
@@ -200,7 +200,7 @@ if(mode==='trip' && window.TRANSFERS){
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
   tripThrough=new Set((params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
-  tripAcks=new Set((params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripAcks=new Set((params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)&&n>=0&&n<tripStops.length-1&&!tripGaps.has(n)&&!tripIsCont(n)));
   tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
@@ -2191,7 +2191,7 @@ function calcTotal(){
   state.addons.forEach(a=>t+=addonPrices[a]);
   if(isShared) return t;
   const privateFloor = (isTrip && state.svc!=='chauffeur')
-    ? tripLegs.filter(l=>!l.gap).length * window.TRANSFERS.FLOORS[vehicleKey]
+    ? tripLegs.filter(l=>!l.gap && !l.cont).length * window.TRANSFERS.FLOORS[vehicleKey]
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
