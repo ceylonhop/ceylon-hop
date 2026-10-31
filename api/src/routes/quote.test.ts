@@ -129,7 +129,32 @@ describe('public quote v2 lock', () => {
         travelDays: [{ date: '2026-12-01', from: chain[0], to: chain[2], via: [chain[1]] }], extras: [] };
       const res = await est(app, day);
       expect(res.status).toBe(200);
-      expect((await res.json()).legs[0].via).toEqual([chain[1]]);
+      const body = await res.json();
+      expect(body.legs[0].via).toEqual([chain[1]]);
+      const maps = new FakeMapsAdapter();
+      const a = (await maps.distance(chain[0], chain[1]))!;
+      const b = (await maps.distance(chain[1], chain[2]))!;
+      const oneDay = priceQuote({ product: 'chauffeur', vehicle: 'car', pax: 2, bags: 2, firstDate: '2026-12-01', lastDate: '2026-12-01',
+        travelDays: [{ date: '2026-12-01', stops: chain, segmentKms: [a.km, b.km] }], extras: [] }, RATE_CARD);
+      expect(body.totalCents).toBe(oneDay.totalCents);
+    });
+
+    it('an estimated segment makes the estimate estimated and the lock unpriced', async () => {
+      const inner = new FakeMapsAdapter();
+      const spy: MapsAdapter = Object.assign(Object.create(inner), {
+        distance: async (a: string, b: string) => {
+          const d = await inner.distance(a, b);
+          return a === chain[1] && b === chain[2] && d ? { ...d, estimated: true } : d;
+        },
+      });
+      const app = new Hono();
+      app.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps: spy, v2Enabled: true, now: () => new Date('2026-07-28T12:00:00.000Z') }));
+      const e = await est(app, viaIntent);
+      expect(e.status).toBe(200);
+      expect((await e.json()).estimated).toBe(true);
+      const l = await lockV2(app, viaIntent);
+      expect(l.status).toBe(422);
+      expect((await l.json()).error).toBe('quote_unpriced');
     });
 
     it('locks and converts a via quote with the stops intact', async () => {
