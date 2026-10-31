@@ -75,6 +75,10 @@ for (const vp of VIEWPORTS) {
       await expect(ask.locator('.dw-split')).toContainText('end this leg at Ella');
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'true');
       await expect(page.locator('#route-incomplete-hint')).toContainText('Answer the note on Leg 1');
+      // pressing the (aria-disabled) Next must not open a place list over the ask, nor turn it red
+      await page.locator('#request-btn').click({ force: true });
+      await expect(page.locator('.place-menu')).toHaveCount(0);
+      await expect(card).not.toHaveClass(/leg-bad/);
       await ask.locator('.dw-keep').click();
       await expect(card.locator('.leg-warn')).toHaveCount(0);
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'false');

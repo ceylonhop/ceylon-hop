@@ -1261,8 +1261,11 @@ function pendingAsks(){
 function flagIncompleteLeg(i){
   const card=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
   if(!card) return;
-  card.classList.add('leg-bad');
   const y=card.getBoundingClientRect().top+window.scrollY-90;
+  // a leg with a pending long-day ask has every field filled: focusing one would only open its
+  // place list over the Split/Keep buttons. The ask is amber, not an error, so no leg-bad either.
+  if(legLongDay(state.legs[i])){ window.scrollTo({top:y,behavior:'smooth'}); return; }
+  card.classList.add('leg-bad');
   window.scrollTo({top:y,behavior:'smooth'});
   // a same-place-twice leg has every field filled: focusing one would only open its place list
   // over the stop row. It also owns leg-bad until its chain changes (the next render re-evaluates it).
