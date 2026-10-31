@@ -313,6 +313,9 @@ export const tripRequests = pgTable('trip_request', {
   // Self-arranged stretches (0076_trip_request_gaps): indexes of the wires stops[i] → stops[i+1]
   // the customer covers themselves. Null means none — every pair is a leg we drive.
   gaps: integer('gaps').array(),
+  // Wires the car drives straight on from (0078_trip_request_through): stops[i+1] is a stop on the
+  // way inside one leg. Null means none — every pair is its own leg.
+  through: integer('through').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
