@@ -30,8 +30,6 @@ for (const vp of VIEWPORTS) {
       await page.waitForTimeout(2600);
       await expect(card).toHaveClass(/leg-bad/);
       await expect(card.locator('.leg-warn.stop')).toHaveCount(1);
-      // the flag focuses the From field, whose place list then covers the stop row
-      await page.keyboard.press('Escape');
       const via = card.locator('.rb-field.via');
       await via.hover();
       await via.locator('.stop-rm').click();

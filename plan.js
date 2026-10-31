@@ -1228,11 +1228,13 @@ function flagIncompleteLeg(i){
   card.classList.add('leg-bad');
   const y=card.getBoundingClientRect().top+window.scrollY-90;
   window.scrollTo({top:y,behavior:'smooth'});
+  // a same-place-twice leg has every field filled: focusing one would only open its place list
+  // over the stop row. It also owns leg-bad until its chain changes (the next render re-evaluates it).
+  if(legChainDuplicate(state.legs[i])) return;
   const f=card.querySelector('.leg-from'), t=card.querySelector('.leg-to');
   const target=(f&&!f.value.trim())?f:(t&&!t.value.trim()?t:f);
   if(target) target.focus({preventScroll:true});
-  // a same-place-twice leg owns leg-bad until its chain changes (the next render re-evaluates it)
-  if(!legChainDuplicate(state.legs[i])) setTimeout(()=>card.classList.remove('leg-bad'),2200);
+  setTimeout(()=>card.classList.remove('leg-bad'),2200);
 }
 
 // Count a summary stat from whatever is on screen to its new value. Unlike the price (which
