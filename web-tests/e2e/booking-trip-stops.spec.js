@@ -17,14 +17,13 @@ test('one leg card for a through-run, titled with the whole chain', async ({ pag
 
 test('the estimate carries via; the booking carries through', async ({ page }) => {
   const estimates = [];
-  await page.route('**/quote/v2/estimate', async (r) => {
-    estimates.push(JSON.parse(r.request().postData() || '{}'));
-    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
-      totalCents: 9900, amountDueNowCents: 9900, estimated: false,
-      legs: [{ from: 'Kandy', to: 'Ella', via: ['Sigiriya / Dambulla'], distanceKm: 270, durationMin: 390 }],
-    }) });
+  const { bookingBodies } = await gotoBooking(page, {
+    query: Q, captureBooking: true,
+    estimate: { respond: (intent) => {
+      estimates.push(intent);
+      return { totalCents: 9900, legs: [{ from: 'Kandy', to: 'Ella', via: ['Sigiriya / Dambulla'], distanceKm: 270, durationMin: 390 }] };
+    } },
   });
-  const { bookingBodies } = await gotoBooking(page, { query: Q, captureBooking: true });
   await expect.poll(() => estimates.length).toBeGreaterThan(0);
   expect(estimates[estimates.length - 1].legs).toEqual([{ from: 'Kandy', to: 'Ella', via: ['Sigiriya / Dambulla'] }]);
   await fillContact(page);

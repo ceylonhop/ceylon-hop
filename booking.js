@@ -763,7 +763,7 @@ if(isTrip){
       `</div></div>`;
   });
   html+='</div>';
-  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),through:[...tripThrough].join(','),ack:[...tripAcks].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   // (buildTripEditUrl(true) vs buildTripEditUrl()).
@@ -1850,18 +1850,25 @@ function itineraryIntent(){
       const lastDate = dated.length ? dated[dated.length-1] : undefined;
       const travelDays = [];
       for(let i=0;i<tripStops.length-1;i++){
-        if(tripGaps.has(i)) continue;
+        if(tripGaps.has(i) || tripIsCont(i)) continue;
         const date = (tripDates[i]||'').trim();
         if(!date) continue; // an undated wire has no day to attach to the estimate
-        travelDays.push({ date, from: tripStops[i], to: tripStops[i+1] });
+        const run = tripRunOf(i);
+        const day = { date, from: run.stops[0], to: run.stops[run.stops.length-1] };
+        if(run.stops.length>2) day.via = run.stops.slice(1,-1); // sent only when non-empty (fingerprint rule)
+        travelDays.push(day);
       }
       return { product:'chauffeur', vehicle, pax, bags, firstDate, lastDate, travelDays, extras };
     }
     // Trip + private: one leg per non-gap wire (mirrors tripQuoteWithKms, :110).
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
-      if(tripGaps.has(i)) continue;
-      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
+      if(tripGaps.has(i) || tripIsCont(i)) continue;
+      const run = tripRunOf(i);
+      const leg = { from: run.stops[0], to: run.stops[run.stops.length-1] };
+      if(run.stops.length>2) leg.via = run.stops.slice(1,-1);           // sent only when non-empty (fingerprint rule)
+      else if(tripRoadAt(i)==='no_tolls') leg.routeVariant = 'no_tolls'; // a chain has no road choice
+      legs.push(leg);
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
@@ -3443,9 +3450,12 @@ async function createApiBooking(){
     // don't need to reconstruct the chauffeur day-model here just to freeze the rates.
     const tripLegs = [];
     for(let i=0; i<tripStops.length-1; i++){
-      if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
-      const tf = tripStops[i], tt = tripStops[i+1];
-      tripLegs.push({ from: tf, to: tt, distanceKm: lockLegKm(tf, tt) });
+      if(tripGaps.has(i) || tripIsCont(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
+      const run = tripRunOf(i);
+      const tf = run.stops[0], tt = run.stops[run.stops.length-1];
+      const lockLeg = { from: tf, to: tt, distanceKm: run.wires.reduce((s,w)=>s+lockLegKm(tripStops[w], tripStops[w+1]), 0) };
+      if(run.stops.length>2) lockLeg.via = run.stops.slice(1,-1);
+      tripLegs.push(lockLeg);
     }
     const tQuoteId = tripLegs.length
       ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
@@ -3465,6 +3475,8 @@ async function createApiBooking(){
       // The server prices from THIS payload, so it must know which wires are the traveller's own
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // Wires that continue the same leg (a stop on the way), so the server prices the run as one.
+      through: tripThrough.size ? [...tripThrough].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
       routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
       // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
@@ -3541,6 +3553,15 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
+  if(isTrip && tripAcks.size){
+    const lines=[...tripAcks].sort((a,b)=>a-b).map(h=>{
+      const run=tripRunOf(h), leg=tripLegs[h];
+      const hrs=leg && leg.km!=null ? Math.round(leg.km/42) : null;
+      const when=(tripDates[h]||'').trim();
+      return 'Planner: kept a '+(hrs!=null?hrs+' h':'long')+' day ('+run.stops.join(' → ')+')'+(when?', '+when:'');
+    });
+    payload.customerNotes=[payload.customerNotes||'', ...lines].filter(Boolean).join('\n');
+  }
   // The partner experiences they tapped "Request" on - ids only (the API looks the names up
   // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
   if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
