@@ -85,3 +85,17 @@ test('dates are read by each leg\'s head wire and round-trip to booking unchange
   expect(q.get('through')).toBe('0');
   expect(q.get('dates')).toBe(dates);
 });
+
+// A traveller-arranged gap keeps its empty date slot: wire 0 (Kandy→Sigiriya) on 12-01, wire 1
+// (Sigiriya→Ella) a gap with no date, wire 2 (Ella→Galle) on 12-03 — the hand-off is unchanged.
+test('a gap keeps its empty date slot and both round-trip to booking unchanged', async ({ page }) => {
+  const stops = 'Kandy|Sigiriya / Dambulla|Ella|Galle';
+  const dates = '2026-12-01,,2026-12-03';
+  await page.goto('/plan.html?stops=' + encodeURIComponent(stops) + '&nights=0,0,0,0&gaps=1&dates=' + dates + '&pax=2&vehicle=car');
+  await page.locator('#request-btn').click();
+  await page.locator('#dates-continue').click();
+  await page.waitForURL('**/booking.html?**');
+  const q = new URL(page.url()).searchParams;
+  expect(q.get('dates')).toBe(dates);
+  expect(q.get('gaps')).toBe('1');
+});

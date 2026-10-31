@@ -527,9 +527,12 @@ function routeSeqDetailed(){
       // discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous drop-off
       // inserts an extra "phantom" wire that correctly gets no date and no km). A leg with stops
       // on the way creates one wire per pair of its chain; all but the last are `through`.
-      const chain=legChain(l);
-      // the seq index each chain place lands on: a blank place adds nothing (null), and a place
-      // equal to the previous entry merges into it (still seq.length-1), so neither shifts wires
+      // A blank stop on the way is not part of the chain for wire purposes — dropping it here
+      // means [A,'',C] claims A→C (measured A→C) as a plain leg, and [A,'',B,C] acts as [A,B,C].
+      // A blank pick-up/drop-off stays, so a plain two-place leg keeps its formula below.
+      const chain=legChain(l).filter((p,k,a)=>p || k===0 || k===a.length-1);
+      // the seq index each chain place lands on: a blank pick-up/drop-off adds nothing (null), and
+      // a place equal to the previous entry merges into it (still seq.length-1), so neither shifts wires
       const idx=chain.map(p=>{ addPlace(p,0); return p ? seq.length-1 : null; });
       const wiresHere=[];
       for(let k=0;k<chain.length-1;k++){
