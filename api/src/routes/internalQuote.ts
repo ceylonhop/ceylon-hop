@@ -24,14 +24,17 @@ import { canOpsSelfApprove } from '../quote/simpleApproval';
 import { depositFor } from '../quote/extrasDeposit';
 import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
-import type { EmailAdapter } from '../adapters/email';
+import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
+import { sendPayOnDayConfirmed, manageUrl } from '../services/notifications';
+import type { NotificationLogRepo } from '../db/notificationLogRepo';
+import { PAYMENT_ARRANGEMENTS } from '../domain/paymentMethod';
 import { SingleTransferInput, CustomerInput } from '../domain/singleTransfer';
 import { TripInput, MAX_TRIP_STOPS } from '../domain/trip';
 import { PAYER_EDITABLE_STATUSES } from '../db/bookingRepo';
-import type { BookingRepo, NewBooking } from '../db/bookingRepo';
+import type { Booking, BookingRepo, NewBooking } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
-import { balanceDueCents, isBalanceOpen } from '../domain/balance';
+import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
 import { quoteToBooking, QuoteNotBookableError, isQuoteBookable } from '../quote/quoteToBooking';
 import {
   payLines,
@@ -157,6 +160,9 @@ const BookingDetailsSchema = z.object({
   bags: z.number().int().min(0),
   date: z.string().optional(),
   time: z.string().optional(),
+  // "Customer pays cash on the day" (owner 2026-10-29): confirm with no payment. Absent = the
+  // booking lands in payment_pending exactly as before.
+  paymentArrangement: z.enum(PAYMENT_ARRANGEMENTS).optional(),
 });
 
 function customerNameFor(body: ToolRequest): string | null {
@@ -724,6 +730,10 @@ export function internalQuoteRoutes(deps: {
   shortLinksEnabled?: boolean;
   // Partner experiences (spec 2026-10-06 D12): a quote's interests move onto its booking.
   experienceInterests?: ExperienceInterestRepo;
+  // Pay on the day (owner 2026-10-29): the log that makes its confirmation email send once, and
+  // the origin of the email's manage link. Absent = the booking still confirms, unannounced.
+  notificationLog?: NotificationLogRepo;
+  manageBaseUrl?: string;
 }) {
   const r = new Hono();
 
@@ -1126,6 +1136,103 @@ export function internalQuoteRoutes(deps: {
         .join('; ');
       return c.json({ error: 'bad_request', message, details: parsed.error.flatten() }, 400);
     }
+    const arrangement = parsed.data.paymentArrangement;
+    // Cash on the day confirms with no money taken, so only those who may act on payments book it
+    // (owner 2026-10-30). Checked before any write; without the field, ops Mark-book as before.
+    if (arrangement && !can(c.get('identity').role, 'payments:act')) {
+      return c.json(
+        {
+          error: 'forbidden',
+          reason: 'pay_on_day_founder_only',
+          message: 'Only a founder or finance can book a customer as cash on the day. Book it normally, or ask a founder.',
+        },
+        403,
+      );
+    }
+
+    // draft → payment_pending, staff-attributed to this quote. Shared by the create path and a
+    // pay-on-the-day re-book of a booking the customer's pay attempt left in draft.
+    const toPaymentPending = async (b: Booking): Promise<Booking> => {
+      try {
+        return await deps.bookings.setStatus(b.id, 'payment_pending', undefined, {
+          source: 'quote_conversion',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
+      } catch {
+        // A concurrent double-submit already moved this booking out of draft — re-read it
+        // rather than surface a 500 on a booking that was, in fact, created.
+        return (await deps.bookings.get(b.id)) ?? b;
+      }
+    };
+    // Pay on the day: payment_pending → confirmed with no payment. The arrangement goes on FIRST —
+    // the state machine allows this move only for a booking that carries one. A draft is moved to
+    // payment_pending first; anything else (a retry that already confirmed it) is left alone.
+    const confirmPayOnDay = async (b: Booking): Promise<Booking> => {
+      if (!arrangement) return b;
+      if (b.status === 'draft') b = await toPaymentPending(b);
+      if (b.status !== 'payment_pending') return b;
+      await deps.bookings.setPaymentArrangement(b.id, arrangement);
+      try {
+        await deps.bookings.setStatus(b.id, 'confirmed', undefined, {
+          source: 'quote_conversion',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          reason: 'pay_on_the_day',
+          relatedEntityType: 'quote',
+          relatedEntityId: quote.id,
+        });
+      } catch (err) {
+        // A concurrent double-submit confirmed it first — the re-read is the answer. Still not
+        // confirmed means a real failure: log its cause, and notConfirmed() refuses the request.
+        const now = (await deps.bookings.get(b.id)) ?? b;
+        if (now.status !== 'confirmed') console.error(`pay-on-the-day confirm failed for ${b.reference}:`, err);
+        return now;
+      }
+      return (await deps.bookings.get(b.id)) ?? b;
+    };
+    // A pay-on-the-day request whose booking did not end up confirmed must not answer success —
+    // checked BEFORE the quote is stamped won and before any email.
+    const notConfirmed = (b: Booking) => {
+      if (!arrangement || b.status === 'confirmed') return null;
+      console.error(`pay-on-the-day booking ${b.reference} left ${b.status}, not confirmed`);
+      return c.json(
+        {
+          error: 'pay_on_day_not_confirmed',
+          message: 'The booking could not be confirmed as pay on the day. Open it from the Bookings queue.',
+        },
+        409,
+      );
+    };
+    // The customer's confirmation, LAST and best-effort: the booking is already confirmed, so a
+    // mail failure must never fail the request. Claimed before sending so a double-click or a
+    // re-book sends once; handed back when it did not leave, so the next press can retry.
+    const emailPayOnDay = async (b: Booking): Promise<void> => {
+      const log = deps.notificationLog;
+      if (!arrangement || !deps.email || !log || b.status !== 'confirmed' || !b.paymentArrangement) return;
+      try {
+        // Money already on the ledger (a capture that landed mid-confirm, or a gateway payment the
+        // prior already held) — never tell a customer who has paid to bring cash.
+        if (deps.payments && paidCents(await deps.payments.findByBookingId(b.id)) > 0) return;
+        if (!(await log.claim(b.id, 'pay_on_day_confirmed'))) return;
+        try {
+          const links = deps.manageBaseUrl && deps.linkSecret
+            ? { manage: manageUrl(b, deps.manageBaseUrl, deps.linkSecret) }
+            : {};
+          const outcome = await sendPayOnDayConfirmed(b, deps.email, links);
+          if (!wasDelivered(outcome)) await log.release(b.id, 'pay_on_day_confirmed');
+        } catch (err) {
+          await log.release(b.id, 'pay_on_day_confirmed');
+          throw err;
+        }
+      } catch (err) {
+        console.error(`pay-on-the-day confirmation email failed for ${b.reference}:`, err);
+      }
+    };
 
     // A quote is welded to at most one booking (idempotency key + a unique constraint on
     // converted_booking_id), because a double-clicked Confirm must never bill one trip twice.
@@ -1134,10 +1241,13 @@ export function internalQuoteRoutes(deps: {
       ? await deps.bookings.get(quote.convertedBookingId)
       : await deps.bookings.findByIdempotencyKey(idempotencyKey);
     if (prior) {
+      // A second press of a pay-on-the-day Mark booked finds the booking it already confirmed:
+      // answer with it rather than "already booked". Nothing else past payment_pending gets in.
+      const payOnDayRetry = !!arrangement && prior.status === 'confirmed' && !!prior.paymentArrangement;
       // Once money has moved the payer on the row is evidence, not a draft. Refuse, and NAME
       // the booking — "already booked" with nothing to go on is how an operator ends up
       // pressing the button again.
-      if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
+      if (!payOnDayRetry && !(PAYER_EDITABLE_STATUSES as readonly string[]).includes(prior.status)) {
         return c.json(
           {
             error: 'already_booked',
@@ -1165,7 +1275,11 @@ export function internalQuoteRoutes(deps: {
           409,
         );
       }
-      const updated = await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer });
+      const updated = await confirmPayOnDay(
+        payOnDayRetry ? prior : await deps.bookings.refreshPayerDetails(prior.id, { customer: parsed.data.customer }),
+      );
+      const refused = notConfirmed(updated);
+      if (refused) return refused;
       // Unconditionally, not just when the link was missing: a quote sat in `sent` with a
       // booking attached because this only ran on the first pass.
       await deps.quotes.patch(id, {
@@ -1178,6 +1292,7 @@ export function internalQuoteRoutes(deps: {
           : {}),
       });
       await linkQuoteInterests(deps.experienceInterests, id, prior.id);
+      await emailPayOnDay(updated);
       return c.json(updated, 200);
     }
 
@@ -1224,22 +1339,10 @@ export function internalQuoteRoutes(deps: {
     // out-of-band / via the payment-link flow. Guard on 'draft' so an idempotent retry (which
     // returns the existing payment_pending booking) never attempts an illegal self-transition.
     let booking = created;
-    if (created.status === 'draft') {
-      try {
-        booking = await deps.bookings.setStatus(created.id, 'payment_pending', undefined, {
-          source: 'quote_conversion',
-          actorType: 'staff',
-          actorId: c.get('identity').email,
-          requestId: c.get('requestId'),
-          relatedEntityType: 'quote',
-          relatedEntityId: quote.id,
-        });
-      } catch {
-        // A concurrent double-submit already moved this booking out of draft — re-read it
-        // rather than surface a 500 on a booking that was, in fact, created.
-        booking = (await deps.bookings.get(created.id)) ?? created;
-      }
-    }
+    if (created.status === 'draft') booking = await toPaymentPending(created);
+    booking = await confirmPayOnDay(booking);
+    const refused = notConfirmed(booking);
+    if (refused) return refused;
     await deps.quotes.patch(id, {
       convertedBookingId: booking.id,
       status: 'won',
@@ -1250,6 +1353,7 @@ export function internalQuoteRoutes(deps: {
         : {}),
     });
     await linkQuoteInterests(deps.experienceInterests, id, booking.id);
+    await emailPayOnDay(booking);
     return c.json(booking, 201);
   });
 

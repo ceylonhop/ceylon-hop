@@ -817,6 +817,43 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     xpLoadRatings();
   }
 
+  // Pay on the day (owner 2026-10-29/30): booked by our team with no payment yet — USD cash to the
+  // Ceylon Hop team at the first pickup. The keepsake's pass, without a "Paid" line or a card.
+  function payOnDayHtml(p){
+    p = p || {};
+    return '<div class="pp-paid">'
+      + '<div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title"' + (p.firstName ? MASK : '') + '>You’re booked' + (p.firstName ? ', ' + esc(p.firstName) : '') + '</h1>'
+      + '<div class="pass">'
+      +   '<div class="pass-main">'
+      +     '<div class="pass-top">'
+      +       '<div class="pass-brand"><img src="img/brand-c.svg" alt="" width="26" height="26">Ceylon Hop</div>'
+      +       '<span class="pill pill-saffron" style="font-size:.72rem">Booked</span>'
+      +     '</div>'
+      +     '<div class="pass-route"><div class="pt">' + esc(p.title || 'Your trip') + '<small>Trip</small></div></div>'
+      +     '<div class="pass-info">'
+      +       passCell('To pay on the day', p.amountUsd || '')
+      +       '<div style="grid-column:1/-1"><div class="k">How</div><div class="v">Cash, US dollars, to the Ceylon Hop team at your first pickup</div></div>'
+      +     '</div>'
+      +   '</div>'
+      +   '<div class="pass-stub">'
+      +     '<div>'
+      +       '<div style="font-size:.66rem;letter-spacing:.1em;text-transform:uppercase;color:#bdbab2">Booking ref</div>'
+      +       '<div class="ref">' + esc(p.reference || '—') + '</div>'
+      +     '</div>'
+      +     '<div class="barcode"></div>'
+      +   '</div>'
+      + '</div>'
+      + '<p class="st-sub" style="margin-top:18px">There’s nothing to pay online.</p>'
+      + '</div>';
+  }
+
+  function renderPayOnDay(v){
+    var wrap = document.querySelector('.pp-wrap');
+    if (wrap) wrap.classList.add('is-paid');
+    app.innerHTML = payOnDayHtml(v && v.payOnDay) + waLine();
+  }
+
   // The add-ons the customer chose, as the quote names them (copy.addOns). Whole-trip links only:
   // a partial link's receipt lines already name each add-on it charges. Nothing when none.
   function addOnsHtml(addOns){
@@ -1719,6 +1756,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // that were being charged, so a match with the deposit means the deposit was the choice.
       payChoice = (stashedCents && v.deposit && stashedCents === Number(v.deposit.cents)) ? 'deposit' : 'full';
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
+      if (v.state === 'pay_on_day') { forget(); return renderPayOnDay(v); }
       if (v.state === 'revised') return renderRevised();
       // A balance payer who is sent back lands on the balance, not on a contact form.
       if (v.state === 'balance') { renderBalance(v.balance); return fail(message, help, quiet); }
@@ -1746,6 +1784,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       // opened at all" and "how many arrive already dead" stop being the same unknown.
       track('pay_link_opened', withMoney({ state: String(v.state || 'unknown') }));
       if (v.state === 'paid') { forget(); return renderPaid(v.paid); }
+      if (v.state === 'pay_on_day') { forget(); return renderPayOnDay(v); }
       if (v.state === 'revised') return renderRevised();
       if (v.state === 'balance') return renderBalance(v.balance);
       if (v.state === 'payable') return renderPayable();

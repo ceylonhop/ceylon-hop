@@ -183,6 +183,9 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // 'on_the_day' = the customer pays USD cash to the team at the first pickup; absent otherwise. The
+  // manage page words the balance row from it.
+  paymentArrangement?: 'on_the_day';
   // Money actually received (Σ succeeded payments) and whether the manage page may offer the
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
@@ -216,6 +219,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: balanceDueCents(b, payments),
+    ...(b.paymentArrangement ? { paymentArrangement: b.paymentArrangement } : {}),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
     needsPricing: !!b.needsPricing,
@@ -1099,7 +1103,7 @@ function invalidRequest(error: ZodError) {
           kind: 'schedule_set_by_customer',
           title: `Date set: ${result.booking.reference} by the customer`,
           body: `${result.booking.reference}: pickup set to ${fill.next.date}${fill.next.time ? ` ${fill.next.time}` : ''} on the manage page.`,
-          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? ''),
+          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(await payments.findByBookingId(id))),
           // A later time-only fill is a new event, not a repeat of the first.
           dedupeKey: `${result.booking.id}:${fill.next.date}:${fill.next.time ?? ''}`,
         });

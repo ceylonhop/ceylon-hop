@@ -16,7 +16,7 @@
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10,"hotel-pickup":5,"hotel-dropoff":5};
   const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30};
   const SEAT_PRICING = {"perKmCentsVan":54.05,"floorCentsVan":4999,"seatsCoveringVan":3};
-  const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Weligama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Ahangama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama"}];
+  const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport","dropoff":"Barista Cafe, Sigiriya"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo","dropoff":"Barista Cafe, Sigiriya"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya","dropoff":"Kandy City Centre"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Chef Lady, Tissamaharama"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Weligama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Nomad Cafe, Weligama"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Ahangama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Thileni's, Ahangama"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa","dropoff":"CMB Airport"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama","dropoff":"CMB Airport"}];
   /* @end:pricing */
 
   // ---- Places (approx lat/lng for distance) ----
@@ -254,10 +254,26 @@
       // leaves its first stop, which is wrong for every stop after it.
       times: [p.time],
       pickup: p.pickup,
+      dropoff: p.dropoff,
       pickups,
       days: c ? c.days : SHARED_DAYS,
       freqText: c ? c.freqText : 'Wed & Sat'
     };
+  }
+
+  /**
+   * The catalogue's named meeting point in a town: where a shared taxi boards there, else
+   * where one sets down there (those agree wherever both exist). null for a town the
+   * catalogue does not serve. The ride board names its pick-ups from this so the site has
+   * one answer to "where exactly?" (owner, 2026-10-29).
+   */
+  function meetingPoint(placeId) {
+    const place = byId[placeId];
+    if (!place) return null;
+    const on = SHARED_PRODUCTS.find((x) => x.from === place.name && x.pickup);
+    if (on) return on.pickup;
+    const off = SHARED_PRODUCTS.find((x) => x.to === place.name && x.dropoff);
+    return off ? off.dropoff : null;
   }
 
   /**
@@ -483,7 +499,7 @@
   // ---- expose ----
   window.TRANSFERS = {
     PLACES, byId, CORRIDORS, EXTRA,
-    roadKm, durationText, privateQuote, sharedOption, corridorFor, boardSeatPrice,
+    roadKm, durationText, privateQuote, sharedOption, meetingPoint, corridorFor, boardSeatPrice,
     resolvePlace, placeAliasId, kmBetween, billableKm, legPrice, distancePrice, finishPrice, placeSuggestions, tripQuote, repriceDecision,
     exactSpotDecision, MAX_EXACT_KM,
     PER_KM, FLOORS, BUFFER_PCT, PRICE_FINISHING, EXTRAS, CHAUFFEUR_DAY_FEE, CHAUFFEUR_IDLE_MIN_KM, DEPOSIT_PCT, DEPOSIT_MIN,

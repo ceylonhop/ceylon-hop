@@ -493,7 +493,7 @@ describe('details reminders (dateless capture Phase 2)', () => {
   function deps(bookings: InMemoryBookingRepo, log: InMemoryNotificationLogRepo, email: FakeEmailAdapter, paidDaysAgo: number, paused = false) {
     return {
       bookings, log, email, baseUrl: 'https://ceylonhop.com', linkSecret: 's',
-      payments: { findByBookingId: async () => [{ status: 'succeeded', settledAt: at(paidDaysAgo) }] },
+      payments: { findByBookingId: async () => [{ status: 'succeeded', amount: 5000, purpose: 'full', settledAt: at(paidDaysAgo) }] },
       rideOps: { get: async () => ({ customerUpdated: paused }) },
       detailsReminderEpoch: EPOCH,
     };
@@ -540,5 +540,39 @@ describe('details reminders (dateless capture Phase 2)', () => {
     await undatedPaid(bookings);
     const r = await runScheduledNotifications(NOW, { bookings, log, email, baseUrl: 'x', linkSecret: 's' });
     expect(r.detailsReminders).toBe(0);
+  });
+});
+
+describe('runScheduledNotifications — pay-on-the-day trip reminder', () => {
+  async function onTheDay(bookings: InMemoryBookingRepo) {
+    const b = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, date: '2026-07-02', time: '09:00', customer },
+      total: 34200, amountDueNow: 0, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    return b;
+  }
+  const cash = (amount: number) => ({ status: 'succeeded', amount, purpose: 'full', settledAt: NOW });
+
+  it('with no cash recorded: Confirmed reminder with the cash line, never Paid', async () => {
+    const d = { ...deps(), payments: { findByBookingId: async () => [] } };
+    await onTheDay(d.bookings);
+    await runScheduledNotifications(NOW, d);
+    const m = d.email.sent.find((e) => e.tracking?.kind === 'trip_reminder')!;
+    expect(m.html).toContain('$342.00');
+    expect(m.html).toContain('US dollars');
+    expect(m.html).not.toContain('>Paid<');
+  });
+
+  it('once the cash is recorded: the usual Paid reminder, no cash line', async () => {
+    const d = { ...deps(), payments: { findByBookingId: async () => [cash(34200)] } };
+    await onTheDay(d.bookings);
+    await runScheduledNotifications(NOW, d);
+    const m = d.email.sent.find((e) => e.tracking?.kind === 'trip_reminder')!;
+    expect(m.html).toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
   });
 });

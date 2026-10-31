@@ -423,6 +423,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-route .sr-lbl{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
   .shared-route .sr-line b{font-size:1.05rem;font-family:var(--display);font-weight:700}
   .shared-route .sr-wire{width:2px;height:16px;margin:1px 0 1px 5px;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5}
+  .shared-route .sr-sub{display:block;margin-top:2px;font-size:.84rem;color:var(--ink-soft)}
+  .shared-route .sr-map{color:var(--accent-deep);font-weight:600;text-decoration:none;white-space:nowrap}
+  .shared-route .sr-map:hover{text-decoration:underline}
+  .shared-route .sr-map svg{width:12px;height:12px;margin-left:3px;vertical-align:-1px}
   .shared-route .sr-foot{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .shared-route .sr-fact{display:inline-flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink-soft)}
   .shared-route .sr-fact svg{width:17px;height:17px;color:var(--accent-deep);flex:none}
@@ -1250,7 +1254,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=01d72bf1b3"></script>
+<script src="transfers-data.js?v=7013edadde"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4,
      §10). It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two
      website payments that day were declined "3ds Authentication Failed" with no notify ever
@@ -1264,6 +1268,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=9ba3f704d5"></script>
+<script src="booking.js?v=56168b974d"></script>
 </body>
 </html>

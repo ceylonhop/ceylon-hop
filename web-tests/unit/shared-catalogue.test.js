@@ -182,6 +182,20 @@ describe('pickup sequence', () => {
   });
 });
 
+// Every shared offer names where the traveller gets out, not just the town (owner, 2026-10-29).
+describe('drop-off point', () => {
+  it('names the drop-off point on every catalogue leg', () => {
+    for (const [from, to] of CATALOGUE) {
+      expect(T.sharedOption(from, to).dropoff, `${from} -> ${to}`).toBeTruthy();
+    }
+  });
+
+  it('carries the leg\'s own drop-off', () => {
+    expect(T.sharedOption('sigiriya', 'kandy').dropoff).toBe('Kandy City Centre');
+    expect(T.sharedOption('ella', 'ahangama').dropoff).toBe("Thileni's, Ahangama");
+  });
+});
+
 // The board's create form quoted the corridor's flat seat while POST /board persisted a
 // distance-derived price, so the number in the modal could differ from the list created.
 // boardSeatPrice mirrors the server rule exactly.

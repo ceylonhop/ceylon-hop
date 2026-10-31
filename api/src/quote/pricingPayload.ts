@@ -33,6 +33,7 @@ export type PricingPayload = {
     seat: number; // whole USD
     time: string;
     pickup: string | null;
+    dropoff: string | null;
   }>;
 };
 
@@ -71,6 +72,7 @@ export function buildPricingPayload(card: RateCard = RATE_CARD): PricingPayload 
       seat: usd(p.seatPrice),
       time: p.time,
       pickup: p.pickup,
+      dropoff: p.dropoff,
     })),
   };
 }

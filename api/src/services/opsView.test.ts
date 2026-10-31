@@ -210,3 +210,22 @@ describe('opsView — road', () => {
     expect(toOpsRow(fastest, { paid: true })).toEqual(toOpsRow(base, { paid: true }));
   });
 });
+
+// Pay on the day: the row says the booking is arranged to be paid in cash on the day, and how
+// much cash is still due — the ledger's balance, so ops sees the same figure the money reads.
+describe('opsView — payment arrangement', () => {
+  const onTheDay: Booking = { ...base, status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+
+  it('an on_the_day booking carries the arrangement and the whole total as cash due', () => {
+    expect(toOpsRow(onTheDay, { paid: false })).toMatchObject({ paymentArrangement: 'on_the_day', cashDueCents: 12100 });
+  });
+
+  it('cash due falls to zero once the cash payment is on the ledger', () => {
+    const cash = [{ status: 'succeeded', amount: 12100, purpose: 'full' }];
+    expect(toOpsRow(onTheDay, { paid: true, payments: cash })).toMatchObject({ paymentArrangement: 'on_the_day', cashDueCents: 0 });
+  });
+
+  it('an ordinary booking has no arrangement and no cash due', () => {
+    expect(toOpsRow(base, { paid: true })).toMatchObject({ paymentArrangement: null, cashDueCents: 0 });
+  });
+});

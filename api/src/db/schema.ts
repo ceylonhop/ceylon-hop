@@ -80,10 +80,18 @@ export const bookings = pgTable(
     // The customer's own "Anything we should know?" note from the booking page (0059). Plain
     // text, at most 1,000 characters. Null when they left none, and on every older row.
     customerNotes: text('customer_notes'),
+    // How the customer will pay when it isn't "now, by card" (0077). Null = the normal flow.
+    // 'on_the_day' = USD cash to the Ceylon Hop team at the first pickup; the only thing that lets a booking be confirmed with
+    // no payment (domain/status.ts). Money facts come from the payments ledger, never this field.
+    paymentArrangement: text('payment_arrangement'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check('bookings_total_nonnegative', sql`${t.total} >= 0`),
+    check(
+      'bookings_payment_arrangement_valid',
+      sql`${t.paymentArrangement} is null or ${t.paymentArrangement} in ('on_the_day')`,
+    ),
     check(
       'bookings_customer_notes_length',
       sql`${t.customerNotes} is null or char_length(${t.customerNotes}) <= 1000`,
@@ -667,7 +675,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2', 'pay_on_day_confirmed')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),

@@ -3,7 +3,7 @@
 // the succeeded payments, so a balance can never disagree with the money actually held.
 
 type PaymentLike = { status: string; amount: number; purpose: string };
-type BookingLike = { status: string; total: number; amountDueNow?: number | null };
+type BookingLike = { status: string; total: number; amountDueNow?: number | null; paymentArrangement?: string | null };
 
 // A trip that is going ahead. A deposit moves a booking to `paid` exactly like a full payment, and
 // the balance can land after ops has confirmed the driver or the trip has started.
@@ -15,6 +15,11 @@ export function paidCents(payments: PaymentLike[]): number {
 }
 
 export function balanceDueCents(booking: BookingLike, payments: PaymentLike[]): number {
+  // Pay on the day (0077): the trip goes ahead before any money, so owed = total − ledger, even once
+  // the trip is over (the team may hold the cash before ops records it). Cancelled/no-show owe nothing.
+  if (booking.paymentArrangement && booking.status !== 'cancelled' && booking.status !== 'refunded' && booking.status !== 'no_show') {
+    return Math.max(0, booking.total - paidCents(payments));
+  }
   if (CLOSED_STATUSES.has(booking.status)) return 0;
   const paid = paidCents(payments);
   // From the ledger once money is in. A secured booking with NO recorded payment (a legacy or

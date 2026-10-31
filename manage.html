@@ -562,6 +562,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '" target="_blank" rel="noopener">Tell us what happened on WhatsApp</a>';
   }
 
+  // What is still owed. A zero balance is not news — it earns a row only when something is left to
+  // pay. A pay-on-the-day booking owes USD cash to the team at the first pickup, so it says so.
+  function dueRows(v, due){
+    if (!(due > 0)) return '';
+    var arranged = !!v.paymentArrangement;
+    return '<div class="tot due"><span class="l">' + (arranged ? 'To pay on the day (cash, USD)' : 'Balance due')
+      + '</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>'
+      + (arranged ? '<div class="paysub">Please pay the Ceylon Hop team in cash at your first pickup.</div>' : '');
+  }
+
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
     var promo = !!v.promoCode && Number(v.discountCents || 0) > 0;
@@ -594,8 +604,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       html += (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
           + esc(money(v.discountCents, v.currency)) + '</span></div>' : '')
         + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
-        // A zero balance is not news — it earns a row only when something is left to pay.
-        + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
+        + dueRows(v, due);
     }
 
     if (payable(v)) {
