@@ -367,13 +367,16 @@ describe('priceTrip — through (stops on the way)', () => {
     const a = (await maps.distance(chain[0], chain[1]))!;
     const b = (await maps.distance(chain[1], chain[2]))!;
     const c = (await maps.distance(chain[2], 'Galle'))!;
-    const dates = ['2026-12-01', '2026-12-01', '2026-12-03'];
+    // The route refuses differing dates across a through wire (Task 8); this unit test uses them on purpose to pin which wire pricing reads.
+    const dates = ['2026-12-01', '2026-12-02', '2026-12-03'];
     const p = await priceTrip({ ...knownTrip, stops: [...chain, 'Galle'], dates, through: [0], serviceType: 'chauffeur' }, maps);
     expect(p.priced).toBe(true);
     if (!p.priced) return;
     const engine = p.breakdown!.engine;
     expect(engine.product).toBe('chauffeur');
     if (engine.product !== 'chauffeur') return;
+    expect(engine.firstDate).toBe('2026-12-01');
+    expect(engine.lastDate).toBe('2026-12-03');
     expect(engine.travelDays).toEqual([
       { date: '2026-12-01', stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], segmentKms: [a.km, b.km] },
       { date: '2026-12-03', stops: ['Ella', 'Galle'], segmentKms: [c.km] },
