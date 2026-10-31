@@ -228,6 +228,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-meta .sm{display:flex;align-items:center;gap:.6rem;font-size:.9rem}
   .shared-meta .sm svg{width:17px;height:17px;color:var(--teal-deep);flex:none}
   .shared-meta .sm svg .wp{fill:var(--saffron);stroke:none}
+  .shared-meta .pt-map,.pickup-list .pt-map{color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+  .shared-meta .pt-map:hover,.pickup-list .pt-map:hover{color:var(--teal-deep);text-decoration-color:currentColor}
   .shared-meta .sm .low{color:#bb2c1a;font-weight:700}
 
   .incl{display:flex;flex-wrap:wrap;gap:8px;margin-top:auto;padding-top:16px}
@@ -378,7 +380,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
 <script src="transfers-data.js?v=7013edadde"></script>
-<script src="ch-map.js?v=18772b2dd8"></script>
+<script src="ch-map.js?v=e29e14e0cb"></script>
 <!-- engine prices for routes that aren't in the baked table (see search.js) -->
 <script src="ch-pricing.js?v=3a152c88c1"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
@@ -387,6 +389,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="shared-day.js?v=cbcec2fb62"></script>
 <!-- the "two roads" popup (route choice), shared with plan.html -->
 <script src="route-choice.js?v=5a3a128097"></script>
-<script src="search.js?v=f088fe3f8b"></script>
+<script src="search.js?v=d1be77882e"></script>
 </body>
 </html>

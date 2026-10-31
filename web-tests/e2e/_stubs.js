@@ -398,5 +398,8 @@ export async function pickPlace(page, inputId, menuId, text, index = 0) {
   await page.evaluate(() => window.goStep && window.goStep(2));
   await page.fill(inputId, text);
   await page.waitForSelector(`#${menuId} .ac-item`);
+  // Google's rows arrive after CH_MAP.suggest's typing pause; until then the menu holds a
+  // "Searching Google…" row. Pick from the settled menu, as a customer would.
+  await page.waitForSelector(`#${menuId} .ac-item.loading`, { state: 'detached' });
   await page.click(`#${menuId} .ac-item >> nth=${index}`);
 }
