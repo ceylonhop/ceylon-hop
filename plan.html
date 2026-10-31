@@ -411,6 +411,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-warn .dr-warn-ic{display:grid;place-items:center;flex:none;margin-top:1px}
   .dr-warn .dr-warn-ic svg{width:16px;height:16px;color:#c98a1a}
   .dr-warn b{color:var(--ink)}
+  /* per-leg notes under the rail: a hard stop (red) or an ask (amber, see .long-day) */
+  .leg-warn{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding:9px 12px;border-radius:12px;font-size:.79rem;line-height:1.4;background:#fff6e8;border:1px solid #f3dca8;color:#7a5512}
+  .leg-warn .lw-row{display:flex;gap:.5rem;align-items:flex-start}
+  .leg-warn .lw-ic{display:grid;place-items:center;flex:none;margin-top:1px}
+  .leg-warn .lw-ic svg{width:16px;height:16px;color:#c98a1a}
+  .leg-warn b{color:var(--ink)}
+  .leg-warn.stop{background:#fdecea;border-color:#f3b6ad;color:#8a2217}
+  .leg-warn.stop .lw-ic svg{color:var(--tomato)}
+  .leg-warn.stop b{color:#8a2217}
   .dates-actions .btn.cta-disabled{opacity:.5;filter:saturate(.7);cursor:not-allowed}
   #dates-drive-hint.is-blocking{background:#fff0ec;border-color:#f1b7aa;color:#873323}
   #dates-drive-hint.is-blocking svg{color:#e43d2c}
@@ -755,6 +764,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=1c6007574e"></script>
+<script src="plan.js?v=0cb1054e90"></script>
 </body>
 </html>

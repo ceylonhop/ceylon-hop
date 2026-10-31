@@ -818,13 +818,17 @@ function refreshRoads(){
     if(!leg || leg.type==='stay' || !distEl) return;
     const route=legRoute(leg);
     const km=route?route.distanceKm:null;
-    distEl.innerHTML=distHtml(route, km!=null?legPrice(km,state.vehicle):null, legVia(leg).length?null:liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=legHeaderHtml(leg, route, km!=null?legPrice(km,state.vehicle):null);
     distEl.classList.toggle('on', km!=null);
   });
   updateSummary();
   syncPlanUrl();
 }
 
+// A leg with the same place twice in a row has no honest distance, so its header asks for the fix.
+function legHeaderHtml(leg, route, price){
+  return legChainDuplicate(leg) ? '<span class="lm-hint">Fix the route to see distance &amp; price</span>' : distHtml(route, price, legVia(leg).length?null:liveRouteKey(leg.from,leg.to));
+}
 function distHtml(route, price, key){
   if(!route || route.distanceKm==null){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
@@ -940,6 +944,7 @@ function render(){
     if(!isStay) requestLiveChain(leg, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = badges[i];
+    const dup = legChainDuplicate(leg);
 
     // body differs by type: a transfer has pick-up→drop-off + distance;
     // a stay has one place and a nights count (no intercity travel). Dates
@@ -968,7 +973,8 @@ function render(){
               <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>${ctl(chainLen-1)}</div>
           </div>
         </div>
-        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4?'hidden':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}`;
+        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4?'hidden':''} ${dup?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}
+        ${dup?`<div class="leg-warn stop" role="alert"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> ${escAttr(dupPairText(leg))} — remove one, or change it.</span></div></div>`:''}`;
 
     const stayBody = `
         <div class="loc-row stay">
@@ -991,12 +997,12 @@ function render(){
     wrap.className='leg'+(isStay?' is-stay':'');
     wrap.dataset.i=i;
     wrap.innerHTML=`
-      <div class="leg-card" draggable="false" data-i="${i}">
+      <div class="leg-card${dup?' leg-bad':''}" draggable="false" data-i="${i}">
         <div class="leg-head">
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
-            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price,legVia(leg).length?null:liveRouteKey(leg.from,leg.to))}</div>`}
+            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${legHeaderHtml(leg,route,price)}</div>`}
           <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
@@ -1017,7 +1023,7 @@ function render(){
         const route=legRoute(state.legs[i]);
         const k=route?route.distanceKm:null;
         const pr=k!=null?legPrice(k,state.vehicle):null;
-        distEl.innerHTML=distHtml(route,pr,legVia(state.legs[i]).length?null:liveRouteKey(fromI.value,toI.value));
+        distEl.innerHTML=legHeaderHtml(state.legs[i],route,pr);
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
@@ -1169,7 +1175,7 @@ function refreshVehiclePricing(){
     const route=legRoute(leg);
     const km=route?route.distanceKm:null;
     const price=km!=null?legPrice(km,state.vehicle):null;
-    distEl.innerHTML=distHtml(route,price,legVia(leg).length?null:liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=legHeaderHtml(leg,route,price);
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
     const from=before.get(el.dataset.i);
@@ -1194,10 +1200,27 @@ function firstIncompleteLeg(){
   for(let i=0;i<state.legs.length;i++){
     const l=state.legs[i];
     if(l.type==='stay'){ if(!(l.from||'').trim()) return i; }
-    else if(!(l.from||'').trim() || !(l.to||'').trim()) return i;
+    else if(!(l.from||'').trim() || !(l.to||'').trim() || (l.via||[]).some(v=>!(v||'').trim())) return i;
   }
   return -1;
 }
+// Consecutive repeats only (ops legChainDuplicate; engine validateRide): Kandy → Pinnawala →
+// Kandy is a round trip and fine; Kandy → Kandy, or a stop equal to the drop-off, is an error.
+function legChainDuplicate(leg){
+  if(leg.type==='stay') return false;
+  const c=legChain(leg).map(norm);
+  for(let k=0;k<c.length-1;k++) if(c[k] && c[k+1] && c[k]===c[k+1]) return true;
+  return false;
+}
+function dupPairText(leg){ const c=legChain(leg), n=c.map(norm); for(let k=0;k<c.length-1;k++) if(n[k]&&n[k]===n[k+1]){ const names=['The pick-up','A stop on the way','The drop-off']; const who=(x)=>x===0?names[0]:(x===c.length-1?names[2]:names[1]); return `${who(k)} and ${who(k+1).toLowerCase()} are both ${c[k]}`; } return ''; }
+// Everything that blocks "Next" on the route step, by leg, first problem first.
+function legBlockers(){
+  const out=[]; let n=0;
+  state.legs.forEach((l,i)=>{ if(l.type!=='stay') n++; if(legChainDuplicate(l)) out.push({ i, legNo:n, reason:'duplicate' }); });
+  return out;
+}
+// The long-day asks arrive in Task 21; until then there are none.
+function pendingAsks(){ return []; }
 // highlight an incomplete leg card, scroll it into view and focus the empty field
 function flagIncompleteLeg(i){
   const card=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
@@ -1319,11 +1342,20 @@ function updateSummary(opts={}){
   }
 
   // gate the “Next” CTA until every leg has a pick-up AND drop-off (we can't price a blank leg)
+  const blockers=legBlockers();
   const incompleteLeg = firstIncompleteLeg()>=0;
+  const blocked = incompleteLeg || blockers.length>0 || pendingAsks().length>0;
   const reqBtn=document.getElementById('request-btn');
-  if(reqBtn){ reqBtn.classList.toggle('cta-disabled', incompleteLeg); reqBtn.setAttribute('aria-disabled', incompleteLeg?'true':'false'); }
+  if(reqBtn){ reqBtn.classList.toggle('cta-disabled', blocked); reqBtn.setAttribute('aria-disabled', blocked?'true':'false'); }
   const reqHint=document.getElementById('route-incomplete-hint');
-  if(reqHint) reqHint.hidden=!incompleteLeg;
+  if(reqHint){
+    reqHint.hidden=!blocked;
+    let t=reqHint.lastChild; // the text node after the svg
+    if(!t || t.nodeType!==3){ t=document.createTextNode(''); reqHint.appendChild(t); }
+    if(blockers.length) t.textContent=` Fix Leg ${blockers[0].legNo} to continue`;
+    else if(pendingAsks().length) t.textContent=` Answer the note on Leg ${pendingAsks()[0].legNo} to continue`;
+    else t.textContent=' Add a pick-up and drop-off to every leg to continue.';
+  }
 }
 
 // ---- route map: pins plotted from each point's coordinates ----
@@ -1705,6 +1737,7 @@ const PAX_HINT='Pick how many are travelling — choose your travellers above to
 function showDatesStep(){
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
+  const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
   const seq=routeSeq();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   if(state.pax==null){ showRouteHint(PAX_HINT); return; }
