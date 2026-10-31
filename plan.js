@@ -947,7 +947,9 @@ function render(){
     const dup = legChainDuplicate(leg);
     const ask = !dup ? legLongDay(leg) : null;
     const askHtml = ask ? (()=>{
-      const chain=legRouteChain(leg), hrs=Math.round(ask.minutes/60);
+      // the figure must match the card header (reviewed route table); the ≥ 6 h threshold stays on the modelled clock
+      const r=legRoute(leg); const shownMin = (r && r.durationMin>0) ? r.durationMin : ask.minutes; const hrs=Math.round(shownMin/60);
+      const chain=legRouteChain(leg);
       const at = ask.splitAt!=null ? chain[ask.splitAt] : null;
       return `<div class="leg-warn long-day" role="status"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span><b>Long day on the road.</b> ${escAttr(chain.join(' → '))} is about ${hrs} hours of driving${chain.length>2?', before any time at the stops':''}.${at?` Most travellers split this with a night in ${escAttr(at)}.`:''}</span></div><div class="lw-actions">${at?`<button type="button" class="dw-btn dw-split" data-k="${ask.splitAt}">Split it — end this leg at ${escAttr(at)}</button>`:''}<button type="button" class="dw-btn dw-keep">Keep it as one day</button></div></div>`;
     })() : '';

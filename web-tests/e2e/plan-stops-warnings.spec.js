@@ -72,6 +72,10 @@ for (const vp of VIEWPORTS) {
       const card = page.locator('#rail .leg-card').first();
       const ask = card.locator('.leg-warn.long-day');
       await expect(ask).toContainText('Long day on the road');
+      // the ask's hour figure is the one the card header shows (e.g. "470 km · 8h")
+      const meta = await card.locator('.leg-meta').innerText();
+      const n = meta.match(/(\d+)h/)[1];
+      await expect(ask).toContainText(`about ${n} hours`);
       await expect(ask.locator('.dw-split')).toContainText('end this leg at Ella');
       await expect(page.locator('#request-btn')).toHaveAttribute('aria-disabled', 'true');
       await expect(page.locator('#route-incomplete-hint')).toContainText('Answer the note on Leg 1');
