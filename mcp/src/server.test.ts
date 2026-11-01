@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { buildServer, loadConfig, type FetchLike } from './server';
+import { assertNotFounder, buildServer, loadConfig, type FetchLike } from './server';
 
 const STAGING = 'https://ops.staging.ceylonhop.com';
 
@@ -122,5 +122,30 @@ describe('quote MCP tools', () => {
     const r = await client.callTool({ name: 'estimate_quote', arguments: TRIP });
     expect(r.isError).toBe(true);
     expect(text(r)).toContain('date must be YYYY-MM-DD');
+  });
+});
+
+describe('assertNotFounder (startup guard)', () => {
+  const cfg = { baseUrl: STAGING, cookie: 'abc.def' };
+
+  it('asks whoami with the session cookie and accepts a non-founder role', async () => {
+    const api = fakeApi(200, { email: 'ops@example.com', role: 'ops' });
+    await expect(assertNotFounder(cfg, api.fetch)).resolves.toEqual({ email: 'ops@example.com', role: 'ops' });
+    expect(api.calls[0].url).toBe(`${STAGING}/admin/ops/whoami`);
+    expect(api.calls[0].headers.cookie).toBe('ch_ops=abc.def');
+  });
+
+  it('refuses to start with a founder cookie', async () => {
+    const api = fakeApi(200, { email: 'boss@example.com', role: 'founder' });
+    await expect(assertNotFounder(cfg, api.fetch)).rejects.toThrow(/founder/);
+  });
+
+  it('refuses to start when the cookie is expired or not allowlisted', async () => {
+    await expect(assertNotFounder(cfg, fakeApi(401, { error: 'unauthorized' }).fetch)).rejects.toThrow(/cookie/i);
+    await expect(assertNotFounder(cfg, fakeApi(403, { error: 'forbidden' }).fetch)).rejects.toThrow(/cookie/i);
+  });
+
+  it('refuses to start when whoami gives no role (fails closed)', async () => {
+    await expect(assertNotFounder(cfg, fakeApi(200, { email: 'x' }).fetch)).rejects.toThrow(/role/);
   });
 });

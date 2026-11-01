@@ -10,7 +10,7 @@ What Claude can do through this MCP:
 |---|---|
 | `search_places` | Looks up a place name in the ops place list |
 | `estimate_quote` | Prices a trip **without saving** (use it to compare car vs van, private vs chauffeur) |
-| `save_quote_draft` | Saves the trip as a draft quote, assigned to you |
+| `save_quote_draft` | Saves the trip as a draft quote, assigned to the signed-in ops account |
 | `get_quote` / `list_quotes` | Reads quotes back from the queue |
 
 What it **cannot** do, on purpose: approve, discount, create pay links, book, or send. Customer
@@ -18,12 +18,17 @@ messages are untrusted text, so a person always does those steps in ops.
 
 ## How it signs in (prototype)
 
-It uses **your own ops session cookie** (`ch_ops`), so quotes are created as you and the API's normal
-permission rules apply. The cookie lasts **7 days**; when it expires Claude will tell you, and you
-paste a fresh one. The MCP **refuses to talk to production** — staging (or localhost) only.
+It uses the ops session cookie (`ch_ops`) of an **ops-role account**, so quotes are created as that
+account and the API's normal permission rules apply. The cookie lasts **7 days**; when it expires the
+MCP tells you, and you paste a fresh one.
 
-> Treat the cookie like a password: it carries your full ops access on staging. Don't share it or
-> commit it.
+Two hard stops:
+- It **refuses to talk to production**: staging (or localhost) only.
+- It **refuses to start with a founder account**. On startup it asks the API whose cookie it holds
+  (`/admin/ops/whoami`) and stops if the role is `founder`, or if it can't tell. A founder cookie
+  can discount, refund and change rates, so it must never sit in a config file.
+
+> Treat the cookie like a password. Don't share it or commit it.
 
 ## Setup (once)
 
@@ -31,10 +36,13 @@ paste a fresh one. The MCP **refuses to talk to production** — staging (or loc
    ```sh
    cd ceylon-hop/mcp && npm install
    ```
-2. **Get your cookie.** Sign in at <https://ops.staging.ceylonhop.com/ops> in Chrome → DevTools
+2. **Get an ops account on staging (once).** Roles come from `OPS_USERS` on the staging server, one
+   role per email. In Render → `ceylon-hop-staging` → Environment, add a second Google account as
+   `that.account@…:ops` (a Gmail `+` alias won't work: Google reports the same email).
+3. **Get its cookie.** Sign in with that ops account at <https://ops.staging.ceylonhop.com/ops> in Chrome → DevTools
    (⌥⌘I) → **Application** → **Cookies** → `https://ops.staging.ceylonhop.com` → copy the **Value**
    of `ch_ops`. (It's HttpOnly, so it does not show up in `document.cookie`.)
-3. **Connect it to Claude**, either way:
+4. **Connect it to Claude**, either way:
 
    **Claude Desktop:** Settings → Developer → Edit Config, and add (use your real absolute paths):
    ```json

@@ -25,6 +25,24 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   return { baseUrl, cookie };
 }
 
+// Startup guard (owner, 2026-11-01): the MCP runs on an ops-role account, never a founder one. A
+// founder cookie can discount, refund and change rates, so if it leaked from a local config that is
+// the worst case — refuse it outright. Fails closed: no answer, or no role, also refuses to start.
+export async function assertNotFounder(cfg: Config, fetchImpl: FetchLike = fetch): Promise<{ email: string; role: string }> {
+  const res = await fetchImpl(`${cfg.baseUrl}/admin/ops/whoami`, {
+    headers: { cookie: `ch_ops=${cfg.cookie}`, accept: 'application/json' },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(`Ops API refused the cookie (${res.status}): it has expired or the account is not allowlisted. Sign in again and update CEYLON_HOP_OPS_COOKIE.`);
+  }
+  const who = (await res.json().catch(() => null)) as { email?: string; role?: string } | null;
+  if (!res.ok || !who?.role) throw new Error(`Could not confirm the account's role from whoami (HTTP ${res.status}); refusing to start.`);
+  if (who.role === 'founder') {
+    throw new Error(`Refusing to run with a founder account (${who.email}). Use the cookie of an ops-role account (see mcp/README.md).`);
+  }
+  return { email: who.email ?? '', role: who.role };
+}
+
 // Mirrors ToolRequestSchema in api/src/routes/internalQuote.ts (the API re-validates; this copy is
 // what tells Claude the shape). No `discount` key — zod strips it, so one can never be forwarded.
 const legSchema = z.object({
