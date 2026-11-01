@@ -602,6 +602,24 @@ function tripGapsProblem(t: TripInput): string | null {
 // Stops on the way (TripInput.through): wire i continues the same leg onto wire i+1, so stops[i+1]
 // is a stop, not an overnight. Each rule here is a shape the planner never produces; a violation
 // means a hand-built or stale request, and pricing it would silently merge or split legs.
+// A chauffeur-guide trip is priced on its real date span when every leg is dated, and on the
+// customer's own `days` when it is fully flexible (services/pricing.ts chauffeurDates). Half of
+// each let a hand-made request keep a 10-day itinerary's dates while paying for `days: 1`
+// (security review 2026-10-25), so a chauffeur trip with any date must date every leg.
+// booking.js already only offers chauffeur once every leg is dated.
+const LEG_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function chauffeurDatesProblem(t: TripInput): string | null {
+  if (t.serviceType !== 'chauffeur') return null;
+  const dates = t.dates ?? [];
+  if (!dates.some((d) => d.trim())) return null;
+  const legs = t.stops.length - 1;
+  const legDates = dates.slice(0, legs);
+  if (legDates.length < legs || !legDates.every((d) => LEG_DATE.test(d))) {
+    return 'a chauffeur-guide trip needs a date for every leg, or none';
+  }
+  return null;
+}
+
 function tripThroughProblem(t: TripInput): string | null {
   const through = t.through ?? [];
   if (!through.length) return null;
@@ -755,6 +773,8 @@ function invalidRequest(error: ZodError) {
     if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const gapsProblem = tripGapsProblem(parsed.data);
     if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
+    const datesProblem = chauffeurDatesProblem(parsed.data);
+    if (datesProblem) return c.json({ error: 'invalid_request', message: `dates: ${datesProblem}` }, 400);
     const throughProblem = tripThroughProblem(parsed.data);
     if (throughProblem) return c.json({ error: 'invalid_request', message: `through: ${throughProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
