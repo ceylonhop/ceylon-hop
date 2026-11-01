@@ -455,6 +455,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
      stopping mid-panel. Let it span the pair instead. */
   .sum-stats .sum-stat:last-child{grid-column:1/-1}
+  /* An estimated drive reads as a sentence ("Estimated journey — approx. 405 km · 9h 30m. Final
+     route confirmed before payment."), and `.sum-stat b` is nowrap + flex:none, so at desktop
+     width it ran ~250px out of the card. Let this one value shrink and wrap: a short figure still
+     sits beside "Driving"; a sentence drops to its own row, left-aligned like the phone layout. */
+  .sum-stats .sum-stat:last-child #st-drive{flex:0 1 auto;min-width:0;white-space:normal;text-align:left;line-height:1.4}
   /* The map is a landscape box framing a north-south island, so a short card spends most of
      itself on sea. Measured budget (1280x720, the tightest window that still gets this branch,
      7-stop trip): the card sticks at top:86 and its non-map parts total 439px, so the map can
