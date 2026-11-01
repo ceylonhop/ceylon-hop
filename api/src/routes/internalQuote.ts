@@ -994,7 +994,19 @@ export function internalQuoteRoutes(deps: {
       // Price against the live card + active zones, so a saved quote's stored total/margin already
       // reflect any hot-zone boost (it freezes on approval — see the PATCH → 'ready' path).
       const card = await liveCard();
-      const { req, result } = await resolveAndPrice(body, deps.maps, undefined, card, resolver, effectiveDiscount);
+      const priced0 = await resolveAndPrice(body, deps.maps, undefined, card, resolver, effectiveDiscount);
+      const req = priced0.req;
+      let result = priced0.result;
+      // A discount belongs to the service it was given on (owner, 2026-11-01). Q-GYJ89: $31 off
+      // chauffeur ($1,230 → $1,199) was carried by the preserve path onto private ($530 → $499)
+      // when the quote was switched. So a save that CHANGES the priced service drops it (recorded
+      // as removed) instead; the founder re-applies it on the new price if they still want one.
+      const dropsDiscount = !wantsDiscount && effectiveDiscount != null && existing != null
+        && existing.product !== req.product;
+      if (dropsDiscount) {
+        effectiveDiscount = undefined;
+        result = quote(req, card);
+      }
       // Freeze the chauffeur alternative of a "both" quote (spec PR #964) on the SAME card instance as
       // the primary. Only for a point-to-point price with no discount (D2 — the discount belongs to
       // the point-to-point price) and a feasible chauffeur itinerary. Best-effort by design: any
@@ -1055,7 +1067,7 @@ export function internalQuoteRoutes(deps: {
         const takeOver = contentChanged(existing, content) && existing?.assignedTo !== actor;
         // The intent rides into the repo's transaction (Task 4), so content and audit row land
         // together or not at all.
-        const intent: DiscountIntent = removesDiscount
+        const intent: DiscountIntent = removesDiscount || dropsDiscount
           ? { kind: 'remove', by: actor }
           : discountRequest && result.discount
             ? {
@@ -1084,6 +1096,8 @@ export function internalQuoteRoutes(deps: {
             id: updated.id, reference: updated.reference, status: updated.status,
             // Echo it only when it MOVED, so the builder can repaint the picker without a reload.
             ...(takeOver ? { assignedTo: actor } : {}),
+            // So the builder can clear its discount control and say why the price went up.
+            ...(dropsDiscount ? { discountRemoved: true } : {}),
             ...priced,
           }, 200);
         }
