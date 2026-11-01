@@ -56,7 +56,6 @@ Margin as reported = 15% markup over cost ≈ **13% of revenue**.
 | `fxUsdToLkr` | Manual USD→LKR rate — **display only** | `330` |
 | `extras` | Add-on fees (final, no markup) | sightseeing 1000 · safari-wait 1900 · luggage 500 · front 800 · flex 1200 · waiting 1000 |
 | `vehicle` | pax/bag capacities per tier | car 3/3 · van 6/6 · van9 9/8 · van14 14/12 |
-| `shared.colomboPickupCents` | Colombo hotel pickup surcharge per seat | 300 |
 
 The derived sells use a private helper `sell(costCents) = costCents * (100 + markup) / 100`
 (**integer-cent math**, to avoid the float error of `cost × 1.15`, e.g. `2700 × 1.15 = 3104.9999…`).
@@ -75,7 +74,7 @@ legSell = max( floorCents[vehicle],  round( billableKm × perKmCents[vehicle] ) 
 ```
 A multi-stop private trip is `Σ legSell + extras`. The vehicle used is the anti-tamper pick (§5).
 
-**Shared** (`shared.ts`): `Σ ( seatPriceCents × seats + (colomboPickup ? 300 × seats : 0) )`. Distance
+**Shared** (`shared.ts`): `Σ ( seatPriceCents × seats )` (the $3/seat Colombo pickup surcharge was removed 2026-10-16). Distance
 unused; seat price comes from the corridor repo.
 
 **Chauffeur** (`chauffeur.ts`):

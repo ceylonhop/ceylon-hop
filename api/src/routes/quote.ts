@@ -41,7 +41,7 @@ const QuoteSchema = z.discriminatedUnion('product', [
     product: z.literal('shared'),
     legs: z.array(z.object({
       routeId: z.string().min(1), seats: z.number().int().min(1),
-      seatPriceCents: z.number().int().min(0), colomboPickup: z.boolean().optional(),
+      seatPriceCents: z.number().int().min(0),
     })).min(1),
   }),
   z.object({

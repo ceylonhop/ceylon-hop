@@ -1707,7 +1707,7 @@ function renderDatesStep(){
       <div class="dr-date">
         <input type="date" class="dates-step-input" data-placeholder="Add a date" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
         ${leg.date
-          ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
+          ? `<button type="button" class="dr-clear">Clear date</button>${
               cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
           : ''}
       </div>

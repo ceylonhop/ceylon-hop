@@ -3,7 +3,7 @@ import type { Vehicle, ExtraCode } from './rateCard';
 import type { PriceFinishStrategy } from './priceFinish';
 
 export interface PrivateLeg { from: string; to: string; distanceKm: number }
-export interface SharedLeg { routeId: string; seats: number; seatPriceCents: number; colomboPickup?: boolean }
+export interface SharedLeg { routeId: string; seats: number; seatPriceCents: number }
 export interface ChauffeurTravelDay { date: string; from: string; to: string; distanceKm: number }
 
 // Ride: one day's journey as an ordered list of 2+ stops (multi-stop rides model, phase 1).
