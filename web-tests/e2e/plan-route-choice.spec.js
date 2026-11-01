@@ -153,6 +153,8 @@ test('the booking hand-off carries the road and its distance', async ({ page }) 
   await stubBatch(page);
   await page.goto(PLAN);
   await pickLocal(page);
+  // CMB → Ella on the local road is a ≥ 6 h day: answer the long-day ask before the hand-off.
+  await page.locator('.leg-warn.long-day .dw-keep').click();
   await page.locator('#request-btn').click();
   await page.locator('#fork-later').click();
   await page.locator('#dates-continue').click();
