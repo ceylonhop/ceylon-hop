@@ -1707,7 +1707,7 @@ function renderDatesStep(){
       <div class="dr-date">
         <input type="date" class="dates-step-input" data-placeholder="Add a date" aria-label="Date for ${isStay?'stay':'leg'} ${i+1}">
         ${leg.date
-          ? `<button type="button" class="dr-clear">✕ Make flexible</button>${
+          ? `<button type="button" class="dr-clear">Clear date</button>${
               cascades ? `<span class="dr-tag${leg.dateAuto?'':' edited'}">${leg.dateAuto?'From your start date':'Edited by you'}</span>` : ''}`
           : ''}
       </div>
@@ -1745,6 +1745,19 @@ function renderDatesStep(){
   if(cont){ cont.classList.toggle('cta-disabled',hasOOO||hardDriveBlock); cont.setAttribute('aria-disabled',(hasOOO||hardDriveBlock)?'true':'false'); }
   const oooHint=document.getElementById('dates-order-hint');
   if(oooHint) oooHint.hidden=!hasOOO;
+  // "I know my dates" with blanks still continues (a blank leg books as "Date flexible"), but the
+  // CTA says so instead of promising the service step as if every date were in. Owner call
+  // (2026-11-01): copy over a popup — one less tap, and a blank date is a legitimate choice.
+  // "Later" mode keeps the plain CTA: that card already says we'll confirm on WhatsApp.
+  const blanks = mode==='known' ? state.legs.filter(l=>!l.date).length : 0;
+  if(cont) cont.textContent = blanks ? 'Continue without all dates →' : 'Continue to select service →';
+  const missHint=document.getElementById('dates-missing-hint');
+  if(missHint){
+    missHint.hidden=!blanks;
+    if(blanks) missHint.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> `+
+      (blanks===1 ? '1 date is still blank — we’ll confirm it with you on WhatsApp.'
+                  : `${blanks} dates are still blank — we’ll confirm them with you on WhatsApp.`);
+  }
   const driveHint=document.getElementById('dates-drive-hint');
   if(driveHint){
     driveHint.hidden=!driveIssue;

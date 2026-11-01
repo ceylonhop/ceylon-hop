@@ -415,13 +415,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
   .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;line-height:1.22;color:var(--ink);min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
-  .dr-date{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+  /* grid: clear-link | date pill on one line, the origin tag under the pill — so a dated leg's
+     row is no taller than an undated one (the clear link used to stack under the pill) */
+  .dr-date{flex:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px}
+  .dr-date .dp{grid-column:2;grid-row:1}
   .dr-date .dp-btn{min-width:190px}
-  /* the way back out of a date a leg already has */
-  .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
-  .dr-clear:hover{color:var(--accent-deep)}
+  /* the way back out of a date a leg already has — quiet on purpose, it's a rare escape hatch */
+  .dr-clear{grid-column:1;grid-row:1;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:500;color:#a3a39b;white-space:nowrap}
+  .dr-clear:hover{color:var(--accent-deep);text-decoration:underline;text-underline-offset:2px}
   /* where a date came from, so a cascaded one is never mistaken for one they typed */
-  .dr-tag{font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
+  .dr-tag{grid-column:2;grid-row:2;font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
   .dr-tag.edited{color:#a96b04}
   /* out-of-order date caution — same amber "note" theme as the hotels/stay notes */
   .dr-warn{flex:1 1 100%;display:flex;gap:.5rem;align-items:flex-start;margin-top:2px;padding:9px 12px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;font-size:.79rem;line-height:1.4;color:#7a5512}
@@ -448,7 +451,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   #dates-drive-hint.is-blocking svg{color:#e43d2c}
   .date-row.dr-nudge{box-shadow:0 0 0 3px rgba(201,138,26,.4)!important;transition:box-shadow .18s ease}
   .dates-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;max-width:720px;margin-top:26px}
-  @media(max-width:560px){.date-row{align-items:stretch}.dr-date,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
+  /* once "Clear date + pill" stops fitting beside the route, every row stacks the same way
+     (route, then a full-width date line) — otherwise dated rows wrapped and undated didn't */
+  @media(max-width:760px){.date-row{align-items:stretch}.dr-date{width:100%;grid-template-columns:auto 1fr}.dr-date .dp,.dr-date .dp-btn{width:100%}}
+  @media(max-width:560px){.dates-actions .btn{flex:1 1 100%;justify-content:center}}
 
   /* ---- summary ---- */
   /* No nested scrollbar. The column scrolls with the page like everything else; only the summary
@@ -488,6 +494,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .route-incomplete-hint{display:flex;align-items:flex-start;gap:.45rem;margin:10px 2px 0;font-size:.82rem;line-height:1.4;color:var(--tomato);font-weight:600}
   .route-incomplete-hint[hidden]{display:none}
   .route-incomplete-hint svg{width:15px;height:15px;flex:none;margin-top:2px}
+  /* informational, not a warning — a blank date is allowed, the note just counts them */
+  .route-incomplete-hint.is-info{color:var(--ink-soft);font-weight:500}
   .sum-wa{display:flex;align-items:center;gap:.7rem;margin-top:12px;padding:12px 14px;border:1.5px solid #25d36633;background:#25d3660d;border-radius:12px;text-decoration:none;color:var(--ink)}
   .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#0B7A44;color:#fff;display:grid;place-items:center;flex:none}
   .sum-wa .ic svg{width:18px;height:18px}
@@ -756,6 +764,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
     <p class="route-incomplete-hint" id="dates-drive-hint" hidden></p>
+    <!-- counts the blank dates while "I know my dates" is picked; filled by plan.js renderDatesStep -->
+    <p class="route-incomplete-hint is-info" id="dates-missing-hint" hidden></p>
   </div>
 </div>
 
@@ -792,6 +802,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=6bd6e41e1f"></script>
+<script src="plan.js?v=9f005fb85b"></script>
 </body>
 </html>
