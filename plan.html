@@ -397,7 +397,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   #dates-drive-hint.is-blocking svg{color:#e43d2c}
   .date-row.dr-nudge{box-shadow:0 0 0 3px rgba(201,138,26,.4)!important;transition:box-shadow .18s ease}
   .dates-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;max-width:720px;margin-top:26px}
-  @media(max-width:560px){.date-row{align-items:stretch}.dr-date{width:100%;grid-template-columns:auto 1fr}.dr-date .dp,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
+  /* once "Clear date + pill" stops fitting beside the route, every row stacks the same way
+     (route, then a full-width date line) — otherwise dated rows wrapped and undated didn't */
+  @media(max-width:760px){.date-row{align-items:stretch}.dr-date{width:100%;grid-template-columns:auto 1fr}.dr-date .dp,.dr-date .dp-btn{width:100%}}
+  @media(max-width:560px){.dates-actions .btn{flex:1 1 100%;justify-content:center}}
 
   /* ---- summary ---- */
   /* No nested scrollbar. The column scrolls with the page like everything else; only the summary
