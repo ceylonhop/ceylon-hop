@@ -679,6 +679,41 @@ describe('POST /bookings — pricing and inventory cannot be undercut', () => {
     expect((await res.json()).error).toBe('TOO_BIG');
   });
 
+  // Security review 2026-10-25: with some leg dates filled and one left blank, pricing fell back to
+  // the client's own `days` (one blank date + days:1 priced a 4-stop, 10-day trip at $197 instead
+  // of $618) while the booking kept the 10-day dates for ops to see. A chauffeur trip is either
+  // fully dated (priced on the real span) or fully flexible (priced on `days`), never half of each.
+  it('refuses a chauffeur trip whose leg dates are only partly filled in', async () => {
+    const app = createApp();
+    const chauffeur = (over: Record<string, unknown>) => ({
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Galle'], nights: [0, 2, 2, 0],
+      pax: 2, vehicleType: 'car', serviceType: 'chauffeur', customer: valid.customer, ...over,
+    });
+    const d1 = futureIsoDate(20), d2 = futureIsoDate(24), d3 = futureIsoDate(29);
+
+    for (const dates of [[d1, d2, ''], [d1, d2], [d1, d2, 'next week']]) {
+      const res = await jpost(app, '/bookings/trip', chauffeur({ dates, days: 1, driverNights: 0 }));
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error).toBe('invalid_request');
+      expect(body.message).toMatch(/^dates: /);
+    }
+
+    // Fully dated and fully flexible both still book.
+    expect((await jpost(app, '/bookings/trip', chauffeur({ dates: [d1, d2, d3] }))).status).toBe(201);
+    expect((await jpost(app, '/bookings/trip', chauffeur({ days: 10, driverNights: 9 }))).status).toBe(201);
+    expect((await jpost(app, '/bookings/trip', chauffeur({ dates: ['', '', ''], days: 10, driverNights: 9 }))).status).toBe(201);
+  });
+
+  it('leaves a PRIVATE trip with some dates blank alone (each leg is its own transfer)', async () => {
+    const app = createApp();
+    const res = await jpost(app, '/bookings/trip', {
+      stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella'], nights: [0, 2, 0], dates: [futureIsoDate(20), ''],
+      pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+    });
+    expect(res.status).toBe(201);
+  });
+
   // `nights: []` pinned the chauffeur floor at one day ($55) for a trip of any length.
   it('does not let an empty nights array collapse the chauffeur floor', async () => {
     const app = createApp({ maps: { provider: 'none', places: async () => [], distanceVariants: async () => null, distance: async () => null } as MapsAdapter });

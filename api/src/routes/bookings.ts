@@ -592,6 +592,24 @@ function tripGapsProblem(t: TripInput): string | null {
   return null;
 }
 
+// A chauffeur-guide trip is priced on its real date span when every leg is dated, and on the
+// customer's own `days` when it is fully flexible (services/pricing.ts chauffeurDates). Half of
+// each let a hand-made request keep a 10-day itinerary's dates while paying for `days: 1`
+// (security review 2026-10-25), so a chauffeur trip with any date must date every leg.
+// booking.js already only offers chauffeur once every leg is dated.
+const LEG_DATE = /^\d{4}-\d{2}-\d{2}$/;
+function chauffeurDatesProblem(t: TripInput): string | null {
+  if (t.serviceType !== 'chauffeur') return null;
+  const dates = t.dates ?? [];
+  if (!dates.some((d) => d.trim())) return null;
+  const legs = t.stops.length - 1;
+  const legDates = dates.slice(0, legs);
+  if (legDates.length < legs || !legDates.every((d) => LEG_DATE.test(d))) {
+    return 'a chauffeur-guide trip needs a date for every leg, or none';
+  }
+  return null;
+}
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -728,6 +746,8 @@ function invalidRequest(error: ZodError) {
     if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const gapsProblem = tripGapsProblem(parsed.data);
     if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
+    const datesProblem = chauffeurDatesProblem(parsed.data);
+    if (datesProblem) return c.json({ error: 'invalid_request', message: `dates: ${datesProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
