@@ -143,3 +143,28 @@ describe('projectBooking says when the price is still being confirmed by hand', 
     expect(projectBooking(singleBooking).needsPricing).toBe(false); // needsPricing absent
   });
 });
+
+// Customers could not tell where the shared taxi picks them up or sets them down: the manage card
+// named the towns only (owner, 2026-10-29). A recorded leg now carries its published points.
+describe('projectBooking names a shared leg\'s pick-up and drop-off points', () => {
+  const seat = {
+    mode: 'shared', id: 'id-s', reference: 'CH-SEAT1', status: 'paid', createdAt: '2026-10-01T00:00:00.000Z',
+    total: 1999, currency: 'USD', channel: 'website',
+    input: { corridorId: 'airport-cultural', fromPlace: 'Sigiriya / Dambulla', toPlace: 'Kandy', date: '2026-11-04', time: '11:30', seats: 1,
+      customer: { firstName: 'Maya', lastName: 'S', email: 'm@x.com', whatsapp: '+34600000000', country: 'Spain' } },
+  } as unknown as Booking;
+
+  it('carries both points on a recorded leg', () => {
+    const v = projectBooking(seat);
+    expect(v.pickupPoint).toBe('Barista Cafe, Sigiriya');
+    expect(v.dropoffPoint).toBe('Kandy City Centre');
+  });
+
+  it('leaves them out where it cannot know the leg, and off non-shared bookings', () => {
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as unknown as Booking;
+    for (const b of [legacy, singleBooking, tripBooking]) {
+      expect(projectBooking(b)).not.toHaveProperty('pickupPoint');
+      expect(projectBooking(b)).not.toHaveProperty('dropoffPoint');
+    }
+  });
+});
