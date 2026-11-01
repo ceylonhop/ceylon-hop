@@ -193,6 +193,131 @@ for (const vp of VIEWPORTS) {
       await expect(page.locator('#trip-map .tm-route')).toHaveCount(2);
       await expect(page.locator('#trip-map .tm-pin-label')).toHaveCount(3);
     });
+
+    // Task 24: a + on the rail at every gap inserts a stop exactly there.
+    const twoPlace = '/plan.html?stops=' + encodeURIComponent('Kandy|Ella') + '&pax=2&vehicle=car';
+    const opacityOf = (loc) => loc.evaluate((el) => getComputedStyle(el).opacity);
+    const pick = async (page, card, text) => {
+      await card.locator('.leg-via:focus').fill(text);
+      await page.locator('.place-option', { hasText: text }).first().click();
+    };
+
+    if (vp.name !== 'phone') {
+      test('insert: hovering the line between two places lights its + and "Stop here"', async ({ page }) => {
+        await page.goto(twoPlace);
+        const card = page.locator('#rail .leg-card').first();
+        const btn = card.locator('.ins-btn[data-at="1"]');
+        const tip = card.locator('.rb-divider.ins[data-at="1"] .ins-tip');
+        await page.mouse.move(1, 1);
+        await expect.poll(() => opacityOf(btn)).toBe('0');
+        await card.locator('.rb-divider.ins[data-at="1"]').hover();
+        await expect.poll(() => opacityOf(btn)).toBe('1');
+        await expect(tip).toBeVisible();
+        await expect(tip).toHaveText(/Stop here/i);
+        await expect.poll(() => opacityOf(tip)).toBe('1');
+        await expect(btn).toHaveAttribute('aria-label', 'Add a stop between Kandy and Ella');
+      });
+
+      test('insert: hovering the wire on the rail lights the same gap', async ({ page }) => {
+        await page.goto(twoPlace);
+        const card = page.locator('#rail .leg-card').first();
+        await page.mouse.move(1, 1);
+        await card.locator('.rb-wire[data-at="1"]').hover();
+        await expect.poll(() => opacityOf(card.locator('.ins-btn[data-at="1"]'))).toBe('1');
+        await expect(card.locator('.rb-divider.ins[data-at="1"]')).toHaveClass(/is-hot/);
+        await expect.poll(() => opacityOf(card.locator('.ins-tip'))).toBe('1');
+      });
+    } else {
+      test('insert: on a phone the + shows without hover and a tap inserts a row', async ({ page }) => {
+        await page.goto(twoPlace);
+        const card = page.locator('#rail .leg-card').first();
+        const btn = card.locator('.ins-btn[data-at="1"]');
+        await expect.poll(() => opacityOf(btn)).toBe('1');
+        await expect(card.locator('.ins-tip')).toBeHidden();
+        await btn.tap();
+        await expect(card.locator('.leg-via')).toHaveCount(1);
+        await expect(card.locator('.leg-via')).toBeFocused();
+      });
+    }
+
+    test('insert: + at a gap inserts the stop there, in order', async ({ page }) => {
+      await page.goto(twoPlace);
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.ins-btn[data-at="1"]').click();
+      await expect(card.locator('.leg-via')).toBeFocused();
+      await pick(page, card, 'Sigiriya');
+      // the pick re-renders the card, which blurs the old field; its 120 ms menu-close grace
+      // (wirePlaceSearch) would shut the NEXT field's menu if we typed inside it — a human can't
+      await page.waitForTimeout(200);
+      // gap 1 is now Kandy | Sigiriya: the next stop goes BEFORE Sigiriya
+      await card.locator('.ins-btn[data-at="1"]').click();
+      await expect(card.locator('.leg-via')).toHaveCount(2);
+      await expect(card.locator('.leg-via').first()).toBeFocused();
+      await pick(page, card, 'Nuwara Eliya');
+      const values = await card.locator('.leg-via').evaluateAll((els) => els.map((e) => e.value));
+      expect(values).toHaveLength(2);
+      expect(values[0]).toMatch(/Nuwara Eliya/);
+      expect(values[1]).toMatch(/Sigiriya/);
+      await expect(card.locator('.leg-from')).toHaveValue('Kandy');
+      await expect(card.locator('.leg-to')).toHaveValue('Ella');
+    });
+
+    test('insert: a row left blank is removed when focus leaves the card', async ({ page }) => {
+      await page.goto(twoPlace);
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.ins-btn[data-at="1"]').click();
+      await expect(card.locator('.leg-via')).toBeFocused();
+      await expect(card.locator('.leg-via')).toHaveCount(1);
+      await page.evaluate(() => document.activeElement.blur());
+      await expect(card.locator('.leg-via')).toHaveCount(0);
+      // the foot link's blank row goes the same way
+      await card.locator('.add-via').click();
+      await expect(card.locator('.leg-via')).toBeFocused();
+      await page.evaluate(() => document.activeElement.blur());
+      await expect(card.locator('.leg-via')).toHaveCount(0);
+    });
+
+    test('insert: leaving a blank row for another card\'s field drops the row and keeps that field focused', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Ella|Galle') + '&nights=0,0,0&pax=2&vehicle=car');
+      const cards = page.locator('#rail .leg-card');
+      await expect(cards).toHaveCount(2);
+      await cards.nth(0).locator('.ins-btn[data-at="1"]').click();
+      await expect(cards.nth(0).locator('.leg-via')).toBeFocused();
+      await cards.nth(1).locator('.leg-to').click();
+      await expect(cards.nth(0).locator('.leg-via')).toHaveCount(0);
+      await expect(cards.nth(1).locator('.leg-to')).toBeFocused();
+    });
+
+    test('insert: no + at 4 stops, at 12 places, or on a leg with the same place twice', async ({ page }) => {
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Anuradhapura|Trincomalee|Ella|Galle') + '&nights=0,0,0,0,0,0&through=0,1,2,3&pax=2&vehicle=car');
+      await expect(page.locator('#rail .leg-via')).toHaveCount(4);
+      await expect(page.locator('.ins-btn')).toHaveCount(0);
+      await expect(page.locator('.ins-tip')).toHaveCount(0);
+      const twelve = ['Kandy', 'Sigiriya / Dambulla', 'Anuradhapura', 'Trincomalee', 'Ella', 'Galle', 'Mirissa', 'Tangalle', 'Nuwara Eliya', 'Negombo', 'Hikkaduwa', 'Colombo'];
+      await page.goto('/plan.html?stops=' + encodeURIComponent(twelve.join('|')) + '&nights=' + twelve.map(() => 0).join(',') + '&pax=2&vehicle=car');
+      await expect(page.locator('#rail .leg-card')).toHaveCount(11);
+      await expect(page.locator('.ins-btn')).toHaveCount(0);
+      await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Sigiriya / Dambulla') + '&nights=0,0,0&through=0&pax=2&vehicle=car');
+      await expect(page.locator('#rail .leg-card').first()).toHaveClass(/leg-bad/);
+      await expect(page.locator('.ins-btn')).toHaveCount(0);
+      await expect(page.locator('.ins-tip')).toHaveCount(0);
+    });
+
+    test('insert: Tab reaches the + and Enter inserts', async ({ page }) => {
+      await page.goto(twoPlace);
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.leg-from').focus();
+      let reached = false;
+      for (let n = 0; n < 6 && !reached; n++) {
+        await page.keyboard.press('Shift+Tab');
+        reached = await page.evaluate(() => !!document.activeElement && document.activeElement.matches('.ins-btn'));
+      }
+      expect(reached).toBe(true);
+      await expect.poll(() => opacityOf(card.locator('.ins-btn[data-at="1"]'))).toBe('1');
+      await page.keyboard.press('Enter');
+      await expect(card.locator('.leg-via')).toHaveCount(1);
+      await expect(card.locator('.leg-via')).toBeFocused();
+    });
   });
 }
 

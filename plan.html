@@ -210,7 +210,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
   .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
-  .rb-wire{flex:1;width:2px;min-height:22px;margin:4px 0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
+  /* the dotted line is ::before so its .4 opacity does not dim the + inside the wire (Task 24) */
+  .rb-wire{position:relative;flex:1;width:2px;min-height:22px;margin:4px 0;background:none;opacity:1}
+  .rb-wire::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
   .rb-fields{display:flex;flex-direction:column;min-width:0}
   .rb-field{padding:9px 0}
   .rb-field label{display:block;font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:2px}
@@ -256,6 +258,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .add-via svg{width:14px;height:14px}
   .add-via[disabled]{color:var(--ink-soft);opacity:.6;cursor:default;text-decoration:none}
   .rb-divider.plain .rb-swap{display:none}
+  /* insert a stop at a chosen gap: the + lives INSIDE the rail's wire, so it is centred on the
+     dotted line at every width; the divider line and the wire are one hover pair (JS .is-hot).
+     z-index:3 + the 22px ::before hit zone: without them the later .rb-field rows win the pointer. */
+  .rb-divider.ins{position:relative;z-index:3;height:1px;background:var(--line);transition:background .15s}
+  .rb-divider.ins::before{content:"";position:absolute;left:0;right:0;top:-11px;height:22px}
+  .rb-wire .ins-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);z-index:2;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--teal-deep);background:var(--white);color:var(--teal-deep);display:grid;place-items:center;cursor:pointer;padding:0;opacity:0;transition:opacity .15s,transform .15s}
+  .ins-btn svg{width:12px;height:12px}
+  .ins-tip{position:absolute;left:-2px;top:50%;transform:translateY(-50%);z-index:2;font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--teal-deep);background:var(--white);padding:0 6px 0 0;opacity:0;transition:opacity .15s;pointer-events:none;white-space:nowrap}
+  .leg-card:hover .rb-wire .ins-btn{opacity:.38}
+  .rb-divider.ins.is-hot{background:var(--teal-deep)}
+  .rb-divider.ins.is-hot .ins-tip{opacity:1}
+  .leg-card .rb-wire.is-hot .ins-btn,.leg-card .rb-wire:focus-within .ins-btn{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .ins-btn:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  @media(hover:none){.rb-wire .ins-btn,.leg-card:hover .rb-wire .ins-btn,.leg-card .rb-wire.is-hot .ins-btn{opacity:1;transform:translate(-50%,-50%) scale(.85)}.ins-tip{display:none}.rb-divider.ins.is-hot{background:var(--line)}}
+  @media(prefers-reduced-motion:reduce){.ins-btn,.ins-tip,.rb-divider.ins{transition:none}}
 
   /* leg meta (distance · time · price) sits in the card header, using the spare space */
   .leg-head-right{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0;justify-content:flex-end}
@@ -770,6 +787,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=c396e04dbc"></script>
+<script src="plan.js?v=971e3fcfbf"></script>
 </body>
 </html>

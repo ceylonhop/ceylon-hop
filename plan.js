@@ -965,9 +965,15 @@ function render(){
     const chainLen = via.length+2;
     // every row gets ⇅; × only when the leg has more than two places (a leg needs two)
     const ctl = (k) => `<span class="stop-ctl"><button type="button" class="stop-swap" data-k="${k}" aria-label="${k===chainLen-1?'Swap with the place above':'Swap with the place below'}" title="Swap">${SWAP_ICO}</button>${chainLen>2?`<button type="button" class="stop-rm" data-k="${k}" aria-label="Remove this place" title="Remove">${X_ICO}</button>`:''}</span>`;
-    const rails = ['<span class="rb-pin from"></span>'].concat(via.map(()=>'<span class="rb-wire"></span><span class="rb-pin via"></span>'), ['<span class="rb-wire"></span><span class="rb-pin to"></span>']).join('');
+    // insert a stop at gap k (between chain[k-1] and chain[k]): the same gate that hides/disables .add-via
+    const canIns = PLANNER_STOPS && !(via.length>=4 || atPlaceCap || dup);
+    const PLUS_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+    const chainAt = (k) => { const c=[leg.from||''].concat(via,[leg.to||'']); return String(c[k]||'').trim() || (k===0?'pick-up':(k===chainLen-1?'drop-off':'stop')); };
+    const wire = (k) => canIns ? `<span class="rb-wire" data-at="${k}"><button type="button" class="ins-btn" data-at="${k}" aria-label="${escAttr(`Add a stop between ${chainAt(k-1)} and ${chainAt(k)}`)}">${PLUS_ICO}</button></span>` : '<span class="rb-wire"></span>';
+    const divider = (k) => canIns ? `<div class="rb-divider ins" data-at="${k}"><span class="ins-tip">Stop here</span></div>` : '<div class="rb-divider plain"></div>';
+    const rails = ['<span class="rb-pin from"></span>'].concat(via.map((_,k)=>`${wire(k+1)}<span class="rb-pin via"></span>`), [`${wire(chainLen-1)}<span class="rb-pin to"></span>`]).join('');
     const viaRows = via.map((v,k)=>`
-            <div class="rb-divider plain"></div>
+            ${divider(k+1)}
             <div class="rb-field via" data-k="${k+1}"><div class="rb-f"><label>Stop on the way</label>
               <input class="leg-via place-input" required placeholder="Where do you want to stop?" data-k="${k+1}" value="${escAttr(v)}"></div>${ctl(k+1)}</div>`).join('');
     const transferBody = `
@@ -977,7 +983,7 @@ function render(){
             <div class="rb-field" data-k="0"><div class="rb-f"><label>Pick-up</label>
               <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>${ctl(0)}</div>
             ${viaRows}
-            <div class="rb-divider plain"></div>
+            ${divider(chainLen-1)}
             <div class="rb-field" data-k="${chainLen-1}"><div class="rb-f"><label>Drop-off</label>
               <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>${ctl(chainLen-1)}</div>
           </div>
@@ -1072,6 +1078,38 @@ function render(){
         const inputs=c?c.querySelectorAll('.leg-via'):[]; const last=inputs[inputs.length-1];
         if(last){ last.dataset.suppressMenu='1'; last.focus({ preventScroll:true }); }
       });
+      // + at a gap: an empty stop row at chain index k, focused without popping the menu
+      wrap.querySelectorAll('.ins-btn').forEach(btn=>btn.addEventListener('click',()=>{
+        if((state.legs[i].via||[]).length>=4 || routeSeq().length>=12) return; // MAX_TRIP_STOPS = 12 (server cap)
+        markRouteCustomized();
+        const k=+btn.dataset.at;
+        state.legs[i].via=(state.legs[i].via||[]).slice(); state.legs[i].via.splice(k-1,0,''); state.legs[i].ack=null; render();
+        const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
+        const f=c?c.querySelector(`.leg-via[data-k="${k}"]`):null;
+        if(f){ f.dataset.suppressMenu='1'; f.focus({ preventScroll:true }); }
+      }));
+      // the divider line and the wire of a gap are one hover pair
+      wrap.querySelectorAll('.rb-divider.ins[data-at],.rb-wire[data-at]').forEach(el=>{
+        const pair=()=>wrap.querySelectorAll(`.rb-divider.ins[data-at="${el.dataset.at}"],.rb-wire[data-at="${el.dataset.at}"]`);
+        el.addEventListener('mouseenter',()=>pair().forEach(x=>x.classList.add('is-hot')));
+        el.addEventListener('mouseleave',()=>pair().forEach(x=>x.classList.remove('is-hot')));
+      });
+      // a stop row still blank when focus leaves the card is dropped (the Next gate stays the backstop).
+      // The place menu lives inside the card and keeps focus on its input (mousedown preventDefault).
+      card.addEventListener('focusout',()=>setTimeout(()=>{
+        if(!card.isConnected || card.contains(document.activeElement)) return; // re-rendered, or still in the card
+        const v=state.legs[i] && state.legs[i].via; if(!v) return;
+        const b=v.findIndex(p=>!String(p||'').trim()); if(b<0) return;
+        state.legs[i].via=v.slice(0,b).concat(v.slice(b+1));
+        if(railPress){ renderHeld=true; return; } // a button press elsewhere: hold the render until it lands (see railPress)
+        // focus moved to a place field in another card: keep it there across the re-render
+        const a=document.activeElement, ac=a && a.matches && a.matches('.place-input') ? a.closest('#rail .leg-card') : null;
+        const sel=ac ? (a.classList.contains('leg-via') ? `.leg-via[data-k="${a.dataset.k}"]` : (a.classList.contains('leg-from') ? '.leg-from' : '.leg-to')) : null;
+        const ai=ac ? ac.dataset.i : null;
+        render();
+        const back=sel ? document.querySelector(`#rail .leg-card[data-i="${ai}"] ${sel}`) : null;
+        if(back) back.focus({ preventScroll:true });
+      },0));
       const keep=wrap.querySelector('.dw-keep');
       if(keep) keep.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].ack='long_day'; render(); });
       const split=wrap.querySelector('.dw-split');
