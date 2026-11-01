@@ -93,6 +93,42 @@ describe('Ops discount API', () => {
     expect(body.totalCents).toBe(discounted.totalCents);
   });
 
+  // Q-GYJ89 (2026-11-01): $31 off was given on chauffeur ($1,230 → $1,199); a later save switched
+  // the quote to private and the preserve path took the same $31 off $530 instead. A discount
+  // belongs to the service it was given on (owner).
+  it('DROPS the discount when a save changes the priced service', async () => {
+    const { discounts, a } = wired();
+    const CHAUFFEUR = {
+      ...BODY, service: 'chauffeur', requestedService: 'chauffeur',
+      legs: [
+        { category: 'transfer', from: 'Colombo', to: 'Kandy', distanceKm: 115, date: '2027-03-01' },
+        { category: 'transfer', from: 'Kandy', to: 'Ella', distanceKm: 140, date: '2027-03-02' },
+      ],
+    };
+    const q = (await (await save(a, CHAUFFEUR)).json()) as { id: string };
+    await save(a, { ...CHAUFFEUR, id: q.id, discount: { method: 'fixed', amountCents: 3100, reason: 'closing' } });
+    expect((await discounts.activeFor(q.id))?.appliedCents).toBe(3100);
+
+    const fullPrivate = (await (await save(a, { ...CHAUFFEUR, service: 'private', requestedService: 'both' })).json()) as { totalCents: number };
+    const res = await save(a, { ...CHAUFFEUR, id: q.id, service: 'private', requestedService: 'both' });
+    const body = (await res.json()) as { totalCents: number; discountRemoved?: boolean };
+
+    expect(res.status).toBe(200);
+    expect(body.totalCents).toBe(fullPrivate.totalCents);
+    expect(body.discountRemoved).toBe(true);
+    expect(await discounts.activeFor(q.id)).toBeNull();
+    const history = await discounts.historyFor(q.id);
+    expect(history[0].status).toBe('removed');
+  });
+
+  it('keeps the discount when the service is unchanged (no discountRemoved flag)', async () => {
+    const { a } = wired();
+    const q = await seed(a);
+    await save(a, { ...BODY, id: q.id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+    const body = (await (await save(a, { ...BODY, id: q.id, service: 'private' })).json()) as { discountRemoved?: boolean };
+    expect(body.discountRemoved).toBeUndefined();
+  });
+
   it('removes on explicit null, and the price returns to full', async () => {
     const { discounts, a } = wired();
     const q = await seed(a);
