@@ -35,7 +35,7 @@ export function quote(
 
   if (req.product === 'shared') {
     if (req.legs.length === 0) throw new Error('NO_LEGS');
-    const s = quoteSharedLegs(req.legs, rateCard);
+    const s = quoteSharedLegs(req.legs);
     lineItems.push(...s.lineItems);
     subtotalCents += s.subtotalCents;
     // shared cost basis not modelled → margin reported as 0 (see warning)
