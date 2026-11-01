@@ -148,7 +148,9 @@ test('same-day legs over 7 hours warn but can continue', async ({ page }) => {
   const cont = page.locator('#dates-continue');
   const hint = page.locator('#dates-drive-hint');
 
-  await expect(cont).toContainText('Continue to select service');
+  // readiness only — the CTA's wording follows the blanks (plan-dates-partial.spec.js), and at
+  // this point every leg is still blank
+  await expect(cont).toContainText(/continue/i);
   await setLegDate(page, 0, D_B);
   await setLegDate(page, 1, D_B);
 
