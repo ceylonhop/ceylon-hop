@@ -206,6 +206,27 @@ describe('ops bookings endpoints', () => {
     await step('completed', 'completed');
   });
 
+  // Pay on the day (0077): the trip runs before any money, so the mirror must be able to confirm it —
+  // and must NOT confirm an ordinary unpaid booking (it used to be stopped by canTransition alone).
+  it('mirrors vehicle_confirmed onto a pay-on-the-day booking that has no payment', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    expect((await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+  });
+
+  it('never confirms an ordinary unpaid booking through the fulfilment mirror', async () => {
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    expect((await app.request(`/admin/ops/bookings/${b.id}/status`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ to: 'vehicle_confirmed' }),
+    })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('payment_pending');
+  });
+
   it('a fulfilment backtrack leaves the booking lifecycle alone', async () => {
     const b = await seed(bookings);
     await bookings.setStatus(b.id, 'payment_pending');
@@ -306,6 +327,18 @@ describe('ops fulfilment milestones email the customer', () => {
     const res = await post(app, b.id, 'no_show');
     expect((await res.json()).fulfilmentStatus).toBe('no_show');
     const notice = email.sent.filter((m) => m.to === 'm@x.com' && /refundable/i.test(m.text ?? ''));
+    expect(notice).toHaveLength(1);
+  });
+
+  it('tells a pay-on-the-day customer nothing was charged on → no_show', async () => {
+    const email = new FakeEmailAdapter();
+    const { app, bookings } = appWith(email);
+    const b = await seed(bookings);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await post(app, b.id, 'vehicle_confirmed');
+    await post(app, b.id, 'no_show');
+    const notice = email.sent.filter((m) => m.to === 'm@x.com' && /Nothing was charged/.test(m.text ?? ''));
     expect(notice).toHaveLength(1);
   });
 
@@ -430,5 +463,121 @@ describe('the booking drawer for a booking sold on a chauffeur link', () => {
     const res = await drawerFor({ legIndexes: [0], extraIndexes: [] }, chauffeurTrip);
     expect(res.status).toBe(200);
     expect((await res.json()).coverage).toBeNull();
+  });
+});
+
+// Refund leg picker (refund approvals phase 2): the drawer carries the booking's charge lines,
+// each worth its share of what the booking was charged, so ops can tick legs and the amount fills
+// in. A convenience only — a founder approves every request.
+import { quote as priceQuote } from '../quote/engine';
+import { RATE_CARD } from '../quote/rateCard';
+import { websitePricingSnapshot } from '../db/bookingRepo';
+import type { QuoteRequest } from '../quote/types';
+
+describe('the booking drawer\'s refund lines', () => {
+  const engine: QuoteRequest = {
+    product: 'private', vehicle: 'car', pax: 2, bags: 1,
+    legs: [{ from: 'Colombo', to: 'Kandy', distanceKm: 120 }, { from: 'Kandy', to: 'Ella', distanceKm: 140 }],
+    extras: [{ code: 'waiting', legIndex: 1 }],
+  };
+  const priced = priceQuote(engine, RATE_CARD);
+  type Lines = { currency: string; lines: Array<{ kind: string; index: number; label: string; amountCents: number }> } | null;
+
+  async function drawer(opts: { booking?: object; quote?: boolean; snapshot?: boolean; currency?: string } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const input = { ...bookingInput(), total: priced.totalCents, amountDueNow: priced.totalCents, ...(opts.booking ?? {}) };
+    const b = await bookings.create(input as never, opts.snapshot ? { pricingSnapshot: websitePricingSnapshot({ engine, result: { ...priced, currency: (opts.currency ?? priced.currency) as never } }) } : undefined);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    if (opts.quote) {
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: 'car', totalCents: priced.totalCents, currency: opts.currency ?? priced.currency, rateCardVersion: 'v1',
+        request: { engine }, result: { ...priced, currency: opts.currency ?? priced.currency },
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id });
+    }
+    const res = await app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+    expect(res.status).toBe(200);
+    return (await res.json()).refundLines as Lines;
+  }
+
+  function expectProRated(lines: Lines) {
+    expect(lines?.currency).toBe('USD');
+    expect(lines?.lines.map((l) => l.label)).toEqual(['Colombo → Kandy (car)', 'Kandy → Ella (car)', expect.stringContaining('Kandy → Ella')]);
+    // Each line is rounded on its own, so the sum lands within a cent per line of the charge.
+    const sum = lines!.lines.reduce((a, l) => a + l.amountCents, 0);
+    expect(Math.abs(sum - priced.totalCents)).toBeLessThanOrEqual(lines!.lines.length);
+  }
+
+  it('reads them from the quote the booking was converted from', async () => {
+    expectProRated(await drawer({ quote: true }));
+  });
+
+  it('reads them from a website booking\'s own pricing snapshot', async () => {
+    expectProRated(await drawer({ snapshot: true }));
+  });
+
+  it('has none for a booking with neither', async () => {
+    expect(await drawer()).toBeNull();
+  });
+
+  it('has none for a chauffeur trip', async () => {
+    expect(await drawer({ booking: chauffeurTrip, quote: true })).toBeNull();
+  });
+
+  it('has none when the priced lines are in another currency than the booking', async () => {
+    expect(await drawer({ quote: true, currency: 'LKR' })).toBeNull();
+  });
+});
+
+// Ops assign a vehicle from the drawer, so it names the one the trip was priced on. The booking
+// itself only keeps car|van — a 9-seat van quote arrives as "van", and a party the engine sized
+// up out of a car can arrive as "car" — so the tier comes from the priced request when there is one.
+import { sampleBooking } from '../services/__fixtures__/sampleBookings';
+
+describe('the booking drawer\'s vehicle', () => {
+  async function vehicleOf(opts: { booking?: object; quoteEngine?: QuoteRequest; snapshotEngine?: QuoteRequest } = {}) {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, rideOps: new InMemoryRideOpsRepo(), quotes, auth, adminApiKey: 'adminkey' });
+    const input = { ...bookingInput(), ...(opts.booking ?? {}) };
+    const snapshot = opts.snapshotEngine
+      ? { pricingSnapshot: websitePricingSnapshot({ engine: opts.snapshotEngine, result: priceQuote(opts.snapshotEngine, RATE_CARD) }) }
+      : undefined;
+    const b = await bookings.create(input as never, snapshot);
+    await bookings.setStatus(b.id, 'payment_pending');
+    if (opts.quoteEngine) {
+      const result = priceQuote(opts.quoteEngine, RATE_CARD);
+      const q = await quotes.save({
+        channel: 'ops', product: 'private', vehicle: opts.quoteEngine.product === 'shared' ? null : opts.quoteEngine.vehicle,
+        totalCents: result.totalCents, currency: result.currency, rateCardVersion: 'v1',
+        request: { engine: opts.quoteEngine }, result,
+      });
+      await quotes.patch(q.id, { convertedBookingId: b.id });
+    }
+    const res = await app.request(`/admin/ops/bookings/${b.id}`, { headers: await hdr() });
+    expect(res.status).toBe(200);
+    return (await res.json()).vehicle as string | null;
+  }
+  const legs = [{ from: 'Colombo', to: 'Kandy', distanceKm: 120 }];
+
+  it('names the van size of the quote the booking was converted from', async () => {
+    const booking = { input: { ...bookingInput().input, vehicleType: 'van' as const } };
+    expect(await vehicleOf({ booking, quoteEngine: { product: 'private', vehicle: 'van9', pax: 8, bags: 4, legs } })).toBe('van9');
+  });
+
+  it('names the vehicle a website booking was sized up to', async () => {
+    expect(await vehicleOf({ snapshotEngine: { product: 'private', vehicle: 'car', pax: 5, bags: 2, legs } })).toBe('van');
+  });
+
+  it('falls back to the booking\'s own vehicle when nothing was priced', async () => {
+    expect(await vehicleOf()).toBe('car');
+  });
+
+  it('has none for a shared seat', async () => {
+    const shared = sampleBooking('shared');
+    expect(await vehicleOf({ booking: { mode: 'shared', input: shared.input } })).toBeNull();
   });
 });

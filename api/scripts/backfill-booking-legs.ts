@@ -34,7 +34,7 @@ export interface BackfillRow {
     travelDate: string | null;
     travelTime: string | null;
   };
-  trip?: { stops: string[]; dates: string[] | null; serviceType: string };
+  trip?: { stops: string[]; dates: string[] | null; serviceType: string; gaps?: number[]; through?: number[] };
 }
 
 export interface SkipReport {
@@ -71,7 +71,15 @@ export function toBackfillRow(
     return {
       bookingId: booking.id,
       mode: booking.mode,
-      trip: trip ? { stops: trip.stops, dates: trip.dates, serviceType: trip.serviceType } : undefined,
+      trip: trip
+        ? {
+            stops: trip.stops,
+            dates: trip.dates,
+            serviceType: trip.serviceType,
+            ...(trip.gaps?.length ? { gaps: trip.gaps } : {}),
+            ...(trip.through?.length ? { through: trip.through } : {}),
+          }
+        : undefined,
     };
   }
   return { bookingId: booking.id, mode: booking.mode };
@@ -112,6 +120,8 @@ export function planBackfill(rows: BackfillRow[]): { legs: NewLegRow[]; skipped:
         ? {
             stops: row.trip.stops ?? [],
             dates: row.trip.dates,
+            gaps: row.trip.gaps,
+            through: row.trip.through,
             serviceType: row.trip.serviceType === 'chauffeur' ? 'chauffeur' : 'private',
           }
         : undefined,

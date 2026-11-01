@@ -206,3 +206,27 @@ for (const g of MORE) {
     });
   });
 }
+
+// Guides carry no per-photo credits (owner, 2026-10-20): every photographer — Commons licences
+// included — is credited on credits.html, which the site footer links from every guide.
+describe('photo credits', () => {
+  const ne = loadGuides().find(g => g.slug === 'nuwara-eliya');
+  const T = loadTransfers(), photos = loadPlacePhotos();
+  it('a guide shows no photo credits, hero or strip — even with a Commons photo', () => {
+    const g = structuredClone(ne);
+    expect(Object.values(g.photos).some(x => x.source === 'commons')).toBe(true);
+    const h = renderGuide(g, T, photos);
+    expect(h).not.toContain('class="credits"');
+    expect(h).not.toContain('class="credit"');
+    expect(h).not.toContain('Photos:');
+    expect(h).not.toMatch(/Photo: /);
+    expect(h).toContain('credits.html');
+  });
+  it('a photo caption shows under an Eat/Stay card photo, so a stand-in photo is labelled as one', () => {
+    const g = structuredClone(ne);
+    g.photos[g.stay[0].photo].caption = 'Illustrative: not this hotel';
+    const h = renderGuide(g, T, photos);
+    expect(section(h, 'eat')).toMatch(/<span class="cap"[^>]*>Illustrative: not this hotel<\/span>/);
+    expect(renderGuide(ne, T, photos)).not.toContain('class="cap"');
+  });
+});

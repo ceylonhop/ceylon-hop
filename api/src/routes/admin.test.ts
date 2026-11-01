@@ -10,6 +10,9 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryRideListRepo } from '../db/rideListRepo';
 import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
+import { InMemoryExperienceRepo } from '../db/experienceRepo';
+import { FakeBusinessPlaces } from '../adapters/businessPlaces';
+import { ExperienceInputSchema } from '../experiences/experience';
 import { issueSessionCookie } from '../lib/opsMiddleware';
 import { nextIsoWeekday, futureIsoDate, colomboDateTimeIn } from '../testSupport/dates';
 import { SENT_QUOTE_TTL_MS } from '../services/quoteExpiry';
@@ -107,6 +110,27 @@ describe('POST /admin/bookings/:id/cancel — the team is told', () => {
     expect(m.html).toContain('Flight moved &lt;next week&gt;');
     expect(m.html).toContain(`https://ops.example/ops?booking=${b.id}`);
     expect(sent[0].dedupeKey).toBe(b.reference);
+  });
+});
+
+describe('POST /admin/bookings/:id/cancel — money comes from the ledger', () => {
+  it('a confirmed pay-on-the-day booking with no payments says nothing was taken', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, bookings, email: new FakeEmailAdapter(), alerts, opsBaseUrl: 'https://ops.example' });
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/cancel`, {
+      method: 'POST',
+      headers: { cookie: await cookie('f@x.com'), 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'Changed plans' }),
+    });
+    expect(res.status).toBe(200);
+    const m = alerts.sent.find((a) => a.kind === 'booking_cancelled')!.email!;
+    expect(m.text).toContain('Not paid — nothing to refund');
+    expect(m.text).not.toContain('Not refunded yet');
   });
 });
 
@@ -279,20 +303,30 @@ describe('POST /admin/bookings/:id/cancel', () => {
     expect(res.status).toBe(400);
   });
 
-  it('the ops time window applies to refunds too, not just cancellation', async () => {
-    const { app } = makeApp();
+  it('refund requests are not held to the ops time window — the ledger decides; cancel still is', async () => {
+    const { app, bookings } = makeApp();
     const near = await bookOn(app, imminent().date, imminent().time);
     const far = await bookOn(app, futureIsoDate(30));
+    // Age the imminent booking past the 24h fresh-booking grace (same idiom as the stale-hold test
+    // below). Without this the grace lets ops through on BOTH routes and the test cannot tell a
+    // working cancel gate from a deleted one.
+    (await bookings.get(near.id))!.createdAt = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
     const refund = (id: string, who: string) => cookie(who).then((ck) =>
       app.request(`/admin/bookings/${id}/refunds`, {
         method: 'POST',
         headers: { cookie: ck, 'content-type': 'application/json' },
         body: JSON.stringify({ amountCents: 1000, currency: 'USD', reason: 'Customer request' }),
       }));
-    // Both are fresh, so the rule lets ops through on each; the ledger then applies its own
-    // business check (409 — nothing was ever captured on these unpaid bookings). Not 403 is the
-    // point: the reversal gate is on the refund route, and it is the SAME gate as cancel's.
-    expect((await refund(near.id, 'op@x.com')).status).toBe(409);
+    // The cancel route is the one place the 24-hour rule still applies: stale booking + imminent trip.
+    const cancel = await cancelAs(app, near.id, 'op@x.com');
+    expect(cancel.status).toBe(403);
+    expect((await cancel.json()).error).toBe('within_24h_founder_only');
+    expect((await bookings.get(near.id))!.status).not.toBe('cancelled');
+    // Since 2026-10-17 a refund REQUEST skips the 24-hour rule (a founder approves every one), so
+    // ops reaches the ledger on the same booking and it applies its own check: 409, nothing captured.
+    const nearRefund = await refund(near.id, 'op@x.com');
+    expect(nearRefund.status).not.toBe(403);
+    expect(nearRefund.status).toBe(409);
     expect((await refund(far.id, 'op@x.com')).status).toBe(409);
     // finance has no bookings:operate, so it never reaches the ledger at all.
     expect((await refund(far.id, 'fin@x.com')).status).toBe(403);
@@ -447,6 +481,139 @@ describe('POST /admin/jobs/board-ops-backfill', () => {
     expect(real.status).toBe(200);
     expect(await real.json()).toMatchObject({ seats: 1, sent: 1 });
     expect(email.sent.map((m) => m.to)).toEqual(['ops@x.com']);
+  });
+});
+
+// "How to fill your van" (2026-10-27): the sweep rides the daily tick and has its own endpoint
+// for the ?dryRun=1 look before the first real run (which is the backfill).
+describe('ride board fill tips', () => {
+  const DAY = 86_400_000;
+  async function shortRide() {
+    const rideLists = new InMemoryRideListRepo();
+    const l = await rideLists.createList({
+      corridorId: 'ella-south', fromPlace: 'Ella', toPlace: 'Mirissa', date: futureIsoDate(10), slot: 'morning',
+      minSeats: 4, capacity: 6, seatPrice: 2300, note: null, cutoffAt: new Date(Date.now() + 8 * DAY), createdBy: 'mia-sub',
+    }, new Date(Date.now() - 2 * DAY));
+    await rideLists.addMember(l.id, { sub: 'mia-sub', firstName: 'Mia', country: 'DE', email: 'mia@x.com', seats: 1 }, new Date(Date.now() - 2 * DAY));
+    return rideLists;
+  }
+
+  it('POST /admin/jobs/board-fill-tips: 403 for an ops session, 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const forbidden = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const unwired = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(unwired.status).toBe(409);
+    expect((await unwired.json()).error).toBe('not_configured');
+  });
+
+  it('POST /admin/jobs/board-fill-tips honours ?dryRun and sends through the wired sender', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+
+    const dry = await app.request('/admin/jobs/board-fill-tips?dryRun=1', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(dry.status).toBe(200);
+    expect(await dry.json()).toMatchObject({ dryRun: true, due: 1, sent: 0 });
+    expect(sent).toEqual([]);
+
+    const real = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await real.json()).toMatchObject({ due: 1, sent: 1 });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('the notifications tick runs the sweep and reports it, once', async () => {
+    const sent: string[] = [];
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email: new FakeEmailAdapter(), rideLists, alertLog: new InMemoryAlertLogRepo(),
+      rideFillTip: async (a) => { sent.push(a.to); },
+    });
+    const first = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ fillTips: { due: 1, sent: 1, skipped: 0 } });
+    const second = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await second.json()).toMatchObject({ fillTips: { due: 1, sent: 0, skipped: 1 } });
+    expect(sent).toEqual(['mia@x.com']);
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test mails the real template, on a sample ride, to one named address', async () => {
+    const email = new FakeEmailAdapter();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const forbidden = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { cookie: await cookie('op@x.com') } });
+    expect(forbidden.status).toBe(403);
+    const noAddress = await app.request('/admin/jobs/board-fill-tips/test', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(noAddress.status).toBe(400);
+    const notAnAddress = await app.request('/admin/jobs/board-fill-tips/test?to=nope', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(notAnAddress.status).toBe(400);
+
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com' });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    expect(email.sent[0].subject).toMatch(/more people and your .+ ride runs$/);
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
+    // A sample, never a real ride: nothing touched the ledger, so the real sweep is unaffected.
+    expect(email.sent[0].html).toContain('ride-board-fill.jpg');
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test?code= sends a REAL ride\'s email to the named inbox, ledger untouched', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog,
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const code = (await rideLists.listOpen({ when: 'all' }))[0].list.code;
+    const missing = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com&code=ZZ-0000', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(missing.status).toBe(404);
+
+    const res = await app.request(`/admin/jobs/board-fill-tips/test?to=me@x.com&code=${code}`, { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ sent: true, to: 'me@x.com', ride: code });
+    expect(email.sent).toHaveLength(1);
+    expect(email.sent[0].to).toBe('me@x.com');
+    // The real ride: its code in the link, its starter's name, its seat count (4 needed, 1 held → 3 more).
+    expect(email.sent[0].html).toContain(`https://ride.ceylonhop.com/r/${code}`);
+    expect(email.sent[0].html).toContain('Mia');
+    expect(email.sent[0].html).toMatch(/3 more/);
+    // Nothing claimed: the sweep still owes Mia her real email when it is due.
+    const sweep = await app.request('/admin/jobs/board-fill-tips', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await sweep.json()).toMatchObject({ due: 1, sent: 1, skipped: 0 });
+  });
+
+  it('POST /admin/jobs/board-fill-tips/test is 409 when no sender is wired', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/board-fill-tips/test?to=me@x.com', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(409);
+  });
+
+  it('the notifications tick skips the sweep when there is no share origin to build links on', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: null });
+  });
+
+  it('with a share origin the real template is wired: the tick mails the traveller the guide', async () => {
+    const email = new FakeEmailAdapter();
+    const rideLists = await shortRide();
+    const app = createApp({
+      adminApiKey: KEY, auth, email, rideLists, alertLog: new InMemoryAlertLogRepo(),
+      bookingBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com',
+    });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(await res.json()).toMatchObject({ fillTips: { due: 1, sent: 1 } });
+    expect(email.sent.map((m) => m.to)).toEqual(['mia@x.com']);
+    expect(email.sent[0].subject).toBe('3 more people and your Ella → Mirissa ride runs');
+    expect(email.sent[0].html).toContain('https://ride.ceylonhop.com/r/');
   });
 });
 
@@ -662,6 +829,21 @@ describe('POST /admin/bookings/:id/no-show', () => {
     expect(sent).toHaveLength(1);
   });
 
+  it('tells a pay-on-the-day customer nothing was charged (nothing on the ledger)', async () => {
+    const { app, bookings, email } = makeApp();
+    const b = await book(app);
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    const res = await app.request(`/admin/bookings/${b.id}/no-show`, {
+      method: 'POST', headers: { cookie: await cookie('fin@x.com') },
+    });
+    expect(res.status).toBe(200);
+    const sent = email.sent.filter((m) => m.to === 'maya@example.com' && /Nothing was charged/.test(m.text ?? ''));
+    expect(sent).toHaveLength(1);
+    expect(sent[0].text).not.toMatch(/refundable/i);
+  });
+
   it('403 for an ops session (no payments:act)', async () => {
     const { app, bookings } = makeApp();
     const b = await book(app);
@@ -762,6 +944,77 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     const after = (await bookings.get(b.id))!;
     expect(after.amountDueNow).toBe(b.total);
     expect(balanceDueCents(after, rows)).toBe(0);
+  });
+
+  // Pay on the day: status is the trip, money is the ledger. Ops record the cash the team
+  // collected without moving the booking's status.
+  async function onTheDay(app: ReturnType<typeof createApp>, bookings: InMemoryBookingRepo, ...then: string[]) {
+    const b = await awaitingPayment(app, bookings);
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await drive(bookings, b.id, 'confirmed', ...then);
+    return b;
+  }
+
+  it.each([[[]], [['in_progress']], [['in_progress', 'completed']]] as const)(
+    'records cash on a pay-on-the-day booking without moving its status (after %j)',
+    async (then) => {
+      const { app, bookings, payments, email } = makeCashApp();
+      const b = await onTheDay(app, bookings, ...then);
+      const status = (await bookings.get(b.id))!.status;
+      const res = await markPaid(app, b.id, { method: 'cash' });
+      expect(res.status).toBe(200);
+      expect((await res.json()).status).toBe(status);
+      const after = (await bookings.get(b.id))!;
+      expect(after.status).toBe(status);
+      const rows = (await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded');
+      expect(rows).toHaveLength(1);
+      expect(rows[0].provider).toBe('cash');
+      expect(rows[0].orderId).toBe(`${b.reference}-MANUAL`);
+      expect(rows[0].amount).toBe(b.total);
+      expect(balanceDueCents(after, rows)).toBe(0);
+      expect(email.sent).toHaveLength(0);
+    },
+  );
+
+  it('a double-click on a pay-on-the-day booking records the cash once', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    expect((await bookings.get(b.id))!.status).toBe('confirmed');
+    expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
+  });
+
+  it('still refuses a plain confirmed booking (no arrangement, nothing paid)', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await drive(bookings, b.id, 'paid', 'confirmed'); // status graph only: no payment row exists
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
+  });
+
+  it('does not answer 200 for a cancelled pay-on-the-day booking that had cash recorded', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    expect((await markPaid(app, b.id, { method: 'cash' })).status).toBe(200);
+    await bookings.setStatus(b.id, 'cancelled');
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect((await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded')).toHaveLength(1);
+  });
+
+  it('refuses a cancelled pay-on-the-day booking with not_awaiting_payment', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await awaitingPayment(app, bookings);
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'cancelled');
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('not_awaiting_payment');
+    expect(await payments.findByBookingId(b.id)).toHaveLength(0);
   });
 
   it('records the staff member, method and payment behind a manual settlement', async () => {
@@ -1140,5 +1393,47 @@ describe('POST /admin/jobs/notifications — watchdog liveness', () => {
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect((await res.json()).watchdogStale).toBe(false);
     expect(alerts.sent.map((a) => a.kind)).not.toContain('watchdog_stale');
+  });
+});
+
+// Spec 2026-10-13 §4: the daily tick leaves the same footprint the watchdog does, so the ops
+// Health tab can say when it last ran — GitHub's cron delivers it hours late and nothing else
+// records that it happened at all.
+describe('POST /admin/jobs/notifications — heartbeat', () => {
+  it('writes notifications_tick/last to the alert ledger when the tick completes', async () => {
+    const { NOTIFICATIONS_TICK } = await import('../services/scheduler');
+    const alertLog = new InMemoryAlertLogRepo();
+    const app = createApp({ adminApiKey: KEY, auth, alertLog });
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).toBeNull();
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).not.toBeNull();
+  });
+});
+
+// Places lat/lng may be kept for 30 days (Service Specific Terms §14.3): the daily tick re-fetches every
+// Google-sourced experience pin by place id, once per day however often the cron POSTs (2026-10-18).
+describe('POST /admin/jobs/notifications — experience pin refresh', () => {
+  const ID = 'ChIJAtherya0000000000000';
+  it('moves a pin Google moved, and runs once per ~day', async () => {
+    const experiences = new InMemoryExperienceRepo();
+    const e = await experiences.create(ExperienceInputSchema.parse({
+      slug: 'athreya', name: 'Massage', partnerName: 'Athreya', areaLabel: 'Sigiriya', summary: 's', priceCents: 3500,
+      priceUnit: 'per_person', openWeekdays: [1], startTimes: [], lat: 7.95, lng: 80.76, googlePlaceId: ID,
+    }));
+    const fake = new FakeBusinessPlaces([{ placeId: ID, name: 'Athreya', address: '', lat: 7.9572, lng: 80.7602, area: null, phone: null, website: null, mapsUrl: null, openWeekdays: null }]);
+    const app = createApp({ adminApiKey: KEY, auth, alertLog: new InMemoryAlertLogRepo(), experiences, businessPlaces: fake });
+    const first = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(first.experiencePins).toEqual({ checked: 1, moved: 1, failed: 0 });
+    expect(await experiences.get(e.id)).toMatchObject({ lat: 7.9572, lng: 80.7602 });
+    const second = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(second.experiencePins).toBeNull();
+    expect(fake.calls).toEqual([`location:${ID}`]);
+  });
+
+  it('is skipped (null) without a Google key', async () => {
+    const app = createApp({ adminApiKey: KEY, auth, alertLog: new InMemoryAlertLogRepo(), experiences: new InMemoryExperienceRepo() });
+    const res = await (await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } })).json();
+    expect(res.experiencePins).toBeNull();
   });
 });

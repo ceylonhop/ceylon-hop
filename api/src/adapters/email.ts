@@ -11,6 +11,7 @@ export type CustomerCommunicationKind =
   | 'confirmation'
   | 'details_needed'
   | 'booking_confirmed'
+  | 'pay_on_day_confirmed'
   | 'cancellation'
   | 'refund'
   | 'no_show_notice'
@@ -19,7 +20,10 @@ export type CustomerCommunicationKind =
   | 'payment_recovery'
   | 'payment_failed'
   | 'deposit_received'
-  | 'balance_received';
+  | 'balance_received'
+  | 'schedule_set'
+  | 'details_reminder_1'
+  | 'details_reminder_2';
 
 export interface CustomerCommunicationTracking {
   bookingId: string;

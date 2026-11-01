@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { createDb, type Db, type Sql } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
@@ -11,7 +11,8 @@ import { PostgresRideOpsRepo } from './postgresRideOpsRepo';
 import { PostgresNotificationLogRepo } from './postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './postgresQuoteRepo';
 import { PostgresAlertLogRepo } from './postgresAlertLogRepo';
-import { personKeyFor, websitePricingSnapshot, type NewBooking } from './bookingRepo';
+import { personKeyFor, websitePricingSnapshot, sharedPricingSnapshot, type NewBooking } from './bookingRepo';
+import { priceShared } from '../services/pricing';
 import { quote } from '../quote/engine';
 import { RATE_CARD } from '../quote/rateCard';
 import type { QuoteRequest } from '../quote/types';
@@ -20,7 +21,9 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache } from './schema';
+import { bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
+import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
+import { usageCounterRepoContract } from './usageCounterRepo.test';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
@@ -29,6 +32,7 @@ import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
 import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
 import { amountDueNowContract } from './bookingAmountDueNow.test';
+import { paymentArrangementContract } from './bookingPaymentArrangement.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
@@ -82,6 +86,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     quotes = new PostgresQuoteRepo(conn.db);
     communications = new PostgresCustomerCommunicationRepo(conn.db);
   });
+  afterAll(() => sql?.end());
 
   it('notification log records sent kinds per booking, idempotently', async () => {
     const b = await bookings.create(sample);
@@ -172,8 +177,18 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(row.s).toMatchObject({ version: 1, source: 'website', totalCents: result.totalCents });
   });
 
+  // The ops refund picker reads a website booking's lines from here (refund approvals phase 2).
+  it('reads back a website booking\'s pricing snapshot; none for a booking without one', async () => {
+    const engine: QuoteRequest = { product: 'private', vehicle: 'car', pax: 2, bags: 2, legs: [{ from: 'Colombo Airport', to: 'Ella', distanceKm: 200 }] };
+    const result = quote(engine, RATE_CARD);
+    const web = await bookings.create(sample, { pricingSnapshot: websitePricingSnapshot({ engine, result }) });
+    expect(await bookings.websitePricingSnapshot(web.id)).toMatchObject({ source: 'website', totalCents: result.totalCents, engine });
+    const plain = await bookings.create(sample);
+    expect(await bookings.websitePricingSnapshot(plain.id)).toBeNull();
+  });
+
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
-    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const alerts = new PostgresAlertLogRepo(db);
     const key = 'pgtest-' + Date.now(); // unique per run — the shared test DB persists rows
     const t0 = new Date();
     const COOLDOWN = 30 * 60_000;
@@ -188,7 +203,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
   });
 
   it('alert log: rollback frees a failed reservation so the next send retries (BI3)', async () => {
-    const alerts = new PostgresAlertLogRepo((createDb(TEST_URL as string)).db);
+    const alerts = new PostgresAlertLogRepo(db);
     const key = 'pgroll-' + Date.now();
     const t0 = new Date();
     const COOLDOWN = 30 * 60_000;
@@ -486,6 +501,29 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     if (got?.mode !== 'shared') throw new Error('expected a shared booking');
     expect(got.input.corridorId).toBe('hill-line');
     expect(got.input.seats).toBe(2);
+  });
+
+  // Owner 2026-10-16: a shared seat's hotel pick-up and drop-off are recorded as `extra` lines in
+  // pricing_snapshot_json, the same record a website private transfer's add-ons live in.
+  it('a shared booking names the hotel pick-up and drop-off it was priced with', async () => {
+    const priced = priceShared(2, 3500, 0, ['hotel-pickup', 'hotel-dropoff']);
+    const shared: NewBooking = {
+      mode: 'shared',
+      input: {
+        corridorId: 'hill-line', date: '2026-07-20', time: '08:00', seats: 2,
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: priced.totalCents, amountDueNow: priced.amountDueNowCents, currency: 'USD',
+    };
+    const snapshot = sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priced, RATE_CARD.version);
+    const b = await bookings.create(shared, { pricingSnapshot: snapshot });
+    expect(b.total).toBe(8000);
+    expect(b.addOns).toEqual(['Hotel pick-up', 'Hotel drop-off']);
+    expect((await bookings.get(b.id))?.addOns).toEqual(['Hotel pick-up', 'Hotel drop-off']);
+    const plain = await bookings.create({ ...shared, total: 7000, amountDueNow: 7000 }, {
+      pricingSnapshot: sharedPricingSnapshot({ routeId: 'kandy-ella', seats: 2, seatPriceCents: 3500 }, priceShared(2, 3500), RATE_CARD.version),
+    });
+    expect((await bookings.get(plain.id))?.addOns).toBeUndefined();
   });
 
   it('holds seats atomically under real DB concurrency (no oversell)', async () => {
@@ -1370,7 +1408,13 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     });
   });
 
-  async function lockedWebQuote(token: string) {
+  // `leg` is the stored engine leg; the intent asks for its from/to (a multi-stop ride's inner
+  // stops live only on the engine side, exactly as a saved web quote holds them).
+  async function lockedWebQuote(
+    token: string,
+    leg: Record<string, unknown> & { from: string; to: string } = { from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 },
+  ) {
+    const via = Array.isArray(leg.stops) ? (leg.stops as string[]).slice(1, -1) : [];
     const intent: WebQuoteIntent = {
       product: 'private',
       routeId: `integration-${Date.now()}-${Math.random()}`,
@@ -1379,7 +1423,9 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       bags: 1,
       date: '2026-09-10',
       time: '09:00',
-      legs: [{ from: 'Kandy', to: 'Nanu Oya' }],
+      // A Ride-shaped stored leg (stops/segmentKms) only converts when the intent names the same
+      // inner stops as `via` (quoteConversionRepo storedEngineMatchesIntent, PR 1 #1117).
+      legs: [{ from: leg.from, to: leg.to, ...(via.length ? { via } : {}) }],
       extras: [],
     };
     const rateCardVersion = 'conversion-integration-v1';
@@ -1412,7 +1458,7 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
           vehicle: 'car',
           pax: 2,
           bags: 1,
-          legs: [{ from: 'Kandy', to: 'Nanu Oya', distanceKm: 78 }],
+          legs: [leg],
           extras: [],
         },
       },
@@ -1472,6 +1518,27 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
         amountDueNowCents: 12_345,
       },
     });
+  });
+
+  // Final review 2026-10-31: insertLockedBooking writes trip_request field by field, so a column
+  // it forgets is silently dropped on this path even though booking_legs (derived in memory) has it.
+  it('keeps through on the trip_request a converted multi-stop ride writes', async () => {
+    const locked = await lockedWebQuote(`through-${Date.now()}`, {
+      from: 'Kandy',
+      to: 'Sigiriya',
+      stops: ['Kandy', 'Pinnawala', 'Sigiriya'],
+      segmentKms: [40, 70],
+    });
+    const converted = await new PostgresQuoteConversionRepo(
+      db,
+      bookings,
+      () => new Date('2026-09-01T00:00:00.000Z'),
+    ).convert(locked.request);
+    const [row] = await db
+      .select({ stops: tripRequests.stops, through: tripRequests.through })
+      .from(tripRequests)
+      .where(eq(tripRequests.bookingId, converted.booking.id));
+    expect(row).toEqual({ stops: ['Kandy', 'Pinnawala', 'Sigiriya'], through: [0] });
   });
 
   it.each(['after_booking_insert', 'after_quote_update'] as const)(
@@ -1560,12 +1627,21 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
       return new PostgresDistanceCacheRepo(db);
     });
   });
+
+  describe('PostgresUsageCounterRepo', () => {
+    usageCounterRepoContract(async () => {
+      await db.delete(usageCounters);
+      return new PostgresUsageCounterRepo(db);
+    });
+  });
 });
 
 // The same contract the in-memory fake satisfies, run against the real database — so the fake can
 // never drift into accepting states Postgres refuses (partial unique index, CHECK constraints).
 describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
-  const conn = () => createDb(TEST_URL as string);
+  let pool: ReturnType<typeof createDb> | undefined;
+  const conn = () => (pool ??= createDb(TEST_URL as string));
+  afterAll(() => pool?.sql.end());
   quoteDiscountRepoContract('contract', async () => {
     const { db } = conn();
     const quotes = new PostgresQuoteRepo(db);
@@ -1582,7 +1658,9 @@ describe.skipIf(!TEST_URL)('PostgresQuoteDiscountRepo (integration)', () => {
 // Task 4 — the transaction boundary. This is the ONLY place atomicity is a real property: the
 // in-memory fake has no transaction, so a rollback assertion against it would prove nothing.
 describe.skipIf(!TEST_URL)('Ops save + discount is one transaction', () => {
-  const conn = () => createDb(TEST_URL as string);
+  let pool: ReturnType<typeof createDb> | undefined;
+  const conn = () => (pool ??= createDb(TEST_URL as string));
+  afterAll(() => pool?.sql.end());
 
   const quoteInput = (totalCents: number) => ({
     product: 'private' as const, vehicle: 'car', customerName: 'Rollback Fixture',
@@ -1654,30 +1732,45 @@ describe.skipIf(!TEST_URL)('Ops save + discount is one transaction', () => {
   });
 });
 
+// One migrated pool per describe, closed when it ends. Contracts call make() once per case, and a
+// pool per case is never closed — this file opened enough of them to hit the connection limit.
+function migratedDbPerDescribe(): () => Promise<Db> {
+  let pool: ReturnType<typeof createDb> | undefined;
+  let ready: Promise<Db> | undefined;
+  afterAll(() => pool?.sql.end());
+  return () => (ready ??= (async () => {
+    pool = createDb(TEST_URL as string);
+    await migrate(pool.db, { migrationsFolder: 'drizzle' });
+    return pool.db;
+  })());
+}
+
 describe.skipIf(!TEST_URL)('PostgresPromoCodeRepo (integration)', () => {
-  promoCodeRepoContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return new PostgresPromoCodeRepo(conn.db);
-  });
+  const migrated = migratedDbPerDescribe();
+  promoCodeRepoContract('contract', async () => new PostgresPromoCodeRepo(await migrated()));
 });
 
 describe.skipIf(!TEST_URL)('Postgres promo code uses (integration)', () => {
+  const migrated = migratedDbPerDescribe();
   bookingPromoContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
+    const db = await migrated();
     return {
-      bookings: new PostgresBookingRepo(conn.db),
-      payments: new PostgresPaymentRepo(conn.db),
-      promoCodes: new PostgresPromoCodeRepo(conn.db),
+      bookings: new PostgresBookingRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      promoCodes: new PostgresPromoCodeRepo(db),
     };
   });
 });
 
 describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)', () => {
+  const migrated = migratedDbPerDescribe();
   amountDueNowContract('contract', async () => {
-    const conn = createDb(TEST_URL as string);
-    await migrate(conn.db, { migrationsFolder: 'drizzle' });
-    return { bookings: new PostgresBookingRepo(conn.db), payments: new PostgresPaymentRepo(conn.db) };
+    const db = await migrated();
+    return { bookings: new PostgresBookingRepo(db), payments: new PostgresPaymentRepo(db) };
   });
+});
+
+describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  paymentArrangementContract('contract', async () => new PostgresBookingRepo(await migrated()));
 });

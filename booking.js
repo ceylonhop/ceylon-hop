@@ -88,7 +88,7 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripThrough=new Set(), tripAcks=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 // The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
@@ -145,30 +145,43 @@ function repaintTripDrives(){
     if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
+// A through wire continues the leg onto the next wire (spec 2026-10-30 §4.3): the run that starts
+// at `head` owns every wire up to the first non-through one. tripLegs stays indexed PER WIRE so
+// nothing that reads tripLegs[i] by data-wire changes; a continuation wire is marked `cont`.
+function tripIsCont(i){ return i>0 && tripThrough.has(i-1) && !tripGaps.has(i-1) && !tripGaps.has(i); }
+function tripRunOf(i){
+  let head=i; while(tripIsCont(head)) head--;
+  const wires=[head]; let w=head;
+  while(tripThrough.has(w) && w+1<tripStops.length-1 && !tripGaps.has(w+1)){ w++; wires.push(w); }
+  return { head, wires, stops:[tripStops[head]].concat(wires.map(x=>tripStops[x+1])) };
+}
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
   // With gaps present we must walk the per-wire loop (which skips them) rather than trust
   // baked.total, which prices every consecutive stop-pair including the gap.
-  if(!tripGaps.size && !tripKms.some(km=>km!=null)) return baked;
+  if(!tripGaps.size && !tripThrough.size && !tripKms.some(km=>km!=null)) return baked;
   const legs=[];
   let total=0, totalKm=0, hasEst=false;
   for(let i=0;i<Math.max(0,tripStops.length-1);i++){
     // A gap wire is a stretch the traveller arranges themselves — carried through for display,
     // but NEVER a priced leg (it must not enter the quote, the booking, or the total).
     if(tripGaps.has(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], gap:true, km:null, price:0 }); continue; }
+    if(tripIsCont(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], cont:true, km:null, price:0 }); continue; }
+    const run=tripRunOf(i);
     const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:'',price:55,est:true};
-    const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
-    // A leg with no resolvable distance must still charge the baked estimate (never $0),
-    // exactly as T.tripQuote does — otherwise a single unpriceable leg silently drops out
-    // of the total and the customer is quoted (and charged) for one fewer leg than they take.
+    // A run's km is the sum over its wires — or null while ANY wire is unmeasured (a partial sum
+    // would price part of a route as the whole leg; ops legKm has the same rule).
+    let km=0;
+    for(const w of run.wires){ const k=tripKms[w]!=null ? tripKms[w] : (w===i ? bakedLeg.km : null); if(k==null){ km=null; break; } km+=k; }
     let price, est=false;
     if(km!=null){ price=T.legPrice(km, veh); totalKm+=km; }
     else { price=(bakedLeg.price!=null ? bakedLeg.price : 55); est=true; hasEst=true; }
     total+=price;
     legs.push({
-      from:bakedLeg.from || tripStops[i],
-      to:bakedLeg.to || tripStops[i+1],
+      from:run.stops[0],
+      to:run.stops[run.stops.length-1],
+      via:run.stops.slice(1,-1),
       km,
       duration:km!=null ? T.durationText(km) : bakedLeg.duration,
       price,
@@ -186,6 +199,8 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripThrough=new Set((params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripAcks=new Set((params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)&&n>=0&&n<tripStops.length-1&&!tripGaps.has(n)&&!tripIsCont(n)));
   tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
@@ -244,7 +259,7 @@ if(mode==='trip' && window.TRANSFERS){
   unit = r.price;
 }
 
-const VEH_CAP = { car:{pax:3,bags:3}, van:{pax:6,bags:6} };
+const VEH_CAP = { car:{pax:3,bags:2}, van:{pax:6,bags:6} };
 let maxBags = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).bags : 6;
 let vehPax = perVehicle ? (VEH_CAP[vehicleKey]||VEH_CAP.car).pax : 6;
 // luggage can be dialled past the current vehicle's limit so we can prompt a van
@@ -499,7 +514,8 @@ function attachAC(input, menu, which){
     if(d.kind==='google' && window.CH_MAP && window.CH_MAP.resolvePick){
       const geo = await window.CH_MAP.resolvePick(d.item);
       setGeo(which, geo);
-      if(geo && geo.name) input.value=geo.name;
+      // Keep Google's full text in the field (set from d.label above): the bare main text is a
+      // name the server often can't place, and the booking lands unpriced (2026-10-18).
       markSettled();
       onLoc();                       // re-run with geo in hand so the radius guard can see it
       renderRouteMap();
@@ -736,16 +752,18 @@ if(isTrip){
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
+    if(leg.cont) return;
     const dt=fmtLeg(tripDates[i]);
+    const viaHtml=(leg.via&&leg.via.length) ? `<span class="tr-via"> <span class="tr-ar">→</span> ${leg.via.map(escHtml).join(' <span class="tr-ar">→</span> ')}</span>` : '';
     html+=`<div class="tr-leg" data-wire="${i}">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)}${viaHtml} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),through:[...tripThrough].join(','),ack:[...tripAcks].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
   // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   // (buildTripEditUrl(true) vs buildTripEditUrl()).
@@ -889,16 +907,29 @@ if(!isTrip && r.type==='shared'){
   const pvtNote=document.getElementById('pvt-note'); if(pvtNote) pvtNote.style.display='none';
   const s1t=document.getElementById('s1-title'); if(s1t) s1t.textContent='Your shared ride';
   const s1s=document.getElementById('s1-sub'); if(s1s) s1s.textContent='A reserved seat on our scheduled service ('+sharedDaysLabel+') along this route. Pick-up and drop-off are at set meeting points.';
+  // The leg's published meeting points (departureRepo SHARED_PRODUCTS). Customers could not
+  // tell where to stand or where they would be set down from the town names alone (owner,
+  // 2026-10-29), so each end names its point with a map link; the town stays as the sub-line.
+  const sharedLeg=(window.TRANSFERS&&routeFromId&&routeToId)?window.TRANSFERS.sharedOption(routeFromId,routeToId):null;
+  const ICO_EXT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+  const srEnd=function(pin,label,town,point){
+    if(!point) return '<div class="sr-line"><span class="sr-pin '+pin+'"></span><div><span class="sr-lbl">'+label+'</span><b>'+town+'</b></div></div>';
+    const href='https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(point+', Sri Lanka');
+    return '<div class="sr-line"><span class="sr-pin '+pin+'"></span><div><span class="sr-lbl">'+label+'</span><b>'+point+'</b>'+
+      '<span class="sr-sub">'+town+' \u00b7 <a class="sr-map" href="'+href+'" target="_blank" rel="noopener">Open in Maps'+ICO_EXT+'</a></span></div></div>';
+  };
   const card=document.createElement('div'); card.className='shared-route';
   card.innerHTML=
-    '<div class="sr-line"><span class="sr-pin from"></span><div><span class="sr-lbl">Board at</span><b>'+r.stops[0]+'</b></div></div>'+
+    srEnd('from','Board at',r.stops[0],sharedLeg&&sharedLeg.pickup)+
     '<div class="sr-wire"></div>'+
-    '<div class="sr-line"><span class="sr-pin to"></span><div><span class="sr-lbl">Drop-off</span><b>'+r.stops[r.stops.length-1]+'</b></div></div>'+
+    srEnd('to','Get out at',r.stops[r.stops.length-1],sharedLeg&&sharedLeg.dropoff)+
     '<div class="sr-foot">'+
       '<span class="sr-fact">'+ICO_CLOCK+'<span>Departs <b>'+timesTxt+'</b> \u00b7 '+sharedDaysLabel+'</span></span>'+
       '<span class="sr-fact">'+ICO_SEAT+'<span><b>'+money(r.price)+'</b> per seat</span></span>'+
     '</div>'+
-    '<p class="sr-note">'+ICO_INFO+'Exact pick-up &amp; drop-off are set meeting points along the route \u2014 our team confirms them with you after you book.</p>';
+    '<p class="sr-note">'+ICO_INFO+((sharedLeg&&sharedLeg.pickup&&sharedLeg.dropoff)
+      ? 'Staying elsewhere? Hotel pick-up or drop-off within 5 km of these points is +$5 each \u2014 add it under Extras.'
+      : 'Exact pick-up &amp; drop-off are set meeting points along the route \u2014 our team confirms them with you after you book.')+'</p>';
   if(locWrap) locWrap.after(card);
 
   // STEP 2 — pick a date + a SCHEDULED departure (no "any time", no decide-later time)
@@ -1308,26 +1339,46 @@ function checkWhere(){
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
-// proceed without a date (confirmed later on WhatsApp).
+// proceed without a date (confirmed later on WhatsApp) — but only when the
+// customer ticks "Decide later", never by simply not picking one.
 function checkWhen(){
+  syncWhenToUrl();
   const n2=document.getElementById('n2');
   if(!n2) return;
-  if(isShared){
-    // Shared seats depart at fixed times — a concrete date AND departure are both required,
-    // else the backend (which requires `time`) 400s at the moment of payment.
-    const ok = !!(state.date && !state.flexDate && state.dep);
-    n2.disabled = !ok;
-    // Never leave a greyed-out button with no reason next to it.
-    var why=document.getElementById('when-blocked');
-    if(!why){
-      why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
-      n2.parentNode.insertBefore(why, n2);
-    }
-    why.textContent = ok ? '' : (!state.date ? 'Pick a travel date above \u2014 shared seats need a set departure day.' : 'Choose a departure time to continue.');
-    why.style.display = ok ? 'none' : '';
-  } else {
-    n2.disabled = false;
+  if(isTrip){ n2.disabled = false; return; }
+  // Shared seats depart at fixed times — a concrete date AND departure are both required,
+  // else the backend (which requires `time`) 400s at the moment of payment.
+  // A private transfer with neither a date nor "Decide later" went through undated on
+  // CH-SK8U8 (2026-10-18): the date was lost on a reload and Continue let them past.
+  const ok = isShared ? !!(state.date && !state.flexDate && state.dep) : !!(state.date || state.flexDate);
+  n2.disabled = !ok;
+  // Never leave a greyed-out button with no reason next to it.
+  var why=document.getElementById('when-blocked');
+  if(!why){
+    why=document.createElement('p'); why.id='when-blocked'; why.className='when-blocked'; why.setAttribute('role','status');
+    n2.parentNode.insertBefore(why, n2);
   }
+  why.textContent = ok ? '' : (!isShared ? 'Pick a pick-up date above — or tick “Decide later” if you don’t know it yet.'
+    : !state.date ? 'Pick a travel date above — shared seats need a set departure day.' : 'Choose a departure time to continue.');
+  why.style.display = ok ? 'none' : '';
+}
+// The When step's choices live only in JS state, so a page that loads fresh from its URL — Back
+// from PayHere when the browser skips its back/forward cache — came back with no date (CH-SK8U8).
+// Mirror them into ?date=&time=, which the boot code already reads (startParam / timeParam).
+// Only once the customer changes something: armed after init, so loading the page never rewrites
+// the link it was opened with (an out-of-window date it ignores, a departure it auto-selects).
+var whenUrlArmed=false;
+function syncWhenToUrl(){
+  if(isTrip || !whenUrlArmed) return;
+  try{
+    const u=new URL(location.href);
+    const date = state.date && !state.flexDate ? fmtISO(state.date) : '';
+    const time = state.dep && !state.flexTime ? state.dep : '';
+    if((u.searchParams.get('date')||'')===date && (u.searchParams.get('time')||'')===time) return;
+    u.searchParams.set('date', date);
+    if(time) u.searchParams.set('time', time); else u.searchParams.delete('time');
+    history.replaceState(history.state, '', u.pathname + u.search + u.hash);
+  }catch(e){ /* the address bar is a convenience; the booking never depends on it */ }
 }
 document.getElementById('n1').addEventListener('click',()=>goStep(isTrip?4:3));
 
@@ -1354,7 +1405,8 @@ window.toggleAddon=function(el){
 // api/src/quote/rateCard.ts) so they can never drift from the backend. The flow only offers
 // the keys in addonNames; EXTRAS carrying additional codes (safari-wait, waiting) is harmless.
 const addonPrices=(window.TRANSFERS && window.TRANSFERS.EXTRAS) || {};
-const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket'};
+const addonNames={sightseeing:'Sightseeing stops (3h)',luggage:'Luggage rack',front:'Child seat',flex:'Flexi ticket','hotel-pickup':'Hotel pick-up','hotel-dropoff':'Hotel drop-off'};
+const SHARED_ADDONS=['hotel-pickup','hotel-dropoff'];
 
 /* ---- Partner experiences near the drop-off (spec 2026-10-06 D9/D10/D16/D17) ----
    "Request" is not a purchase: toggleExperience() never calls render(), calcTotal() or the
@@ -1736,7 +1788,7 @@ let promoRefusedAtBooking = {};
 // The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
 // choice only applies to private transfers.
 // A gap wire is the traveller's own stretch, so it never asks for a road either.
-function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i) || tripThrough.has(i) || tripIsCont(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
 // The priced (non-gap) wires the customer chose the local road for, whatever the service.
 function tripLocalWires(){
   const out=[];
@@ -1766,7 +1818,7 @@ function dropLocalRoad(estLegs){
   }
   let dropped=false;
   for(let i=0, j=0; i<tripStops.length-1; i++){
-    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    if(tripGaps.has(i) || tripIsCont(i)) continue; // the estimate has no leg for a gap wire
     const leg=estLegs ? estLegs[j++] : null;
     if(tripRoads[i]!=='no_tolls') continue;
     if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
@@ -1798,18 +1850,25 @@ function itineraryIntent(){
       const lastDate = dated.length ? dated[dated.length-1] : undefined;
       const travelDays = [];
       for(let i=0;i<tripStops.length-1;i++){
-        if(tripGaps.has(i)) continue;
+        if(tripGaps.has(i) || tripIsCont(i)) continue;
         const date = (tripDates[i]||'').trim();
         if(!date) continue; // an undated wire has no day to attach to the estimate
-        travelDays.push({ date, from: tripStops[i], to: tripStops[i+1] });
+        const run = tripRunOf(i);
+        const day = { date, from: run.stops[0], to: run.stops[run.stops.length-1] };
+        if(run.stops.length>2) day.via = run.stops.slice(1,-1); // sent only when non-empty (fingerprint rule)
+        travelDays.push(day);
       }
       return { product:'chauffeur', vehicle, pax, bags, firstDate, lastDate, travelDays, extras };
     }
     // Trip + private: one leg per non-gap wire (mirrors tripQuoteWithKms, :110).
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
-      if(tripGaps.has(i)) continue;
-      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
+      if(tripGaps.has(i) || tripIsCont(i)) continue;
+      const run = tripRunOf(i);
+      const leg = { from: run.stops[0], to: run.stops[run.stops.length-1] };
+      if(run.stops.length>2) leg.via = run.stops.slice(1,-1);           // sent only when non-empty (fingerprint rule)
+      else if(tripRoadAt(i)==='no_tolls') leg.routeVariant = 'no_tolls'; // a chain has no road choice
+      legs.push(leg);
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
@@ -1943,6 +2002,49 @@ function lockLegKm(from, to){
 // it can't know two calls in a row are for the same intent unless we only call it when the
 // intent actually moved.
 let lastRequestedSig = null;
+// The intent the server said it CANNOT price (422 quote_unpriced). Not an outage: checkout will
+// refuse it (awaiting_price), so Pay must not be offered (CH-E7EE8, 2026-10-18). Keyed by intent
+// signature, so changing any stop clears it.
+let engineUnpriced = null; // { sig, names:[] } | null
+function currentUnpriced(){ return (engineUnpriced && engineUnpriced.sig===currentIntentSig()) ? engineUnpriced : null; }
+function unpricedCopy(u){
+  const n=u.names;
+  const what = n.length===0 ? 'one of your stops'
+    : n.length===1 ? n[0] : n.slice(0,-1).join(', ')+' and '+n[n.length-1];
+  return 'We couldn’t find '+what+' on the map, so we can’t price this trip automatically. '+
+    'Pick each hotel from the list as you type, or send us the trip on WhatsApp and we’ll price it by hand.';
+}
+// The WhatsApp text for an unpriced trip: no "Quoted $…" line, since the figure on screen is the
+// page's own rough estimate, not a price.
+function waUnpricedText(){
+  return waTripSummary().replace(/\nQuoted [^\n]*$/, '')+'\n\nThe website couldn’t price it automatically.';
+}
+function renderUnpricedActions(note){
+  const row=document.createElement('span');
+  row.className='unpriced-actions';
+  if(isTrip){
+    const edit=document.createElement('a');
+    edit.href=buildTripEditUrl(false); edit.textContent='Change stops';
+    row.appendChild(edit);
+  } else {
+    const change=document.createElement('button');
+    change.type='button'; change.className='linklike'; change.textContent='Change pickup or drop-off';
+    change.addEventListener('click',()=>{ window.goStep(2); const el=document.getElementById('loc-to'); if(el) el.focus(); });
+    row.appendChild(change);
+  }
+  row.appendChild(document.createTextNode(' · '));
+  const wa=document.createElement('a');
+  wa.href=waHrefFor(waUnpricedText()); wa.target='_blank'; wa.rel='noopener'; wa.textContent='Send it on WhatsApp';
+  row.appendChild(wa);
+  // The reason goes in its own span so it stays beside the note's "!" icon (.form-error is a
+  // flex row) while the actions wrap onto their own line below it.
+  const text=document.createElement('span');
+  text.className='unpriced-text';
+  text.textContent=note.textContent;
+  note.textContent='';
+  note.appendChild(text);
+  note.appendChild(row);
+}
 function requestEstimate(){
   if(!window.CH_PRICING || isShared) return; // shared seats price locally only (Global Constraints)
   const intent = buildEstimateIntent();
@@ -1953,12 +2055,18 @@ function requestEstimate(){
   estimatePending = true;
   if(hasExactRouteInputs()) routeEstimateUnavailable=false;
   window.CH_PRICING.estimate(intent, {
-    onResult: function(est){ estimatePending = false; handleEngineEstimate(est, sig); },
+    onResult: function(est){ estimatePending = false; if(engineUnpriced && engineUnpriced.sig===sig) engineUnpriced = null; handleEngineEstimate(est, sig); },
     // Flag off, a network hiccup, or a timeout — the local formula is already what's on
     // screen (engineEst is only ever touched by a successful onResult), so there's nothing to
     // repaint about the TOTAL; we still re-render so the pending-gate on Pay/#n1 releases.
-    onUnavailable: function(reason){
+    onUnavailable: function(reason, detail){
       estimatePending = false;
+      if(reason==='unpriced'){
+        engineUnpriced = { sig: sig, names: (detail && detail.unresolved) || [] };
+        if(typeof window.chTrack==='function') window.chTrack('quote_unpriced_shown',{
+          surface:'booking', mode: isTrip ? 'trip' : 'single', named: engineUnpriced.names.length
+        });
+      }
       if(sig===currentIntentSig()) settlePromoUnavailable();
       if(sig===currentIntentSig() && hasExactRouteInputs()){
         routeEstimateUnavailable=true;
@@ -2083,7 +2191,7 @@ function calcTotal(){
   state.addons.forEach(a=>t+=addonPrices[a]);
   if(isShared) return t;
   const privateFloor = (isTrip && state.svc!=='chauffeur')
-    ? tripLegs.filter(l=>!l.gap).length * window.TRANSFERS.FLOORS[vehicleKey]
+    ? tripLegs.filter(l=>!l.gap && !l.cont).length * window.TRANSFERS.FLOORS[vehicleKey]
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
@@ -2570,9 +2678,13 @@ function render(){
   const overCap = perVehicle && (paxOver || bagsOver);
   const n4=document.getElementById('n4');
   if(n4){ n4.disabled = overCap; }
-  // "sightseeing stops" extra only makes sense on a single point-to-point private transfer
+  // "sightseeing stops" extra only makes sense on a single point-to-point private transfer; a
+  // shared seat offers hotel pick-up and hotel drop-off instead (each once per booking, owner 2026-10-16).
   const extras=document.getElementById('extras-block');
-  if(extras) extras.style.display = (!isTrip && perVehicle) ? 'block' : 'none';
+  if(extras){
+    extras.style.display = ((!isTrip && perVehicle) || isShared) ? 'block' : 'none';
+    extras.querySelectorAll('.addon').forEach(function(b){ b.hidden = SHARED_ADDONS.includes(b.dataset.addon) !== isShared; });
+  }
   syncExperiences(); // no-op unless step 3 is showing and the drop-off changed since the last ask
   const chrow=document.getElementById('sum-chrow');
   if(perVehicle){
@@ -2702,7 +2814,10 @@ function render(){
   // whenever that panel isn't the active step regardless of its own `hidden` — safe to set on
   // every render() without tracking which step is open.
   const payBtn=document.getElementById('pay-btn');
-  const payGateReason = estimatePending
+  const unpriced=currentUnpriced();
+  const payGateReason = unpriced
+    ? unpricedCopy(unpriced)
+    : estimatePending
     ? 'Still getting your latest price — one moment…'
     : state.pendingReprice
       ? 'Please review the updated price above before continuing.'
@@ -2712,7 +2827,10 @@ function render(){
   if(payBtn) payBtn.disabled = !!payGateReason;
   const gateNote=document.getElementById('details-error');
   if(gateNote){
-    if(payGateReason){ gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1'; }
+    if(payGateReason){
+      gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1';
+      if(unpriced) renderUnpricedActions(gateNote);
+    }
     else if(gateNote.dataset.gate){ gateNote.hidden=true; gateNote.textContent=''; delete gateNote.dataset.gate; }
   }
 }
@@ -2788,6 +2906,11 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // Pay gate (Task 3) — the button is already disabled for these in render(); this is the
   // belt-and-braces check for the moment a stale enabled button gets clicked anyway (e.g. a
   // click queued a frame before a re-render lands).
+  const unpricedNow=currentUnpriced();
+  if(unpricedNow){
+    if(derr){ derr.textContent=unpricedCopy(unpricedNow); renderUnpricedActions(derr); derr.hidden=false; }
+    return;
+  }
   if(estimatePending){
     if(derr){ derr.textContent='Still getting your latest price — please wait a moment and try again.'; derr.hidden=false; }
     return;
@@ -2950,18 +3073,26 @@ async function continueToCheckout(booking){
   // own manage page, carrying only the status-only `rt` (the manage token comes back in the
   // answer, for this tab's storage) — from its own config. A gateway that redirects wherever the
   // request body says is a phishing primitive.
+  //
+  // A deadline, like every call pay.html makes: the overlay hides both buttons while this runs
+  // and Pay is latched, so an API that accepts the connection and never answers (a saturated
+  // pool, an instance mid-restart) otherwise leaves the customer on the spinner with no way out
+  // but a reload. An abort lands in the catch below → the generic failure with Try again.
   let checkout=null, refusal=null;
+  const ctrl = new AbortController();
+  const deadline = setTimeout(()=>ctrl.abort(), 20000);
   try{
     const checkoutHeaders = booking.checkoutToken
       ? { authorization: 'Bearer '+booking.checkoutToken, 'content-type': 'application/json' }
       : { 'content-type': 'application/json' };
     const res = await fetch(
       API.replace(/\/$/,'')+'/bookings/'+booking.id+'/checkout',
-      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'})}
+      {method:'POST',headers:checkoutHeaders,body:JSON.stringify(typeof window.chWithGa==='function'?window.chWithGa({returnTo:'manage'}):{returnTo:'manage'}),signal:ctrl.signal}
     );
     if(res.ok) checkout = await res.json();
     else refusal = await res.json().catch(()=>null);
   }catch(e){}
+  finally{ clearTimeout(deadline); }
 
   // No checkout params (a refusal, a network error, a 5xx, or the backend's amount-mismatch
   // guard) → a real failure. NEVER show a fake "approved" screen for an unpaid booking.
@@ -3319,9 +3450,12 @@ async function createApiBooking(){
     // don't need to reconstruct the chauffeur day-model here just to freeze the rates.
     const tripLegs = [];
     for(let i=0; i<tripStops.length-1; i++){
-      if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
-      const tf = tripStops[i], tt = tripStops[i+1];
-      tripLegs.push({ from: tf, to: tt, distanceKm: lockLegKm(tf, tt) });
+      if(tripGaps.has(i) || tripIsCont(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
+      const run = tripRunOf(i);
+      const tf = run.stops[0], tt = run.stops[run.stops.length-1];
+      const lockLeg = { from: tf, to: tt, distanceKm: run.wires.reduce((s,w)=>s+lockLegKm(tripStops[w], tripStops[w+1]), 0) };
+      if(run.stops.length>2) lockLeg.via = run.stops.slice(1,-1);
+      tripLegs.push(lockLeg);
     }
     const tQuoteId = tripLegs.length
       ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
@@ -3341,6 +3475,8 @@ async function createApiBooking(){
       // The server prices from THIS payload, so it must know which wires are the traveller's own
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // Wires that continue the same leg (a stop on the way), so the server prices the run as one.
+      through: tripThrough.size ? [...tripThrough].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
       routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
       // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
@@ -3356,6 +3492,7 @@ async function createApiBooking(){
       time: state.dep || undefined,
       seats: state.ad + state.ch,
       bags: state.bags,
+      extras: state.addons.size ? Array.from(state.addons) : undefined,
       customer,
       quotedTotal
     };
@@ -3416,6 +3553,15 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
+  if(isTrip && tripAcks.size){
+    const lines=[...tripAcks].sort((a,b)=>a-b).map(h=>{
+      const run=tripRunOf(h), leg=tripLegs[h];
+      const hrs=leg && leg.km!=null ? Math.round(leg.km/42) : null;
+      const when=(tripDates[h]||'').trim();
+      return 'Planner: kept a '+(hrs!=null?hrs+' h':'long')+' day ('+run.stops.join(' → ')+')'+(when?', '+when:'');
+    });
+    payload.customerNotes=[payload.customerNotes||'', ...lines].filter(Boolean).join('\n');
+  }
   // The partner experiences they tapped "Request" on - ids only (the API looks the names up
   // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
   if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
@@ -3572,6 +3718,7 @@ if(!isTrip && !state.dep){
 
 // ---- init ----
 buildCal(); renderDeps(); checkWhen();
+whenUrlArmed=true;
 document.getElementById('ad-n').textContent=state.ad;
 document.getElementById('ch-n').textContent=state.ch;
 document.getElementById('bg-n').textContent=state.bags;
@@ -3716,9 +3863,11 @@ else if(!isTrip && startParam && state.date && window.goStep) window.goStep(2);
   closeBtn.addEventListener('click',closeSheet);
   document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&aside.classList.contains('open')) closeSheet(); });
 
-  // ── keyboard: never cover a focused field with the bar
+  // ── keyboard: never cover a focused field with the bar. Not the two "Decide later" boxes: they open
+  // no keyboard, sit high on the When step, and ticking one (the only way past it undated) used to
+  // hide the very CTA it unlocks until the customer tapped elsewhere (Android focuses checkboxes).
   document.addEventListener('focusin',e=>{
-    if(e.target.matches && e.target.matches('.panel input, .panel textarea, .panel select')) bar.classList.add('kb');
+    if(e.target.matches && e.target.matches('.panel input:not(#flex-date):not(#flex-time-chk), .panel textarea, .panel select')) bar.classList.add('kb');
   });
   document.addEventListener('focusout',()=>bar.classList.remove('kb'));
 

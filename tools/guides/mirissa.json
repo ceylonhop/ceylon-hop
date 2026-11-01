@@ -44,17 +44,17 @@
       {
         "id": "cmb-airport",
         "title": "Straight from the airport",
-        "from": "CMB · 176 km · about 2 h 45 · expressway most of the way",
-        "sell": "Your driver meets you at arrivals and takes the expressway round Colombo and down the coast. Coming from a hotel in Colombo instead? It’s about 2–2.5 hours, depending on the traffic."
+        "from": "CMB · 176 km · about 2 h 30 · expressway most of the way",
+        "sell": "Airport pickup included, then the expressway round Colombo and down the coast. Coming from a hotel in Colombo instead? It’s about 2–2.5 hours, depending on the traffic."
       },
       {
         "id": "yala",
         "title": "From Yala",
-        "from": "155 km · about 3 h · after a morning safari",
+        "from": "155 km · about 3 h 15 · after a morning safari",
         "sell": "West from Tissamaharama past the lagoons and salt pans, then along the coast through Tangalle and Dickwella. Leave after your morning game drive and you’re on the beach for sunset."
       }
     ],
-    "train": "<b>Mirissa has its own station, but few trains stop there.</b> A train or two a day from Colombo Fort calls at Mirissa; more stop at Weligama, 10–15 minutes away. Allow 3–4 hours. The coastal line has had derailments and closures in the past year — November 2025 and April 2026 — so check before you rely on it. We drive it door to door, and the expressway is quicker."
+    "train": "<b>Mirissa has its own station, but few trains stop there.</b> A train or two a day from Colombo Fort calls at Mirissa; more stop at Weligama, 10–15 minutes away. Allow 3–4 hours. We drive it door to door, and the expressway is quicker."
   },
   "places": [
     {
@@ -232,7 +232,7 @@
           {
             "time": "13:30",
             "title": "Onward with us",
-            "text": "To the airport for an evening flight, about 2 h 45 — or on to Ella or Yala, about 3 h.",
+            "text": "To the airport for an evening flight, about 2 h 30 — or on to Ella, about 3 h, or Yala, about 3 h 15.",
             "us": true
           }
         ],
@@ -432,7 +432,7 @@
         },
         {
           "q": "Can I visit Yala or Udawalawe as a day trip?",
-          "a": "<p>You can, but it’s a 4 AM start and five or six hours in the car for a few hours in the park. Better to spend a night near the park on your way — Yala is about 3 hours from here. <a href=\"#next\">See the routes ↓</a></p>"
+          "a": "<p>You can, but it’s a 4 AM start and five or six hours in the car for a few hours in the park. Better to spend a night near the park on your way — Yala is about 3 h 15 from here. <a href=\"#next\">See the routes ↓</a></p>"
         }
       ]
     },
@@ -441,11 +441,11 @@
       "items": [
         {
           "q": "What’s the easiest way to get to Mirissa?",
-          "a": "<p>By car, door to door. From the airport it’s about 2 h 45 on the expressway, from Ella about 3 hours. If you take the coast road from Galle instead, you pass the stilt fishermen at Koggala and Ahangama — we’ll stop wherever you like.</p>"
+          "a": "<p>By car, door to door. From the airport it’s about 2 h 30 on the expressway, from Ella about 3 hours. If you take the coast road from Galle instead, you pass the stilt fishermen at Koggala and Ahangama — we’ll stop wherever you like.</p>"
         },
         {
           "q": "Can I take the train?",
-          "a": "<p>Yes, but only a train or two a day from Colombo Fort stops at Mirissa itself; more stop at Weligama, 10–15 minutes away by tuk-tuk. Allow 3–4 hours. The coastal line was disrupted by derailments in November 2025 and April 2026, so check the timetable before you go.</p>"
+          "a": "<p>Yes, but only a train or two a day from Colombo Fort stops at Mirissa itself; more stop at Weligama, 10–15 minutes away by tuk-tuk. Allow 3–4 hours. Check the timetable before you go.</p>"
         },
         {
           "q": "What about the bus?",

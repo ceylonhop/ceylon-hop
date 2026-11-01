@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../app';
 import { FakeMapsAdapter, type MapsAdapter } from '../adapters/maps';
+import { FakeAlertAdapter } from '../adapters/alerts';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
@@ -231,6 +232,79 @@ describe('POST /bookings/single', () => {
     expect(r1.status).toBe(201);
     expect(r2.status).toBe(200);
     expect((await r1.json()).id).toBe((await r2.json()).id);
+  });
+
+  // Security review 2026-10-25: the first name is printed in the emails this API sends to the
+  // address the request gives (confirmation, payment recovery), so an unbounded one let anyone send
+  // a paragraph of their own text from our domain. A real first name fits in 100 characters.
+  it('refuses a first name over 100 characters', async () => {
+    const app = createApp();
+    const long = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(101) } });
+    expect(long.status).toBe(400);
+    expect((await long.json()).error).toBe('invalid_request');
+    const ok = await post(app, { ...valid, customer: { ...valid.customer, firstName: 'A'.repeat(100) } });
+    expect(ok.status).toBe(201);
+  });
+
+  // Security review 2026-10-25: the server's own keys are namespaced with ':' (book:quote:<id>,
+  // pay:quote:…, checkout:…), and a public request could pre-claim one, e.g. to attach a cheap
+  // booking to a quote. The website's key is 'ch-<base36>', so a client key never needs ':'.
+  it("refuses a client key in the server's ':' namespace", async () => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const res = await post(app, valid, { 'Idempotency-Key': 'book:quote:00000000-0000-0000-0000-000000000000' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_idempotency_key');
+    expect(await bookings.findByIdempotencyKey('book:quote:00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+});
+
+// Security review 2026-10-25: an Idempotency-Key replayed whatever booking held it, with a fresh
+// checkout token, to whoever sent it. The website's key is a 32-bit hash of the payload, so two
+// customers can collide by chance, and a guessed key would fetch a stranger's booking. A key now
+// replays only to the customer who made the booking; anyone else books afresh, without the key.
+describe("an Idempotency-Key never returns another customer's booking", () => {
+  const send = (app: ReturnType<typeof createApp>, path: string, body: unknown, key: string) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(body) });
+  const other = { ...valid.customer, firstName: 'Kai', email: 'kai@example.com' };
+
+  function futureServiceDay(): string {
+    for (let i = 14; i < 60; i++) {
+      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+      if (wd === 3 || wd === 6) return iso;
+    }
+    throw new Error('no service day found');
+  }
+
+  const cases: Array<[string, string, () => Record<string, unknown>]> = [
+    ['single', '/bookings/single', () => ({ ...valid })],
+    ['trip', '/bookings/trip', () => ({
+      stops: ['Colombo Airport (CMB)', 'Galle'], nights: [0, 0], pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+    })],
+    ['shared', '/bookings/shared', () => ({
+      from: 'Negombo', to: 'Sigiriya / Dambulla', date: futureServiceDay(), time: '07:30', seats: 1, customer: valid.customer,
+    })],
+  ];
+
+  it.each(cases)('%s: a different customer with the same key gets their own new booking', async (_mode, path, body) => {
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ bookings });
+    const first = await send(app, path, body(), 'ch-collide');
+    expect(first.status).toBe(201);
+    const mine = await first.json();
+
+    const theirs = await send(app, path, { ...body(), customer: other }, 'ch-collide');
+    expect(theirs.status).toBe(201);
+    const got = await theirs.json();
+    expect(got.id).not.toBe(mine.id);
+    expect(JSON.stringify(got)).not.toContain('maya@example.com');
+    expect((await bookings.get(got.id))?.input.customer.email).toBe('kai@example.com');
+
+    // The key still belongs to the first customer: their retry replays their own booking.
+    const retry = await send(app, path, body(), 'ch-collide');
+    expect(retry.status).toBe(200);
+    expect((await retry.json()).id).toBe(mine.id);
   });
 });
 
@@ -767,6 +841,61 @@ describe('an unpriced booking never charges the client-supplied figure', () => {
   });
 });
 
+// CH-E7EE8 (2026-10-18): unpriced bookings only ever raised a quiet ops task, and three sat
+// open for up to a month while the customers waited for a price nobody knew to send. The team
+// now gets an email the moment one lands.
+describe('an unpriced booking emails the team', () => {
+  const jpost = (app: ReturnType<typeof createApp>, path: string, body: unknown) =>
+    app.request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const trip = (stops: string[]) => ({
+    stops, nights: stops.map(() => 0),
+    pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+  });
+  const unpricedAlerts = (alerts: FakeAlertAdapter) => alerts.sent.filter((a) => a.kind === 'booking_unpriced');
+
+  it('sends one alert for a trip the server could not price, naming the leg and the ops link', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts, opsBaseUrl: 'https://ops.example' });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
+    const { reference, id } = await res.json();
+
+    const sent = unpricedAlerts(alerts);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].dedupeKey).toBe(id);
+    expect(sent[0].email?.subject).toContain('Unpriced');
+    expect(sent[0].email?.subject).toContain(reference);
+    for (const part of [sent[0].email!.html, sent[0].email!.text]) {
+      expect(part).toContain('distance unresolved: Kandy → ZZQQ Nowhere 4417');
+      expect(part).toContain('https://ops.example');
+    }
+  });
+
+  it('sends one for a single transfer the server could not price', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    const res = await post(app, { ...valid, to: 'ZZQQ Nowhere 4417', date: futureIsoDate(14) });
+    expect(res.status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(1);
+  });
+
+  it('sends none for a booking the server priced', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ alerts });
+    expect((await jpost(app, '/bookings/trip', trip(['Kandy', 'Ella']))).status).toBe(201);
+    expect((await post(app, { ...valid, from: 'Kandy', to: 'Ella', date: futureIsoDate(14) })).status).toBe(201);
+    expect(unpricedAlerts(alerts)).toHaveLength(0);
+  });
+
+  // Best-effort, like the ops task: the booking already exists and the customer is mid-checkout.
+  it('still creates the booking when the alert channel throws', async () => {
+    const alerts = { send: async () => { throw new Error('resend down'); } };
+    const app = createApp({ alerts });
+    const res = await jpost(app, '/bookings/trip', trip(['Kandy', 'ZZQQ Nowhere 4417']));
+    expect(res.status).toBe(201);
+  });
+});
+
 // ── CH-SEATS (2026-09-22) ──────────────────────────────────────────────────
 // The hold used the TRIMMED time while the booking stored `req.time` untrimmed, so every
 // later release looked up a key the hold had never used and silently found nothing: the
@@ -876,5 +1005,38 @@ describe('POST /bookings/* — an unusable phone number is refused with a messag
     });
     expect(res.status).toBe(201);
     expect((await res.json()).input.customer.whatsapp).toBe('+94 77 123 4567');
+  });
+});
+
+describe('POST /bookings/trip — through (stops on the way)', () => {
+  const send = (app: ReturnType<typeof createApp>, body: unknown) =>
+    app.request('/bookings/trip', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const base = () => ({
+    stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], nights: [0, 0, 0], pax: 2, vehicleType: 'car', serviceType: 'private', customer: valid.customer,
+  });
+  const app = () => createApp({ bookings: new InMemoryBookingRepo() });
+
+  it('accepts a through wire and stores it on the booking', async () => {
+    const res = await send(app(), { ...base(), through: [0] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.input.through).toEqual([0]);
+  });
+
+  it.each([
+    ['the last wire (nothing to continue onto)', { through: [1] }],
+    ['a wire past the end', { through: [5] }],
+    ['a duplicate', { through: [0, 0] }],
+    ['a wire that is also a gap', { through: [0], gaps: [0] }],
+    ['a night at the stop on the way', { through: [0], nights: [0, 1, 0] }],
+    ['a different date on the continuing wire', { through: [0], dates: [futureIsoDate(30), futureIsoDate(31)] }],
+    ['a date on the continuing wire only', { through: [0], dates: ['', futureIsoDate(30)] }],
+    ['a road choice on a wire inside the run', { through: [0], routeVariants: ['no_tolls', 'fastest'] }],
+    ['a road choice on the continuing wire', { through: [0], routeVariants: ['fastest', 'no_tolls'] }],
+    ['a gap on the continuing wire', { through: [0], gaps: [1] }],
+  ])('refuses %s', async (_label, patch) => {
+    const res = await send(app(), { ...base(), ...patch });
+    expect(res.status).toBe(400);
+    expect((await res.json()).message).toMatch(/^through: /);
   });
 });

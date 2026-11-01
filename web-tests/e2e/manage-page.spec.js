@@ -13,6 +13,7 @@ const PAGE = '/manage.html?t=test-token';
 const BOOKING = {
   reference: 'CH-HAFDZ',
   status: 'payment_pending',
+  mode: 'single',
   firstName: 'Roshen',
   from: 'Colombo Airport (CMB)',
   to: 'Batticaloa, Sri Lanka',
@@ -40,7 +41,7 @@ test('wears the same travel document as the pay page', async ({ page }) => {
   // The real logo file, not a wordmark on its own — the header is pay.html's verbatim.
   await expect(page.locator('.pp-cmark')).toHaveAttribute('src', 'img/brand-c.svg');
   await expect(page.locator('.pp-hello')).toHaveText('Hi Roshen,');
-  await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Batticaloa, Sri Lanka');
+  await expect(page.locator('.pp-title')).toHaveText('Colombo Airport (CMB) → Batticaloa');
   await expect(page.locator('.ticket')).toBeVisible();
   await expect(page.locator('.t-ref')).toHaveText('Booking CH-HAFDZ');
 });
@@ -56,7 +57,7 @@ test('speaks to the customer, never in database values', async ({ page }) => {
   // Selected by LABEL, not row index: the card grew Trip start / Trip end / Stops rows
   // (owner, 2026-07-31) and index-pinned assertions broke without the copy being any worse.
   await expect(page.locator('.fact', { hasText: 'Vehicle' })).toContainText('Private car'); // not lowercase "car"
-  await expect(page.locator('.fact', { hasText: 'Pick-up time' })).toContainText('To be confirmed');
+  await expect(page.locator('.fact', { hasText: 'Landing time' })).toContainText('To be confirmed');
   // The added rows must speak the same way — human dates, never the raw ISO the API sent.
   await expect(page.locator('.fact', { hasText: 'Trip start' })).toContainText('22 July 2026');
   await expect(page.locator('.fact', { hasText: 'Stops' })).toContainText('2 stops');
@@ -118,4 +119,56 @@ test('a broken link fails softly, in the shared state style', async ({ page }) =
   await page.goto(PAGE);
   await expect(page.locator('.st-title')).toHaveText('We couldn’t open this booking');
   await expect(page.locator('body')).toContainText('WhatsApp');
+});
+
+// A booking the server couldn't price (a bare hotel name it couldn't place) carries a flat
+// placeholder total — $40/$50 a leg — that checkout refuses with 409. The card used to show that
+// placeholder with an enabled Pay button, and pressing it said "already paid or closed". The view
+// now says needsPricing, and the card says what is really happening instead.
+const HAND_PRICE = 'We’re confirming the price for this trip by hand — we’ll message you on WhatsApp with a payment link.';
+const UNPRICED = { ...BOOKING, status: 'draft', needsPricing: true, totalCents: 4000, amountDueNowCents: 4000 };
+
+test('a booking awaiting a hand price offers no Pay and no placeholder amount', async ({ page }) => {
+  await stub(page, UNPRICED);
+  await page.goto(PAGE);
+  await expect(page.locator('.ticket')).toBeVisible();
+  await expect(page.locator('#paybtn')).toHaveCount(0);
+  await expect(page.locator('.tot')).toHaveCount(0); // no Total row at all
+  await expect(page.locator('body')).not.toContainText('$40.00');
+  await expect(page.locator('.t-stat')).toHaveText('Price to confirm');
+  await expect(page.locator('.pp-tbc')).toHaveText(HAND_PRICE);
+  // A neutral question that already names the booking — nothing failed, so not "didn't go through".
+  const wa = page.locator('#pricewa');
+  await expect(wa).toBeVisible();
+  const href = await wa.getAttribute('href');
+  expect(href).toMatch(/^https:\/\/wa\.me\/94779669662\?text=/);
+  expect(decodeURIComponent(href.split('text=')[1])).toBe('Hi Ceylon Hop, a question about booking CH-HAFDZ: ');
+});
+
+test('a Pay refused as awaiting a price says so, never "already paid or closed"', async ({ page }) => {
+  // A view without the flag (e.g. served before it existed) still shows Pay; the refusal decides.
+  await stub(page, { ...UNPRICED, needsPricing: undefined });
+  await page.route('**/bookings/view/checkout-token', (r) => r.fulfill({
+    status: 409, contentType: 'application/json',
+    body: JSON.stringify({ error: 'not_chargeable', reason: 'awaiting_price', status: 'draft' }),
+  }));
+  await page.goto(PAGE);
+  await page.locator('#paybtn').click();
+  await expect(page.locator('.pp-tbc')).toHaveText(HAND_PRICE);
+  await expect(page.locator('#paybtn')).toHaveCount(0);
+  await expect(page.locator('body')).not.toContainText('already been paid');
+});
+
+// CH-9QH34 (owner, 2026-10-29): the heading printed both full Google addresses and stood six lines
+// tall on a phone. It now names each end the way the booking page does (ch-shortplace.js), and the
+// full address moves into the ticket's From / To rows so nothing is lost.
+test('a long Google address shortens in the heading and stays in full on the ticket', async ({ page }) => {
+  const from = 'Barefoot Inn Kandy, Anniewatta Circular Road, Kandy, Sri Lanka';
+  const to = 'Star Gate Hotel, Lady Macllum Road, Nuwara Eliya, Sri Lanka';
+  await stub(page, { ...BOOKING, from, to });
+  await page.goto(PAGE);
+  await expect(page.locator('.pp-title')).toHaveText('Barefoot Inn Kandy → Star Gate Hotel · Nuwara Eliya');
+  const row = (k) => page.locator('.fact').filter({ has: page.locator('.k', { hasText: new RegExp('^' + k + '$') }) });
+  await expect(row('From')).toContainText(from);
+  await expect(row('To')).toContainText(to);
 });

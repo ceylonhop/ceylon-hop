@@ -69,7 +69,9 @@ test('trip start and end dates replace the bare pick-up row', async ({ page }) =
   await expect(card).toContainText('Trip start');
   await expect(card).toContainText('Trip end');
   // The pick-up TIME is still its own row — it was never a place, and must not be lost.
+  // (TRIP_VIEW starts at the airport, but only a SINGLE airport pickup is a "Landing time".)
   await expect(card).toContainText('Pick-up time');
+  await expect(card).not.toContainText('Landing time');
   // Start and end must be DIFFERENT dates on a multi-day trip (the end date is the new fact).
   const start = await card.locator('.fact', { hasText: 'Trip start' }).innerText();
   const end = await card.locator('.fact', { hasText: 'Trip end' }).innerText();
@@ -115,4 +117,17 @@ test('takes the link token out of the URL but survives a reload', async ({ page 
   await page.reload();
   await expect(page.locator('body')).toContainText('CH-ABC12');
   await expect(page.locator('body')).not.toContainText('isn’t valid');
+});
+
+// The heading fix (CH-9QH34, #1098) left the same problem one line down: a multi-stop trip's
+// subtitle printed "first → last" as two full Google addresses. It now names each end the way the
+// heading does; the full addresses are still on the rail, one hop per row.
+test('a multi-stop trip shortens its first → last subtitle, the rail keeps the full addresses', async ({ page }) => {
+  const from = 'Barefoot Inn Kandy, Anniewatta Circular Road, Kandy, Sri Lanka';
+  const to = 'Star Gate Hotel, Lady Macllum Road, Nuwara Eliya, Sri Lanka';
+  await serve(page, { ...TRIP_VIEW, from, to, stops: [from, 'Sigiriya', to], legDates: TRIP_VIEW.legDates.slice(0, 2) });
+  await page.goto('/manage.html?t=fake-token');
+  await expect(page.locator('.pp-sub')).toHaveText('Barefoot Inn Kandy → Star Gate Hotel · Nuwara Eliya');
+  await expect(page.locator('.hops .hop').nth(0)).toContainText(from);
+  await expect(page.locator('.hops .hop').nth(1)).toContainText(to);
 });

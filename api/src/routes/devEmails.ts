@@ -8,13 +8,17 @@ import {
   sendRideAtRisk,
   sendRideCalledOffRefundDue,
   sendRideJoined,
+  sendRideFillTip,
 } from '../services/rideBoardEmails';
 import type { RideList, RideMember } from '../domain/rideList';
 import { sendRideSeatHeld, teamPaidEmail, teamRideLockedEmail } from '../services/opsNotifications';
 import {
   sendBookingConfirmation,
   sendDetailsNeeded,
+  sendScheduleSet,
+  sendDetailsReminder,
   sendBookingConfirmed,
+  sendPayOnDayConfirmed,
   sendCancellationConfirmation,
   sendRefundConfirmation,
   sendNoShowNotice,
@@ -87,10 +91,15 @@ const EMAILS: EmailDef[] = [
   // Partial pay link variant (spec 2026-08-04): the coverage sentence above the itinerary.
   { name: 'confirmation-partial', label: 'Booking confirmation (partial trip)', run: (b, e) => sendBookingConfirmation(b, e, { manage: LINKS.manage, coverage: { soldLegs: 2, totalLegs: 4 }, interests: [SAMPLE_INTEREST] }) },
   { name: 'details-needed', label: 'Awaiting details', run: (b, e) => sendDetailsNeeded(b, e, { manage: LINKS.manage }) },
+  { name: 'schedule-set', label: 'Pickup set (after booking)', run: (b, e) => sendScheduleSet(b.mode === 'single' ? ({ ...b, input: { ...b.input, date: '2026-11-04', time: '09:00' } } as Booking) : b, e, { manage: LINKS.manage }) },
+  { name: 'details-reminder-1', label: 'Reminder 1: still need date/time', run: (b, e) => sendDetailsReminder(b, e, { nth: 1, manage: LINKS.manage }) },
+  { name: 'details-reminder-2', label: 'Reminder 2: still need date/time', run: (b, e) => sendDetailsReminder(b, e, { nth: 2, manage: LINKS.manage }) },
   { name: 'booking-confirmed', label: 'Booking confirmed', run: (b, e) => sendBookingConfirmed(b, e, { manage: LINKS.manage }) },
+  { name: 'pay-on-day-confirmed', label: 'Pay on the day — confirmed', run: (b, e) => sendPayOnDayConfirmed({ ...b, status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking, e, { manage: LINKS.manage }) },
   { name: 'cancellation', label: 'Cancellation', run: (b, e) => sendCancellationConfirmation(b, e) },
   { name: 'refund', label: 'Refund processed', run: (b, e) => sendRefundConfirmation(b, e) },
   { name: 'no-show', label: 'No-show notice', run: (b, e) => sendNoShowNotice(b, e) },
+  { name: 'no-show-pay-on-day', label: 'No-show notice — pay on the day', run: (b, e) => sendNoShowNotice({ ...b, status: 'no_show', paymentArrangement: 'on_the_day' } as Booking, e, { paidCents: 0 }) },
   { name: 'trip-reminder', label: 'Pre-trip reminder', run: (b, e) => sendTripReminder(b, e, { manage: LINKS.manage }) },
   { name: 'review-request', label: 'Review request', run: (b, e) => sendReviewRequest(b, e) },
   { name: 'payment-incomplete', label: 'Payment incomplete (recovery)', run: (b, e) => sendPaymentIncomplete(b, e, { resume: LINKS.resume }) },
@@ -107,6 +116,7 @@ const EMAILS: EmailDef[] = [
   { name: 'team-ride-locked-ops', label: 'Team (ops): ride locked in, paid', run: (_b, e) => e.send({ to: 'ops@ceylonhop.com', ...teamRideLockedEmail({ list: SAMPLE_RIDE, time: '08:00', charged: [{ ...SAMPLE_MEMBER, status: 'charged' }, { ...SAMPLE_MEMBER, id: 'm2', sub: 'sub-2', firstName: 'Luca', country: 'IT', email: 'luca@example.com', seats: 2, status: 'charged' }], declined: [], unknown: [], seedSeats: 0, currency: 'USD' }, 'https://ops.ceylonhop.com'), audience: 'ops' }) },
   { name: 'ride-seat-held-ops', label: 'Ride Board (ops): seat held', run: (_b, e) => sendRideSeatHeld({ to: 'ops@ceylonhop.com', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, member: SAMPLE_MEMBER, committed: 2, kind: 'joined' }, e, 'https://ops.ceylonhop.com') },
   { name: 'ride-joined', label: 'Ride Board: you\'re on the list', run: (_b, e) => sendRideJoined(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null }, seats: 2, rideUrl: 'https://ceylonhop.com/board.html#/EM-4821' }) },
+  { name: 'ride-fill-tip', label: 'Ride Board: how to fill your van', run: (_b, e) => sendRideFillTip(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: { ...SAMPLE_RIDE, status: 'gathering', lockedTime: null, minSeats: 4 }, committed: 1, isStarter: true, boardBaseUrl: 'https://ceylonhop.com', shareBaseUrl: 'https://ride.ceylonhop.com' }) },
   { name: 'ride-confirmed', label: 'Ride Board: ride confirmed', run: (_b, e) => sendRideConfirmed(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE, lockedTime: '08:00' }) },
   { name: 'ride-cancelled', label: 'Ride Board: called off', run: (_b, e) => sendRideCancelled(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },
   { name: 'ride-refund-due', label: 'Ride Board: called off, refund due', run: (_b, e) => sendRideCalledOffRefundDue(e, { to: 'preview@ceylonhop.com', firstName: 'Maya', list: SAMPLE_RIDE }) },

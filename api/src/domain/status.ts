@@ -27,8 +27,20 @@ const ALLOWED: Record<BookingStatus, BookingStatus[]> = {
   no_show: [],
 };
 
-export function canTransition(from: BookingStatus, to: BookingStatus): boolean {
-  return ALLOWED[from].includes(to);
+// Edges that exist only for a booking whose money is arranged for later (pay on the day, 0077):
+// the trip is confirmed before any payment. Kept apart from ALLOWED so the ordinary lifecycle is
+// exactly as it was — status is the trip, the payments ledger is the money (domain/balance.ts).
+const ARRANGED: Partial<Record<BookingStatus, BookingStatus[]>> = {
+  payment_pending: ['confirmed'],
+};
+
+export interface TransitionContext {
+  paymentArrangement?: string | null;
+}
+
+export function canTransition(from: BookingStatus, to: BookingStatus, ctx?: TransitionContext): boolean {
+  if (ALLOWED[from].includes(to)) return true;
+  return !!ctx?.paymentArrangement && (ARRANGED[from] ?? []).includes(to);
 }
 
 export class IllegalTransitionError extends Error {
@@ -41,6 +53,6 @@ export class IllegalTransitionError extends Error {
   }
 }
 
-export function assertTransition(from: BookingStatus, to: BookingStatus): void {
-  if (!canTransition(from, to)) throw new IllegalTransitionError(from, to);
+export function assertTransition(from: BookingStatus, to: BookingStatus, ctx?: TransitionContext): void {
+  if (!canTransition(from, to, ctx)) throw new IllegalTransitionError(from, to);
 }

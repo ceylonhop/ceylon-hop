@@ -322,3 +322,51 @@ describe('POST /bookings/shared — the booking records the luggage it charged f
     expect(b.input.bags).toBe(0);
   });
 });
+
+// Owner 2026-10-16: a shared seat can add a hotel pick-up and a hotel drop-off (ops confirms the
+// hotel is near the meeting point) per BOOKING, not per seat. Owner 2026-10-29: they are two
+// add-ons at $5 each, not one $5 pair. They reuse the extras feature: each code is priced from
+// RATE_CARD.extras and recorded as an `extra` line in the booking's pricing snapshot, which is
+// where every surface reads a booking's add-ons from.
+describe('POST /bookings/shared — hotel pick-up and drop-off extras', () => {
+  const leg = { ...valid, from: 'Negombo', to: 'Sigiriya / Dambulla', time: '07:30', seats: 2 };
+
+  it('adds $5 for a hotel pick-up, once per booking, not per seat', async () => {
+    const res = await postShared(createApp(), { ...leg, extras: ['hotel-pickup'] });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.total).toBe(5498 + 500);
+    expect(b.amountDueNow).toBe(5498 + 500);
+  });
+
+  it('adds $5 for a hotel drop-off on its own', async () => {
+    const b = await (await postShared(createApp(), { ...leg, extras: ['hotel-dropoff'] })).json();
+    expect(b.total).toBe(5498 + 500);
+  });
+
+  it('charges $5 for each when both are chosen', async () => {
+    const b = await (await postShared(createApp(), { ...leg, extras: ['hotel-pickup', 'hotel-dropoff'] })).json();
+    expect(b.total).toBe(5498 + 1000);
+  });
+
+  it('records each extra on the booking so ops and the emails can name it', async () => {
+    const b = await (await postShared(createApp(), { ...leg, extras: ['hotel-pickup', 'hotel-dropoff'] })).json();
+    expect(b.addOns).toEqual(['Hotel pick-up', 'Hotel drop-off']);
+  });
+
+  it('400s the retired one-price pair code', async () => {
+    const res = await postShared(createApp(), { ...leg, extras: ['hotel-transfer'] });
+    expect(res.status).toBe(400);
+  });
+
+  it('names no add-ons when none was chosen', async () => {
+    const b = await (await postShared(createApp(), leg)).json();
+    expect(b.total).toBe(5498);
+    expect(b.addOns).toBeUndefined();
+  });
+
+  it('400s a private-transfer extra on a shared seat', async () => {
+    const res = await postShared(createApp(), { ...leg, extras: ['sightseeing'] });
+    expect(res.status).toBe(400);
+  });
+});

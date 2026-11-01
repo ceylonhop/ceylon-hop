@@ -193,6 +193,16 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     expect(kinds).not.toContain('bookings:created'); // the log's create row already says it
   });
 
+  it('a confirmed pay-on-the-day booking with no payment warns cash is due, not paid-without-payment', async () => {
+    const s = setup();
+    const b = await s.bookings.create(draft);
+    await s.bookings.setStatus(b.id, 'payment_pending');
+    await s.bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await s.bookings.setStatus(b.id, 'confirmed');
+    const body = await (await s.get(b.reference)).json();
+    expect(body.verdict.warnings).toEqual(['cash_due_on_the_day']);
+  });
+
   it('never hands out links, tokens or raw payload fingerprints', async () => {
     const s = setup();
     const b = await paidBooking(s);

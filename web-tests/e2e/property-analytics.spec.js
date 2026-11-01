@@ -28,7 +28,7 @@ const COPY = {
   includedText: 'Driver, fuel and highway tolls.',
   totalLabel: 'Total',
 };
-const PREFILL = { firstName: 'Nimal', lastName: 'Perera', email: '', whatsapp: '+94770001111', country: '' };
+const PREFILL = { firstName: 'Nimal', lastName: 'Perera', email: 'nimal@example.com', whatsapp: '+94770001111', country: '' };
 
 // Keep the suite offline: GTM never loads here, so `dataLayer` stays a plain array of exactly
 // what the page pushed — which is the thing under test.
@@ -203,6 +203,27 @@ test('a refusal at our own door names itself instead of counting as a decline', 
   expect(await find(page, 'payment_start_failed')).toMatchObject({ reason: 'quote_revised' });
   // The gateway was never reached, so nothing may claim the bank refused anything.
   expect(await eventNames(page)).not.toContain('payment_failed');
+});
+
+// CH-YUE9J (2026-10-01): the team alert read only "pay/start refused — bad_request", so nobody
+// could tell which box the payer got wrong. The server's message names the field and the rule
+// (fixed wording, never the value typed), and the report has to carry it.
+test('a bad_request at our own door reports which field the server named', async ({ page }) => {
+  await payable(page);
+  const beacons = [];
+  await page.route('**/errors/client', (r) => { beacons.push(r.request().postDataJSON()); return r.fulfill({ status: 204 }); });
+  await page.route('**/quotes/pay/start', (r) => r.fulfill({ status: 400, contentType: 'application/json',
+    body: JSON.stringify({ error: 'bad_request', message: 'customer.firstName: String must contain at least 1 character(s)' }) }));
+  await page.goto('/pay.html?t=test-token');
+  await page.locator('#paybtn').click();
+  await page.locator('#f-addr').fill('31 River Court');
+  await page.locator('#f-city').fill('Jersey City');
+  await page.locator('#f-terms').check();
+  await page.locator('#gobtn').click();
+
+  await expect.poll(() => beacons.length).toBeGreaterThan(0);
+  expect(beacons[0].message).toContain('[pay] pay/start refused — bad_request');
+  expect(beacons[0].message).toContain('customer.firstName: String must contain at least 1 character(s)');
 });
 
 test('a real settlement reports a purchase once, with the amount it actually cost', async ({ page }) => {

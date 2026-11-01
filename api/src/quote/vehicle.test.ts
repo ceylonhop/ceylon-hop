@@ -3,9 +3,13 @@ import { selectVehicle, vehicleRank, VEHICLE_ORDER, pricedVehicle } from './vehi
 import type { QuoteRequest } from './types';
 
 describe('selectVehicle', () => {
-  it('car for ≤3 pax and ≤3 bags', () => {
+  it('car for ≤3 pax and ≤2 bags', () => {
     expect(selectVehicle(1, 1)).toBe('car');
-    expect(selectVehicle(3, 3)).toBe('car');
+    expect(selectVehicle(3, 2)).toBe('car');
+  });
+  it('van for a third large bag: a car takes 2 (owner, 2026-10-27)', () => {
+    expect(selectVehicle(1, 3)).toBe('van');
+    expect(selectVehicle(3, 3)).toBe('van');
   });
   it('van when pax 4–6, or 1–3 pax with too many bags', () => {
     expect(selectVehicle(4, 2)).toBe('van');

@@ -11,7 +11,7 @@ const LIVE = {
   perKm: { car: 1.2, van: 1.5 }, floors: { car: 29, van: 49.99 }, bufferPct: 10,
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 }, chauffeurDayFee: 31.05,
   chauffeurIdleMinKm: { car: 50, van: 100 }, depositPct: 0.1, depositMin: 50,
-  extras: { sightseeing: 10, 'safari-wait': 19, luggage: 5, front: 8, flex: 12, waiting: 10 },
+  extras: { sightseeing: 10, 'safari-wait': 19, luggage: 5, front: 8, flex: 12, waiting: 10, 'hotel-pickup': 5, 'hotel-dropoff': 5 },
   corridorSeat: {}, seatPricing: { perKmCentsVan: 150, floorCentsVan: 4999, seatsCoveringVan: 3 }, sharedProducts: [],
 };
 const TRANSPARENT = 'rgba(0, 0, 0, 0)';

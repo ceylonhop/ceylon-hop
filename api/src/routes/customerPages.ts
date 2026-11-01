@@ -31,7 +31,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
 // Same bundled faces the ride card uses — Resvg runs with loadSystemFonts:false.
-const FONT_FILES = ['BodoniModa-ExtraBold.ttf', 'Poppins-Bold.ttf', 'Poppins-Regular.ttf']
+const FONT_FILES = ['SourceSerif4-Bold.ttf', 'SourceSerif4-Regular.ttf']
   .map((f) => fileURLToPath(new URL(`../../assets/fonts/${f}`, import.meta.url)));
 
 export interface CustomerPagesDeps {
@@ -72,7 +72,9 @@ const ASSETS: [string, string][] = [
   ['phone-countries.js', JS],
   ['decline-help.js', JS], // the decline-recovery copy pay.html shares with booking.html
   ['checkout-handoff.js', JS], // the PayHere hand-off manage.html shares with booking.html
+  ['datepicker.js', JS], // the site's date picker — manage.html's pickup card (dateless Phase 4)
   ['ch-map.js', JS], // the shared route renderer, same file booking.js and plan.js use
+  ['ch-shortplace.js', JS], // the place shortener — manage.html's heading, same file booking.html uses
   ['img/ceylon-hop-touch-icon.png', 'image/png'],
   ['img/brand-c.svg', 'image/svg+xml'], // the header logo glyph — same file site.js's cmark() uses
 ];

@@ -446,10 +446,14 @@ if (shared) {
   // Same search, another date — and back onto this card, not the top of the page.
   const switchUrl = (iso) => { const p = new URLSearchParams(location.search); p.set('date', iso); return `search.html?${p.toString()}#shared-option`; };
 
-  const pickupRows = stops.length > 1
+  /* Every published point links to Google Maps, and the drop-off is named too: customers could
+     not tell where to stand or where they would be set down from town names (owner, 2026-10-29). */
+  const ptLink = (pt) => `<a class="pt-map" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(pt + ', Sri Lanka')}" target="_blank" rel="noopener">${pt}</a>`;
+  const pickupRows = (stops.length > 1
     ? `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · pick-up points:` : 'Pick-up points:'}</div>
-       <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point || s.place}</li>`).join('')}</ul>`
-    : `<div class="sm">${ICONS.departs} ${daysStr ? `Runs ${daysStr} · departs` : 'Departs'} ${timeStr}${stops[0] && stops[0].point ? ` from ${stops[0].point}` : ''}</div>`;
+       <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point ? ptLink(s.point) : s.place}</li>`).join('')}</ul>`
+    : `<div class="sm">${ICONS.departs} <span>${daysStr ? `Runs ${daysStr} · departs` : 'Departs'} ${timeStr}${stops[0] && stops[0].point ? ` from ${ptLink(stops[0].point)}` : ''}</span></div>`)
+    + (shared.dropoff ? `<div class="sm">${ICONS.pin} <span>Drop-off at ${ptLink(shared.dropoff)}</span></div>` : '');
   if (runs === false) {
     const around = SD.serviceDatesAround(date, shared.days, todayIso);
     const LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];

@@ -21,7 +21,7 @@
 <meta property="og:url" content="https://ceylonhop.com/booking.html">
 <meta property="og:title" content="Book your hop — Ceylon Hop">
 <meta property="og:description" content="Secure your Ceylon Hop transfer in a few quick steps — free cancellation, confirmation by email after payment and a Pro Hopper driver.">
-<link rel="stylesheet" href="site.css?v=33723b0702">
+<link rel="stylesheet" href="site.css?v=0afd32962e">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -36,7 +36,7 @@ function r(m,s){if(n>=5)return;n++;try{var b=JSON.stringify({message:String(m||'
 window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)});
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
-<script src="tweaks.js?v=26d58fe065"></script>
+<script src="tweaks.js?v=671ce1bb00"></script>
 <style>
   body{background:transparent}
 
@@ -130,6 +130,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .cal-day:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.35)}
   .cal-day:disabled{cursor:default}
   .when-blocked{margin:0 0 10px;font-size:.88rem;color:var(--ink-soft)}
+  /* The note is inserted between Back and Continue; give it its own line above both, or it
+     squeezes "← Back" onto two lines (every undated private transfer sees it now, not just shared). */
+  .nav-btns:has(> .when-blocked){flex-wrap:wrap}
+  .nav-btns > .when-blocked{order:-1;flex-basis:100%}
   .rate-lock-note{margin:8px 0 0;font-size:.86rem;color:var(--teal-deep);display:flex;align-items:center;gap:6px}
 
   /* STEP 1 — date stacked above its departures, so time slots get full width */
@@ -360,6 +364,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
      between the two places stays on the body face: Bodoni has no → and would fall
      through to a mismatched fallback mid-word. */
   .trip-route .tr-leg-title{font-family:var(--display);font-weight:700;color:var(--ink);line-height:1.22;min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .trip-route .tr-leg-title:has(.tr-via){display:block;-webkit-line-clamp:unset;overflow:visible}
   .trip-route .tr-leg-title .tr-ar{color:var(--accent);margin:0 .22rem;font-family:var(--body);font-weight:600}
   .trip-route .tr-leg-meta{display:flex;flex-wrap:wrap;gap:8px 10px;margin-left:64px}
   .trip-route .tr-chip{display:inline-flex;align-items:center;gap:.38rem;font-size:.78rem;font-weight:700;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:4px 10px}
@@ -419,6 +424,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .shared-route .sr-lbl{display:block;font-size:.66rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
   .shared-route .sr-line b{font-size:1.05rem;font-family:var(--display);font-weight:700}
   .shared-route .sr-wire{width:2px;height:16px;margin:1px 0 1px 5px;background:repeating-linear-gradient(var(--accent) 0 3px,transparent 3px 7px);opacity:.5}
+  .shared-route .sr-sub{display:block;margin-top:2px;font-size:.84rem;color:var(--ink-soft)}
+  .shared-route .sr-map{color:var(--accent-deep);font-weight:600;text-decoration:none;white-space:nowrap}
+  .shared-route .sr-map:hover{text-decoration:underline}
+  .shared-route .sr-map svg{width:12px;height:12px;margin-left:3px;vertical-align:-1px}
   .shared-route .sr-foot{display:flex;flex-wrap:wrap;gap:10px 24px;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
   .shared-route .sr-fact{display:inline-flex;align-items:center;gap:.5rem;font-size:.9rem;color:var(--ink-soft)}
   .shared-route .sr-fact svg{width:17px;height:17px;color:var(--accent-deep);flex:none}
@@ -535,12 +544,14 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .stepper .ctrls{display:flex;align-items:center;gap:16px}
   .stepper button{width:32px;height:32px;border-radius:50%;border:1.5px solid var(--line);background:#fff;font-size:1.15rem;color:var(--ink)}
   .stepper button:hover{border-color:var(--accent);color:var(--accent-deep)}
+  .addon[hidden]{display:none}
   .addon{display:flex;align-items:center;gap:.8rem;width:100%;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;cursor:pointer;transition:.15s;background:var(--white);color:inherit;font:inherit;text-align:left;appearance:none}
   .addon.on{border-color:var(--accent);background:rgba(var(--accent-rgb),.06)}
   .addon .box{width:22px;height:22px;border-radius:6px;border:2px solid var(--line);flex:none;display:grid;place-items:center;color:#fff}
   .addon.on .box{background:var(--accent);border-color:var(--accent)}
   .addon .box svg{width:13px;height:13px;opacity:0}.addon.on .box svg{opacity:1}
   .addon b{display:block;font-size:.95rem}.addon small{color:var(--ink-soft)}
+  .addon .addon-note{display:block;margin-top:4px;color:var(--ink);font-weight:600}
   .addon .pr{margin-left:auto;font-weight:600;white-space:nowrap}
 
   /* ── Partner experiences (step 3 block + summary line). Owner-approved compact rows (Option B,
@@ -721,6 +732,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pay-divider{height:0;border-top:2px dashed var(--line);margin:28px 0 22px}
   .form-error{display:flex;align-items:center;gap:.45rem;margin:14px 0 0;color:#b13b22;background:#fdeee9;border:1px solid #f4c9bb;border-radius:10px;padding:.6rem .8rem;font-size:.86rem;font-weight:600}
   .form-error[hidden]{display:none}
+  /* The "can't price this trip" gate's way forward (2026-10-18): its own line under the reason. */
+  .form-error:has(.unpriced-actions){flex-wrap:wrap}
+  .unpriced-text{flex:1 1 0;min-width:0}
+  .unpriced-actions{flex-basis:100%;padding-left:calc(18px + .45rem);font-weight:600}
+  .unpriced-actions a,.unpriced-actions button{color:inherit;text-decoration:underline;text-underline-offset:2px}
+  .unpriced-actions button{-webkit-appearance:none;appearance:none;background:none;border:0;padding:0;font:inherit;cursor:pointer}
   /* Billing block. `#billnames` is a .grid2, and .grid2 sets `display:grid` — which beats the
      browser's own `[hidden]{display:none}`, so the cardholder boxes would sit there visible
      with the attribute set. Every hidden-by-attribute element on this page needs its own
@@ -972,7 +989,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <!-- STEP 1 — WHEN (date + time) -->
     <div class="stepcard panel active" data-panel="1">
       <h2 id="s2-title">When do you want to hop?</h2>
-      <p class="sub" id="s2-sub">Pick your date and pick-up time — or leave either flexible and confirm with us later. You can change this any time before you travel.</p>
+      <p class="sub" id="s2-sub">Pick your date and pick-up time — or leave either flexible and confirm it with our team on WhatsApp later.</p>
       <div class="when-inner">
         <div class="flex-banner">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/><circle class="wp" cx="12" cy="12" r="1.6"/></svg>
@@ -1014,7 +1031,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="cap-note" id="cap-note"></div>
       <div id="extras-block">
         <h3 style="font-size:1.05rem;margin:20px 0 12px">Extras <span class="muted" style="font-weight:400;font-size:.85rem">(optional)</span></h3>
-        <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small></span><span class="pr">+$10</span></button>
+        <button type="button" class="addon" data-addon="sightseeing" data-price="10" aria-pressed="false" onclick="toggleAddon(this)"><span class="box" aria-hidden="true"></span><span><b>Add sightseeing stops</b><small>Up to 3 hours of stops along the way — temples, viewpoints, lunch</small><small class="addon-note">Stops must be on your route — no detours off it.</small></span><span class="pr">+$10</span></button>
+        <button type="button" class="addon" data-addon="hotel-pickup" data-price="5" aria-pressed="false" onclick="toggleAddon(this)" hidden><span class="box" aria-hidden="true"></span><span><b>Hotel pick-up</b><small>We collect you from your hotel, if it's within 5 km of the pick-up point. Our team confirms it with you after you book.</small></span><span class="pr">+$5</span></button>
+        <button type="button" class="addon" data-addon="hotel-dropoff" data-price="5" aria-pressed="false" onclick="toggleAddon(this)" hidden><span class="box" aria-hidden="true"></span><span><b>Hotel drop-off</b><small>We drop you at your hotel, if it's within 5 km of the drop-off point. Our team confirms it with you after you book.</small></span><span class="pr">+$5</span></button>
       </div>
       <!-- Partner experiences near the drop-off (spec docs/superpowers/specs/2026-10-06-partner-experiences-design.md).
            Hidden until booking.js syncExperiences() gets a non-empty answer from GET /experiences/near; an
@@ -1236,7 +1255,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="site.js?v=47f8ca3df7"></script>
 <script src="ta-data.js?v=8b2b56a308"></script>
 <script src="routes-data.js?v=ec2f43a11a"></script>
-<script src="transfers-data.js?v=095fe1f9cc"></script>
+<script src="transfers-data.js?v=7013edadde"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4,
      §10). It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two
      website payments that day were declined "3ds Authentication Failed" with no notify ever
@@ -1245,11 +1264,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="decline-help.js?v=c0dbcda42b"></script>
 <!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with manage.html. -->
 <script src="checkout-handoff.js?v=13d6bf1c9f"></script>
-<script src="ch-map.js?v=18772b2dd8"></script>
-<script src="ch-pricing.js?v=74a30546ee"></script>
+<script src="ch-map.js?v=e29e14e0cb"></script>
+<script src="ch-pricing.js?v=3a152c88c1"></script>
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before booking.js reads CH.shortenRouteLabel -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="booking.js?v=0875f3ece3"></script>
+<script src="booking.js?v=3972b47091"></script>
 </body>
 </html>

@@ -3,8 +3,18 @@ import type { DepartureRepo } from '../db/departureRepo';
 import type { NotificationLogRepo, NotificationKind } from '../db/notificationLogRepo';
 import type { EmailAdapter } from '../adapters/email';
 import type { SendBudget } from './sendBudget';
-import { sendTripReminder, sendReviewRequest, manageUrl } from './notifications';
+import { sendTripReminder, sendReviewRequest, sendDetailsReminder, needsDetails, manageUrl } from './notifications';
+import { detailsReminderDue, DETAILS_REMINDER_EPOCH } from '../domain/detailsReminder';
+import { balanceDueCents } from '../domain/balance';
+import { isoToday } from '../domain/dateRules';
 import type { TrackingCorrelation } from '../domain/trackingContract';
+
+// Heartbeat of the daily tick (spec 2026-10-13 §4), the sibling of watchdog.ts's WATCHDOG_TICK:
+// POST /admin/jobs/notifications writes this ledger row last, with a zero cooldown, so the ops
+// Health tab can say when the tick last completed. GitHub's cron delivers it hours late and
+// nothing else records that it ran at all. Stale past 26 h: a day plus the lateness we live with.
+export const NOTIFICATIONS_TICK = { kind: 'notifications_tick', key: 'last' } as const;
+export const NOTIFICATIONS_STALE_MS = 26 * 3600_000;
 
 // A booking gets a pre-trip reminder once it's within this window of departure, and a
 // review request once travel is this far in the past. The cron tick is idempotent via
@@ -18,9 +28,13 @@ const REVIEW_DELAY_MS = 24 * 3600 * 1000;
 // (start === end). A multi-stop trip starts at its first dated leg and ends at its last —
 // so the pre-trip reminder anchors to the start, but the review request waits until the
 // WHOLE trip is over, not day one (BI6). Time is only known for single transfers (noon else).
+// Dates and times are Sri Lanka wall-clock, a fixed UTC+05:30 with no DST — pinned here, not
+// read from the server's zone. Same approach as domain/reversalWindow.ts.
+const SLK_OFFSET = '+05:30';
+
 function tripWindow(b: Booking): { start: Date | null; end: Date | null } {
   const toDate = (date: string, time?: string): Date | null => {
-    const d = new Date(`${date}T${time ?? '12:00'}:00`);
+    const d = new Date(`${date}T${time ?? '12:00'}:00${SLK_OFFSET}`);
     return Number.isNaN(d.getTime()) ? null : d;
   };
   if (b.mode === 'trip') {
@@ -72,12 +86,20 @@ export async function runScheduledNotifications(
     // Phase A correlation seam. Production job routes always provide it; persistence lands in
     // later slices. Optional so pure service callers and existing tests remain source-compatible.
     correlation?: TrackingCorrelation;
+    // Dateless capture Phase 2: both are needed to send details reminders; without them the
+    // tick behaves exactly as before. payments gives the settle time (the reminder clock),
+    // rideOps the "Customer contacted · pickup confirmed" pause.
+    payments?: { findByBookingId(id: string): Promise<Array<{ status: string; amount: number; purpose: string; settledAt: Date | null }>> };
+    rideOps?: { get(id: string): Promise<{ customerUpdated: boolean } | null> };
+    // Test seam; production uses the code constant.
+    detailsReminderEpoch?: Date;
   },
-): Promise<{ reminders: number; reviews: number; plan?: PlannedSend[] }> {
+): Promise<{ reminders: number; reviews: number; detailsReminders: number; plan?: PlannedSend[] }> {
   const { bookings, log, email, baseUrl, linkSecret, budget, maxTripAgeDays, epoch, dryRun } = deps;
   const all = await bookings.list();
   let reminders = 0;
   let reviews = 0;
+  let detailsReminders = 0;
   const plan: PlannedSend[] = [];
 
   // The one place a send is authorised. Everything upstream decides WHETHER a booking is
@@ -115,6 +137,33 @@ export async function runScheduledNotifications(
     // Taken before we started notifying at all — fence it off whatever its dates say.
     if (epoch && Date.parse(b.createdAt) < epoch.getTime()) continue;
 
+    // Details reminders run BEFORE the trip-window guard below, which skips every undated
+    // booking. Single transfers only; the rule itself lives in domain/detailsReminder.ts.
+    if (deps.payments && deps.rideOps && b.mode === 'single' && needsDetails(b)) {
+      const succeeded = (await deps.payments.findByBookingId(b.id))
+        .filter((p) => p.status === 'succeeded' && p.settledAt)
+        .map((p) => p.settledAt!.getTime());
+      const sentAt = new Map((await log.listByBookingId(b.id)).map((r) => [r.kind, r.sentAt]));
+      const kind = detailsReminderDue(
+        {
+          missing: true,
+          active: b.status === 'paid' || b.status === 'confirmed',
+          datePassed: !!b.input.date && b.input.date < isoToday('Asia/Colombo', now),
+          paused: (await deps.rideOps.get(b.id))?.customerUpdated ?? false,
+          paidAt: succeeded.length ? new Date(Math.min(...succeeded)) : null,
+          firstSentAt: sentAt.get('details_reminder_1') ?? null,
+          secondSentAt: sentAt.get('details_reminder_2') ?? null,
+        },
+        now,
+        deps.detailsReminderEpoch ?? DETAILS_REMINDER_EPOCH,
+      );
+      if (kind && await dispatch(b, kind, () => sendDetailsReminder(b, email, {
+        nth: kind === 'details_reminder_1' ? 1 : 2, manage: manageUrl(b, baseUrl, linkSecret),
+      }))) {
+        detailsReminders++;
+      }
+    }
+
     const { start, end } = tripWindow(b);
     if (!start || !end) continue;
 
@@ -126,7 +175,11 @@ export async function runScheduledNotifications(
 
     // Pre-trip reminder: trip STARTS within the lead window, and still active.
     if ((b.status === 'paid' || b.status === 'confirmed') && untilStart > 0 && untilStart <= REMINDER_LEAD_MS) {
-      if (await dispatch(b, 'trip_reminder', () => sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) }))) {
+      // Pay on the day: the reminder's badge and cash line come from the ledger, not the status.
+      const cashOpts = b.paymentArrangement && deps.payments
+        ? { cashDueCents: balanceDueCents(b, await deps.payments.findByBookingId(b.id)) }
+        : undefined;
+      if (await dispatch(b, 'trip_reminder', () => sendTripReminder(b, email, { manage: manageUrl(b, baseUrl, linkSecret) }, cashOpts))) {
         reminders++;
       }
     }
@@ -142,12 +195,16 @@ export async function runScheduledNotifications(
     }
   }
 
-  return { reminders, reviews, ...(dryRun ? { plan } : {}) };
+  return { reminders, reviews, detailsReminders, ...(dryRun ? { plan } : {}) };
 }
 
 // GL-3 — an abandoned shared checkout holds real seats. After this long unpaid, the draft
 // is cancelled and its seats go back on sale.
 const STALE_HOLD_MS = 24 * 3600 * 1000;
+// Saved on the booking so ops can see why it closed (CH-NQ66B, 2026-10-29: cancelled with no
+// reason, and the transition ledger is off in prod). Same `system:` form as the other auto-closers.
+export const STALE_HOLD_REASON = 'not paid within 24 hours — seats released';
+export const STALE_HOLD_BY = 'system:stale-shared-hold';
 
 // Cancel shared bookings stuck in draft/payment_pending for over 24h and free their
 // seats. Pure over (now, repos) like runScheduledNotifications; the cron tick drives it.
@@ -165,7 +222,7 @@ export async function sweepStaleSharedHolds(deps: {
       if (b.mode !== 'shared') continue;
       if (now.getTime() - Date.parse(b.createdAt) <= STALE_HOLD_MS) continue;
       try {
-        await bookings.setStatus(b.id, 'cancelled', undefined, {
+        await bookings.setStatus(b.id, 'cancelled', { reason: STALE_HOLD_REASON, by: STALE_HOLD_BY, at: now }, {
           source: 'scheduled_job',
           actorType: 'scheduler',
           ...deps.correlation,

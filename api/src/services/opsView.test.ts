@@ -42,6 +42,18 @@ describe('opsView', () => {
     expect(row).toMatchObject({ paidCents: 12100, balanceCents: 0 });
   });
 
+  // Dateless capture Phase 3: the "No date yet" queue counts days since the money landed.
+  it('carries when the booking was first paid: the earliest settled payment, else null', () => {
+    const row = toOpsRow(base, { paid: true, payments: [
+      { status: 'succeeded', amount: 16900, purpose: 'balance', settledAt: new Date('2026-06-25T10:00:00Z') },
+      { status: 'succeeded', amount: 5000, purpose: 'deposit', settledAt: new Date('2026-06-21T08:30:00Z') },
+      { status: 'pending', amount: 5000, purpose: 'deposit', settledAt: null },
+    ] });
+    expect(row.paidAt).toBe('2026-06-21T08:30:00.000Z');
+    expect(toOpsRow(base, { paid: false, payments: [{ status: 'failed', amount: 12100, purpose: 'full', settledAt: null }] }).paidAt).toBeNull();
+    expect(toOpsRow(base, { paid: false }).paidAt).toBeNull();
+  });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });
@@ -196,5 +208,24 @@ describe('opsView — road', () => {
     const fastest = { ...base, input: { ...base.input, routeVariant: 'fastest' } } as Booking;
     expect(toOpsRow(base, { paid: true }).road).toBeNull();
     expect(toOpsRow(fastest, { paid: true })).toEqual(toOpsRow(base, { paid: true }));
+  });
+});
+
+// Pay on the day: the row says the booking is arranged to be paid in cash on the day, and how
+// much cash is still due — the ledger's balance, so ops sees the same figure the money reads.
+describe('opsView — payment arrangement', () => {
+  const onTheDay: Booking = { ...base, status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+
+  it('an on_the_day booking carries the arrangement and the whole total as cash due', () => {
+    expect(toOpsRow(onTheDay, { paid: false })).toMatchObject({ paymentArrangement: 'on_the_day', cashDueCents: 12100 });
+  });
+
+  it('cash due falls to zero once the cash payment is on the ledger', () => {
+    const cash = [{ status: 'succeeded', amount: 12100, purpose: 'full' }];
+    expect(toOpsRow(onTheDay, { paid: true, payments: cash })).toMatchObject({ paymentArrangement: 'on_the_day', cashDueCents: 0 });
+  });
+
+  it('an ordinary booking has no arrangement and no cash due', () => {
+    expect(toOpsRow(base, { paid: true })).toMatchObject({ paymentArrangement: null, cashDueCents: 0 });
   });
 });

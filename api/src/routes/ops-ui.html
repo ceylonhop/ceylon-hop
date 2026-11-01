@@ -24,24 +24,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.message||String(x)),x.stack)};})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&family=Poppins:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,200..900;1,8..60,200..900&display=swap" rel="stylesheet">
 <style>
-/* WEIGHTS: this family has 400 and 700 and NOTHING ELSE — Bodoni 72 ships Book and Bold only.
-   Anything asking for 600 gets SYNTHESISED by the browser, which on a face with Bodoni's
-   thick/thin contrast smears the hairlines and reads as heavy mud at row sizes. Every
-   --display rule below therefore uses 400 or 700 and never an in-between (owner-reported:
-   "why is everything bold and hard to read", 2026-08-08).
-   Brand display face — see site.css for the full rationale. 'Bodoni 72' is the book's
-   real typeface and ships with macOS/iOS, so local() serves it free; Bodoni Moda is the
-   fallback. The metric overrides normalise the two faces' very different boxes so
-   baseline-relative layout (notably .ch-total-usd's LKR sub-line) is identical on both. */
-@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Bold'),local('BodoniSvtyTwoITCTT-Bold');
-  font-weight:700;font-style:normal;font-display:swap;
-  ascent-override:113%;descent-override:40%;line-gap-override:0%}
-@font-face{font-family:'CH Bodoni';src:local('Bodoni 72 Book'),local('BodoniSvtyTwoITCTT-Book');
-  font-weight:400;font-style:normal;font-display:swap;
-  ascent-override:113%;descent-override:40%;line-gap-override:0%}
-
+/* One family everywhere (owner, 2026-10-29): Source Serif 4, the same face as the customer
+   site (site.css --font). Display, body and the numeric/ID "mono" slots all point at it. */
   :root{
     --teal:#0AB9B6;--teal-deep:#08938f;--saffron:#F9A429;--tomato:#EC3A24;
     --ink:#3A3739;--ink-soft:#6b645f;--ink-faint:#a59d92;
@@ -52,7 +38,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
        near-white panel while the text stayed hardcoded #fff, and every toast went
        white-on-white. A surface must never be expressed as a text token. */
     --pop-bg:#241f1d;--pop-fg:#fffdf8;--pop-line:transparent;
-    --display:'CH Bodoni','Bodoni Moda',Didot,Georgia,serif;--body:'Poppins',system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+    --font:'Source Serif 4',Georgia,'Times New Roman',serif;--display:var(--font);--body:var(--font);--mono:var(--font);
     --shadow-s:0 1px 2px rgba(40,33,28,.05),0 1px 3px rgba(40,33,28,.04);--shadow:0 8px 26px -12px rgba(40,33,28,.20);--shadow-lg:0 40px 90px -30px rgba(30,24,20,.55);
     --ok:#2f9558;--ok-bg:#e6f4ec;--wait:#c7841f;--wait-bg:#fbf0d8;--go:#0a8f86;--go-bg:#e0f3ef;
     --alert:#cf4a2f;--alert-bg:#fbe6df;--alert-line:#f3cabd;--idle:#7c7a73;--idle-bg:#eeece4;
@@ -216,6 +202,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
   .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tk-meta .tk-paid.late{color:var(--wait);font-weight:700}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
   .pill{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:.75rem;padding:5px 12px;border-radius:999px;white-space:nowrap;background:var(--cbg,var(--cream-deep));color:var(--c,var(--ink-soft))}
@@ -226,6 +213,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
   .tk-right .val{font-family:var(--display);font-weight:700;font-size:1.2rem;font-variant-numeric:tabular-nums;letter-spacing:0;line-height:1}
   .tk-right .when{font-family:var(--mono);font-size:.71rem;color:var(--ink-faint)}
+  .tk-right .when .tk-tbc{color:var(--wait);font-weight:700}
   /* Quotes tab list rows — same card language as .tk, simpler single-line grid */
   .qlist{margin-top:6px}
   .qrow{position:relative;display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1fr) auto auto;gap:16px;align-items:center;background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:9px;box-shadow:var(--shadow-s);cursor:pointer;transition:transform .16s cubic-bezier(.2,.7,.3,1),box-shadow .16s,border-color .16s;animation:riseIn .22s cubic-bezier(.2,.7,.3,1) both}
@@ -330,6 +318,19 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .an-mover{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin:0 8px 8px 0;font-size:.84rem;font-weight:700}
   .an-mover.up{color:var(--ok)} .an-mover.down{color:var(--alert)}
   .an-empty{color:var(--ink-faint);font-size:.9rem;padding:14px 0;text-align:center}
+  /* Health tab (spec 2026-10-13 §7): usage against a cap. Green until 70 %, amber to the cap, red past it. */
+  .hl-bar{height:6px;border-radius:3px;background:var(--line-soft);overflow:hidden;margin-top:8px}
+  .hl-bar i{display:block;height:100%;background:var(--ok);border-radius:3px}
+  .hl-bar.warn i{background:var(--wait)}
+  .hl-bar.bad i{background:var(--red)}
+  .hl-stale{color:var(--red);font-weight:700}
+  .hl-list{list-style:none;margin:0;padding:0;font-size:.88rem}
+  .hl-list li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--line-soft)}
+  .hl-list li:first-child{border-top:0}
+  .hl-list .an-n{font-size:1rem}
+  .hl-links a{display:block;padding:6px 0;border-top:1px solid var(--line-soft);font-size:.88rem;text-decoration:none;color:var(--ink)}
+  .hl-links a:first-child{border-top:0}
+  .hl-links a:hover{text-decoration:underline}
   .an-section-label{font-size:.69rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:20px 2px 9px}
   .an-data-note{margin-top:14px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;color:var(--ink-soft);font-size:.78rem;background:rgba(255,255,255,.45)}
   .an-funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;align-items:stretch}
@@ -504,6 +505,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .mst.scratched{color:var(--idle);background:var(--idle-bg)}
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+  .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -545,6 +547,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .reverse-reason{display:flex;flex-direction:column;gap:5px;font-size:.72rem;font-weight:700;color:var(--ink-soft);margin-bottom:10px}
 .reverse-reason .req{font-weight:600;color:var(--alert);text-transform:none;letter-spacing:0}
 .reverse-reason input{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 10px;font:inherit;color:var(--ink)}
+.refund-lines{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:0 0 10px;font-size:.78rem}
+.refund-lines legend{font-size:.72rem;font-weight:700;color:var(--ink-soft);padding:0 4px}
+.refund-lines label{display:flex;gap:8px;align-items:baseline;padding:3px 0;cursor:pointer}
+.refund-lines label .muted{margin-left:auto;white-space:nowrap}
+.refund-lines-note{margin:6px 0 0}
 .reverse-reason input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px rgba(var(--blue-rgb),.11)}
 .refund-warning{font-size:.8rem;color:#80560f;margin:9px 0 0;font-weight:650}
   @media(max-width:620px){.refund-form,.refund-confirm{grid-template-columns:1fr}.refund-form .btn,.refund-confirm .btn{justify-content:center}}
@@ -578,6 +585,12 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .notebox{display:flex;gap:8px;margin-top:6px}
   .notebox input{flex:1;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:9px 12px;font:inherit;font-size:.88rem}
   .notebox input:focus{outline:none;border-color:var(--teal)}
+  /* Pickup set after booking (spec 2026-10-17): the inline date/time form in the Trip block. */
+  .sched input[type=date],.sched input[type=time],.sched input[type=text],.sched select{border:1px solid var(--line);background:var(--paper);color:inherit;border-radius:10px;padding:7px 10px;font:inherit;font-size:.88rem}
+  .sched input:focus{outline:none;border-color:var(--teal)}
+  .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
+  .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
+  .sched .btn-go{margin-top:10px}
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
@@ -638,7 +651,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      palette so it reads as one console. The quote CSS keeps its own token NAMES (--blue,
      --muted, --serif, …) but their VALUES now point at the ops :root system — one edit
      reskins all ~180 .ch-* components. The quote's cool-grey/blue/Bodoni identity is gone;
-     the accent unifies on ops teal, type on Bodoni Moda + Poppins. */
+     the accent unifies on ops teal, type on the one brand face (Source Serif 4). */
   --blue: #63BFD6;      /* Bachelor Button — the book's PRIMARY, restored */
   --blue-rgb: 99,191,214; /* pair rgba(var(--blue-rgb),…) with var(--blue) — a literal
                              teal channel here is how ~30 focus rings ended up glowing
@@ -673,8 +686,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   --r-sm: 9px;
   --shadow-card: 0 1px 2px rgba(40,33,28,.05), 0 1px 3px rgba(40,33,28,.04); /* → ops --shadow-s (warm ink tint) */
   --shadow-pop: 0 8px 26px -12px rgba(40,33,28,.20);                          /* → ops --shadow */
-  --serif: 'CH Bodoni', 'Bodoni Moda', Didot, Georgia, serif; /* → ops display */
-  --sans: 'Poppins', system-ui, sans-serif;             /* → ops body */
+  --serif: var(--display); /* → ops display */
+  --sans: var(--body);    /* → ops body */
 }
 
 .qv, .qv * { box-sizing: border-box; }
@@ -962,6 +975,23 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-exp-prev { display: flex; align-items: center; gap: 8px; }
 .qv .ch-exp-prev .ch-exp-img { width: 72px; height: 48px; border-radius: 4px; margin-top: 6px; }
 .qv .ch-exp-note, .qv .ch-exp-err { font-size: 11.5px; color: var(--red); line-height: 1.35; }
+/* Photo tiles (uploads on): a thumbnail per photo with Replace / Remove, then an "Add photo" tile. */
+.qv .ch-exp-tiles { display: flex; flex-wrap: wrap; gap: 10px; }
+.qv .ch-exp-tiles[hidden] { display: none; }
+.qv .ch-exp-tile { width: 150px; }
+.qv .ch-exp-tile-img { width: 150px; height: 100px; border-radius: var(--r-sm); background: var(--cream); overflow: hidden; display: flex; align-items: center; justify-content: center; text-align: center; }
+.qv .ch-exp-tile-img .ch-exp-img { width: 100%; height: 100%; }
+.qv .ch-exp-tile-img .ch-exp-note { padding: 0 8px; }
+.qv .ch-exp-tile-acts { display: flex; gap: 6px; margin-top: 6px; }
+.qv .ch-exp-tile-acts .ch-btn { flex: 1; justify-content: center; padding-left: 0; padding-right: 0; }
+.qv .ch-exp-tile-add { width: 150px; height: 100px; justify-content: center; }
+.qv .ch-exp-biz-results { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.qv .ch-exp-biz-results:empty { display: none; }
+.qv .ch-exp-biz-result { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.qv .ch-exp-biz-result span { font-size: 12px; color: var(--muted); }
+.qv .ch-exp-biz-result:hover { border-color: var(--teal); }
+.qv .ch-exp-photo-link { display: block; text-align: left; background: none; border: 0; padding: 0; margin-top: 10px; color: var(--teal); font: inherit; font-size: 12.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.qv .ch-exp-photo-link[hidden] { display: none; }
 .qv .ch-exp-err:empty { display: none; }
 .qv .ch-lead-row .ch-input-wrap { width: 150px; }
 .qv .ch-lead-row .ch-lead-amt { width: 90px; }
@@ -1209,7 +1239,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
 .qv .ch-tab.active { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(58,55,57,.12); }
 .qv .ch-output-body { min-height: 120px; }
 .qv .ch-pre { font-family: var(--sans); font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; background: var(--cream); border-radius: var(--r-md); padding: 16px 18px; margin: 0; color: var(--ink); }
-.qv .ch-pre.mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.qv .ch-pre.mono { font-family: var(--mono); font-size: 12.5px; }
 .qv .ch-output-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
 .qv .ch-output-hint { font-size: 12px; color: var(--muted); line-height: 1.45; }
 .qv .ch-output-editor { width: 100%; min-height: 320px; border: 1px solid var(--line); resize: vertical; }
@@ -2147,26 +2177,44 @@ const payreminder=(t,link)=>`Hi ${t.first} 👋 Just a friendly nudge from Ceylo
 const CANCELLABLE=['awaiting_payment','paid','vehicle_confirmed','pickup_confirmed'];
 
 /* attention logic — what an ops agent must act on */
+/* Founder = may move money. The "Refunds waiting" pile is theirs alone. */
+const isFounderUi=()=>!!(state.caps&&state.caps.includes('payments:reverse'));
+/* Pay on the day (owner 2026-10-29/30): confirmed with nothing paid — the customer pays USD cash
+   to the Ceylon Hop team at the first pickup. True until that cash is recorded. A booking still
+   awaiting payment is excluded: a failed pay-on-the-day confirm can leave the arrangement set,
+   and that booking is an ordinary awaiting-payment one (Mark paid moves it to paid). */
+const cashDue=t=>!!t.paymentArrangement&&t.cashDue>0&&t.stage!=='awaiting_payment';
 const reason=t=>{
   /* Ride-board vans carry no ops overlay — there are no flags to tick and no
      status to advance, so they must never sit in the attention badge nagging
      for an action that does not exist. The seat count on the row is the signal. */
   if(t.source==='ride_board')return '';
+  /* Before the closed-stage return on purpose: cancel-then-refund is the common case, and a
+     cancelled booking with money waiting to go back is exactly what a founder must act on. */
+  if(t.refundWaiting>0&&isFounderUi())return 'Refund waiting for your approval';
+  /* Pay on the day, trip done, cash never recorded — the moment ops forget it. */
+  if(t.stage==='completed'&&cashDue(t)){const x=money({amount:t.cashDue,currency:t.currency});return state.caps&&state.caps.includes('payments:act')?`Record ${x} cash · trip done`:`Cash ${x} not recorded yet · trip done`;}
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
   if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Pay on the day: the team collects the cash at today's first pickup. On any other day the
+     vehicle nag still wins — the car is arranged first. */
+  if(cashDue(t)&&t.date===TODAY)return `Collect ${money({amount:t.cashDue,currency:t.currency})} cash · travels today`;
   /* Day one of a deposit trip with the balance still open: the driver is about to go, so this
      outranks the housekeeping reasons below. */
   if(t.balance>0&&t.date&&t.date===TODAY)return 'Balance due — travels today';
   if(t.stage==='paid')return 'Vehicle not confirmed yet';
   if(t.stage==='vehicle_confirmed'&&!t.updated)return 'Customer not contacted yet';
+  if(cashDue(t))return `Cash on the day · ${money({amount:t.cashDue,currency:t.currency})}`;
   return '';
 };
 const isAttn=t=>!!reason(t);
 
 const GROUPS=[
   {id:'all',label:'All open',c:'#241f1d'},
+  /* Founder only, and it includes closed bookings (spec 2026-10-17 §4). */
+  {id:'refunds',label:'Refunds waiting',c:'#b4232c',founder:true},
   {id:'pay',label:'Awaiting payment',c:'#c7841f'},
   {id:'paid',label:'Needs vehicle',c:'#cf4a2f'},
   {id:'ready',label:'Ready',c:'#0a8f86'},
@@ -2182,7 +2230,8 @@ const inGroup=(t,g)=>{
   /* "All open" is the day's work: everything still to come, dated or not. The past piles have
      their own chips below, so a row that has fallen out of the future appears in exactly one
      place rather than nagging from the middle of the timeline. */
-  if(g==='all')return !CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t);
+  if(g==='all')return (!CLOSED.includes(t.stage)&&!isExpired(t)&&!isOverdue(t))||(t.stage==='completed'&&cashDue(t)); /* + a finished pay-on-the-day trip whose cash isn't recorded */
+  if(g==='refunds')return t.refundWaiting>0;
   /* The stage chips answer "what do I do next", so they are scoped to live rows too: a trip
      whose date is gone needs closing, not a vehicle; an unpaid cart past its date cannot be
      chased for money. 11 of 16 unpaid rows in prod were exactly that — dead, and listed. */
@@ -2207,9 +2256,10 @@ const productType=t=>{
 };
 /* Two views of one queue: 'date' is the day-grouped timeline, where the stage chip decides what
    shows; 'recent' is a feed of what came in — every stage, closed and expired included — so the
-   chip does not apply there. Type and channel filter both. */
+   chip does not apply there. Type and channel filter both. A typed search is a lookup, so it
+   spans every stage too (owner 2026-10-29: a cancelled CH-NQ66B was unfindable under "All open"). */
 const inQueue=(t,s)=>{
-  if(s.view!=='recent'&&!inGroup(t,s.group))return false;
+  if(s.view!=='recent'&&!(s.q||'').trim()&&!inGroup(t,s.group))return false;
   if(s.chan&&t.chan!==s.chan)return false;
   if(s.type&&productType(t)!==s.type)return false;
   return true;
@@ -2278,9 +2328,25 @@ function rowToTicket(row){
     /* Team test booking (TEAM_EMAILS): labelled, kept in the list, left out of the counts. */
     test:!!row.isTest,
     created:row.createdAt||null, serviceType:row.serviceType||null,
+    paidAt:row.paidAt||null,
+    /* Σ refund requests waiting for a founder (spec 2026-10-17 §4). */
+    refundWaiting:row.refundWaitingCents||0,
+    /* Pay on the day: the customer pays cash at the first pickup; cashDue is what is still owed. */
+    paymentArrangement:row.paymentArrangement||null, cashDue:row.cashDueCents||0,
   };
 }
 const isBoard=t=>t&&t.source==='ride_board';
+/* Dateless capture Phase 3 (spec 2026-10-17 §5). How long an undated booking has waited since
+   the money landed, in calendar days; amber from 7, when the spec's later reminder is due. */
+const paidAgo=t=>{
+  if(!t.paid||!t.paidAt)return null;
+  const days=Math.round((Date.parse(TODAY+'T12:00:00')-Date.parse(isoOf(new Date(t.paidAt))+'T12:00:00'))/864e5);
+  if(!(days>=0))return null;
+  return {txt:days===0?'paid today':`paid ${days} day${days===1?'':'s'} ago`,late:days>=7};
+};
+/* A private transfer with its date set but the pickup time left for later. Trips never carry a
+   time and shared seats always do, so only transfers; past and closed rows have nothing to confirm. */
+const timeTbc=t=>!isBoard(t)&&t.mode==='single'&&!!t.date&&t.date>=TODAY&&!t.time&&!CLOSED.includes(t.stage);
 /* A confirmed van is mapped onto the 'paid' STAGE so it groups under "Needs
    vehicle" with real bookings — but it must not inherit the word "Paid", which
    would contradict the money block whenever a card is merely held or has failed.
@@ -2291,10 +2357,13 @@ const isBoard=t=>t&&t.source==='ride_board';
    that can no longer be added. */
 const boardShut=t=>!!(t&&t.board&&t.board.listStatus!=='confirmed'&&t.board.cutoffAt&&Date.parse(t.board.cutoffAt)<=Date.now());
 const stageLabel=t=>{
+  if(!isBoard(t)&&t.stage==='paid'&&cashDue(t))return 'Confirmed · cash due';
   if(!isBoard(t))return STAGE[t.stage]?STAGE[t.stage].label:t.stage;
   if(t.board&&t.board.listStatus==='confirmed')return 'Van confirmed';
   return boardShut(t)?'Names closed':'Gathering names';
 };
+/* The sheet pipeline's step name — the Paid step is not paid while the cash is still owed. */
+const pipeLabel=(t,s)=>s==='paid'&&cashDue(t)?'Cash due':STAGE[s].short;
 /* "3 of 3 seats · van runs" — the one number that says whether this van goes. */
 const boardSeats=t=>{
   const b=t.board;if(!b)return '';
@@ -2337,6 +2406,8 @@ function routeStateFromUrl(canQuote){
   if(url.hash==='#quote'&&canQuote)return { route:'quote', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#quotes'&&canQuote)return { route:'quotes', routeQuoteId:null, routeBookingId:null };
   if(url.hash==='#analytics'&&state.caps&&state.caps.includes('analytics:view'))return { route:'analytics', routeQuoteId:null, routeBookingId:null };
+  /* Health (spec 2026-10-13 §7): founder-only system page, gated exactly like Analytics. */
+  if(url.hash==='#health'&&state.caps&&state.caps.includes('analytics:view'))return { route:'health', routeQuoteId:null, routeBookingId:null };
   /* Rates (spec 2026-09-26 §5): founder-only, gated like the builder button it replaced (margin:view). */
   if(url.hash==='#rates'&&state.caps&&state.caps.includes('margin:view'))return { route:'rates', routeQuoteId:null, routeBookingId:null };
   /* Experiences (spec 2026-10-06 D14): the partner catalogue, founder + ops (experiences:manage). */
@@ -2351,6 +2422,7 @@ function syncUrl(route, quoteId, bookingId, mode){
   if(route==='quote')url.hash='#quote';
   else if(route==='quotes')url.hash='#quotes';
   else if(route==='analytics')url.hash='#analytics';
+  else if(route==='health')url.hash='#health';
   else if(route==='lookup')url.hash='#lookup';
   else if(route==='rates')url.hash='#rates';
   else if(route==='experiences')url.hash='#experiences';
@@ -2485,6 +2557,7 @@ function collapseRail(){
    Quotes = price tag (with the tag's eyelet), Lookup = magnifier, Analytics = trend line over an axis,
    Rates = sliders (the levers the founder sets). */
 const NAV_ICONS={
+  health:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg>',
   tickets:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2"/><path d="M13 11v2"/><path d="M13 17v2"/></svg>',
   quote:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7M9 16h5"/></svg>',
   quotes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1" fill="currentColor" stroke="none"/></svg>',
@@ -2507,12 +2580,15 @@ function setNav(){
      shows, or it points at a list that does not contain them. Counting every ticket made it
      read ~60 against a queue whose forward book was 10. Badge only when there's something to
      act on — a red "0" is noise. */
-  const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;
+  /* A founder's badge also counts refunds waiting on them — including closed bookings, which
+     "All open" leaves out. Each row counts once. */
+  const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;
   $('#nav').innerHTML=
     `<button data-route="tickets" class="${state.route==='tickets'?'active':''}" title="Bookings">${NAV_ICONS.tickets}<span class="nav-txt">Bookings</span>${attn?`<span class="count" id="nav-attn">${attn}</span>`:''}</button>`+
     (canQuote?`<button data-route="quotes" class="${(state.route==='quotes'||state.route==='quote')?'active':''}" title="Quotes">${NAV_ICONS.quotes}<span class="nav-txt">Quotes</span></button>`:'')+
     (canLookup?`<button data-route="lookup" data-testid="lookup-nav" class="${state.route==='lookup'?'active':''}" title="Lookup">${NAV_ICONS.lookup}<span class="nav-txt">Lookup</span></button>`:'')+
     (canAnalytics?`<button data-route="analytics" data-testid="analytics-nav" class="${state.route==='analytics'?'active':''}" title="Analytics">${NAV_ICONS.analytics}<span class="nav-txt">Analytics</span></button>`:'')+
+    (canAnalytics?`<button data-route="health" data-testid="health-nav" class="${state.route==='health'?'active':''}" title="Health">${NAV_ICONS.health}<span class="nav-txt">Health</span></button>`:'')+
     (canRates?`<button data-route="rates" data-testid="rates-nav" class="${state.route==='rates'?'active':''}" title="Rates">${NAV_ICONS.rates}<span class="nav-txt">Rates</span></button>`:'')+
     (canExperiences?`<button data-route="experiences" data-testid="experiences-nav" class="${state.route==='experiences'?'active':''}" title="Experiences">${NAV_ICONS.experiences}<span class="nav-txt">Experiences</span></button>`:'');
 }
@@ -2520,6 +2596,7 @@ function setNav(){
 function ticketRow(t,i){
   const st=STAGE[t.stage],attn=isAttn(t),rs=reason(t);
   const board=isBoard(t);
+  const pa=state.view==='date'&&dayGroup(t)==='No date yet'?paidAgo(t):null;
   /* A board row is one VAN, not one customer — say so on the row itself, and use
      the van glyph instead of the booking-channel icon. */
   const lead=board
@@ -2527,7 +2604,7 @@ function ticketRow(t,i){
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
@@ -2536,7 +2613,7 @@ function ticketRow(t,i){
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
-  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${STAGE[t.stage]?STAGE[t.stage].label:esc(t.stage)}">
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${esc(stageLabel(t))}">
     ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
@@ -2544,9 +2621,9 @@ function ticketRow(t,i){
       <div class="tk-meta">${meta}${booked}</div>
     </div>
     <div class="tk-side">
-      <span class="pill"><span class="pd"></span>${esc(stageLabel(t))}</span>
-      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}</div></div>
+      <span class="pill${t.stage==='paid'&&cashDue(t)?' pill-bal':''}"><span class="pd"></span>${esc(stageLabel(t))}</span>
+      ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}${cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''}
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
 }
@@ -2604,7 +2681,7 @@ function viewTickets(){
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
     <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · ${recent?'newest first, every stage':'paid &amp; upcoming, website &amp; WhatsApp in one timeline'} · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
-    ${recent?'':`<div class="filterbar">${GROUPS.map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
+    ${recent?'':`<div class="filterbar">${GROUPS.filter(g=>!g.founder||isFounderUi()).map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
   if(recent)html+=list.sort(byRecent).map(ticketRow).join('');
   else DAYGROUPS.forEach(g=>{
     const rows=buckets[g].sort((a,b)=>tkey(a).localeCompare(tkey(b)));
@@ -3237,6 +3314,104 @@ document.addEventListener('click',e=>{
   if(booking){openDetail(booking.dataset.anbooking);return;}
 });
 
+/* ── Health (spec 2026-10-13 §7): what only our process and database know ──
+   Heartbeats, alert kinds, abandoned carts and usage against the free-tier caps, read once per
+   entry from GET /admin/ops/health (never cached; Refresh re-fetches). Outage detection and vendor
+   metrics live in the vendor consoles — linked at the bottom — so this is the place to start from. */
+const HL_DB_FREE_BYTES=500e6; /* Supabase free plan — display only; the API reports bytes */
+function hlAgo(iso){
+  if(!iso)return 'never';
+  const s=Math.max(0,Math.round((Date.now()-Date.parse(iso))/1000));
+  if(s<60)return s+' s ago';
+  const m=Math.round(s/60); if(m<60)return m+' min ago';
+  const h=Math.round(m/60); if(h<48)return h+' h ago';
+  return Math.round(h/24)+' d ago';
+}
+function hlBytes(b){
+  if(b==null)return '—';
+  if(b<1e6)return Math.round(b/1e3)+' KB';
+  if(b<1e9)return (b/1e6).toFixed(b<1e8?1:0).replace(/\.0$/,'')+' MB';
+  return (b/1e9).toFixed(2)+' GB';
+}
+function hlBar(n,limit){
+  const pct=limit?Math.min(100,Math.round(100*n/limit)):0;
+  const cls=pct>=100?' bad':pct>=70?' warn':'';
+  return `<div class="hl-bar${cls}" role="img" aria-label="${pct}% of limit"><i style="width:${pct}%"></i></div>`;
+}
+function hlTile(label,value,sub,extra){
+  return anTile(label,value,(sub?`<div class="an-sub">${sub}</div>`:'')+(extra||''));
+}
+function hlBeat(label,beat){
+  if(!beat)return hlTile(label,'—','no ledger wired');
+  const when=beat.lastRunAt?hlAgo(beat.lastRunAt):'never';
+  return hlTile(label,beat.stale?`<span class="hl-stale">${when}</span>`:when,beat.stale?'STALE — check the cron':'running');
+}
+function hlKindList(rows,empty){
+  if(!rows||!rows.length)return `<div class="an-empty">${empty}</div>`;
+  return `<ul class="hl-list">${rows.map(r=>`<li><span>${esc(r.kind)}</span><span class="an-n">${r.keys}</span></li>`).join('')}</ul>`;
+}
+function hlHtml(h){
+  const e=h.email, m=h.maps, rl=h.rateLimit, c=h.carts;
+  const mapsRows=Object.keys(m.month.byKey).sort().map(k=>`<li><span>${esc(k.replace(/^maps\./,''))}</span><span class="an-n">${m.today.byKey[k]||0} <span class="an-sub">today</span> · ${m.month.byKey[k]} <span class="an-sub">month</span></span></li>`).join('');
+  return `
+    <div class="an-tiles">
+      ${hlTile('API build',h.build.commit?esc(h.build.commit):'local','up '+hlAgo(h.build.startedAt).replace(' ago',''))}
+      ${hlTile('Database',hlBytes(h.db.sizeBytes),h.db.sizeBytes==null?'not on Postgres':'of '+hlBytes(HL_DB_FREE_BYTES)+' free plan',h.db.sizeBytes==null?'':hlBar(h.db.sizeBytes,HL_DB_FREE_BYTES))}
+      ${hlBeat('Payments watchdog',h.jobs&&h.jobs.watchdog)}
+      ${hlBeat('Daily tick',h.jobs&&h.jobs.notificationsTick)}
+    </div>
+    <div class="an-section-label">Email · Resend plan</div>
+    <div class="an-tiles">
+      ${hlTile('Sent today',e.today.sent+' <span class="an-sub">/ '+e.dailyLimit+'</span>','daily cap · pages at 70 %',hlBar(e.today.sent,e.dailyLimit))}
+      ${hlTile('Sent this month',e.month.sent+' <span class="an-sub">/ '+e.monthlyLimit+'</span>','monthly cap',hlBar(e.month.sent,e.monthlyLimit))}
+      ${hlTile('Failed today',e.today.failed,'provider refused or timed out')}
+      ${hlTile('Suppressed today',e.today.suppressed,'stopped by the guard / allowlist')}
+    </div>
+    <div class="an-section-label">Google Maps · live calls (cache hits are free)</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">10,000 free events per SKU per month on Google's current pricing — set the hard quota caps in the Cloud console.</p>
+        <div class="an-tiles">${hlTile('Today',m.today.total,'all methods')}${hlTile('This month',m.month.total,'all methods')}</div>
+        ${mapsRows?`<ul class="hl-list">${mapsRows}</ul>`:'<div class="an-empty">No live Google calls counted this month.</div>'}
+      </div>
+      <div class="an-card"><p class="an-cap">Traffic turned away and carts left open.</p>
+        <div class="an-tiles">
+          ${hlTile('429s today',rl.refusedToday,'per-IP write limit hit')}
+          ${hlTile('429s this month',rl.refusedMonth,'')}
+          ${hlTile('Pending carts',c.paymentPending,c.paymentPendingLast24h+' started in the last 24 h')}
+          ${hlTile('Drafts',c.drafts,'never reached checkout')}
+        </div>
+      </div>
+    </div>
+    <div class="an-section-label">Alerts · distinct problems in the ledger</div>
+    <div class="an-grid">
+      <div class="an-card"><p class="an-cap">Last 24 hours</p>${h.alerts?hlKindList(h.alerts.last24h,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+      <div class="an-card"><p class="an-cap">Last 7 days</p>${h.alerts?hlKindList(h.alerts.last7d,'Nothing alerted.'):'<div class="an-empty">No alert ledger wired.</div>'}</div>
+    </div>
+    <div class="an-section-label">Vendor dashboards</div>
+    <div class="an-card hl-links">${(h.links||[]).map(l=>`<a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join('')}</div>`;
+}
+function viewHealth(){
+  $('#topbar').innerHTML='';
+  const head=`<div class="qhead pagehead"><h1>Health</h1></div>
+    <p class="pagesub"><b>System health</b> · jobs, alerts, carts and usage against the free-tier caps · days are UTC <span class="an-updated"></span></p>
+    <div class="an-controls"><button type="button" class="qfilter" data-hlrefresh>Refresh</button></div>`;
+  const view=$('#view');
+  view.innerHTML=head+'<div class="an-tiles"><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div><div class="an-skel"></div></div>';
+  api.get('/health').then(h=>{
+    if(state.route!=='health')return; /* stale response — view moved on */
+    view.innerHTML=head+hlHtml(h);
+    const updated=view.querySelector('.an-updated');
+    if(updated)updated.textContent=' · Updated '+fmtDateTime(h.generatedAt);
+  }).catch(()=>{
+    if(state.route!=='health')return;
+    view.innerHTML=head+'<div class="an-empty">Couldn’t load system health — check the connection and try again.</div>';
+  });
+}
+document.addEventListener('click',e=>{
+  if(state.route!=='health')return;
+  if(e.target.closest('#view [data-hlrefresh]'))viewHealth();
+});
+
 function openOpsQuote(id){
   if(!id||!state.caps||!state.caps.includes('quote:manage'))return;
   setShellRoute('quote',{ quoteId:id });
@@ -3316,6 +3491,8 @@ function lookupVerdictText(v,cur){
   const when=v.at?lookupTime(v.at):null,ph=v.payhere||{},hand=v.manual||{},r=v.refund;
   const refund=r?'Refund '+r.state+': '+m(r.refundedCents)+' of '+m(r.capturedCents):null;
   let detail='';
+  /* Pay on the day: nobody was meant to check out, so any unpaid verdict leads with the cash. */
+  const onTheDayDue=['declined','reached_no_answer','checkout_no_trace','never_started'].includes(v.kind)&&(v.warnings||[]).includes('cash_due_on_the_day');
   switch(v.kind){
     case 'paid':detail=join([v.amount!=null&&m(v.amount),when,ph.method,ph.paymentId&&'PayHere '+ph.paymentId,counts+' before it'+since]);break;
     case 'paid_by_hand':detail=join([v.amount!=null&&m(v.amount),when,hand.method&&payMethodLabel(hand.method),hand.settledBy?'recorded by '+hand.settledBy:'who recorded it wasn’t recorded',hand.reference?'ref '+hand.reference:'no reference']);break;
@@ -3327,9 +3504,10 @@ function lookupVerdictText(v,cur){
     case 'paid_twice':detail=(v.captures||[]).map(x=>x.via==='manual'?(x.method?payMethodLabel(x.method):'Paid')+' by hand':'PayHere '+(x.id||'payment')).join(' and ');break;
     case 'money_back':detail=v.chargebackAt?'Charged back on '+lookupTime(v.chargebackAt)+' — the booking may still say Paid.':(refund||'');break;
   }
+  if(onTheDayDue)detail='Booked as pay on the day. The customer pays the Ceylon Hop team in cash at the first pickup; use Record cash collected when it’s collected.';
   const c=v.cancellation;
   return {
-    title:({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
+    title:onTheDayDue?'Pay on the day: cash due':({paid:'Paid by card',paid_by_hand:'Paid by hand',declined:'Declined — still unpaid',reached_no_answer:'Reached PayHere, no answer',
       checkout_no_trace:'Started checkout, nothing after',never_started:'Never started checkout',paid_elsewhere:'Paid on another booking',
       paid_twice:'Paid twice',money_back:'Money went back'})[v.kind]||String(v.kind),
     detail,
@@ -3339,6 +3517,7 @@ function lookupVerdictText(v,cur){
       money_on_unpaid_booking:'Money received, but the booking still says unpaid — check it.',
       money_after_cancel:'Money arrived after the booking was cancelled — a refund may be owed.',
       paid_status_without_payment:'The booking says paid, but no payment is recorded.',
+      cash_due_on_the_day:'Pay on the day: cash is due to the Ceylon Hop team. Use Record cash collected when it\'s collected.',
     })[w]||String(w)),
   };
 }
@@ -3359,7 +3538,7 @@ function lookupRowLabel(row){
       return s;
     }
     case 'email':return ({confirmation:'Email: booking confirmation',payment_failed:'Email: payment didn’t go through',payment_recovery:'Email: payment reminder',
-      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice'})[row.emailKind]||'Email: '+row.emailKind;
+      deposit_received:'Email: deposit received',balance_received:'Email: balance received',trip_reminder:'Email: trip reminder',review_request:'Email: review request',no_show_notice:'Email: no-show notice',pay_on_day_confirmed:'Email: pay on the day confirmed'})[row.emailKind]||'Email: '+row.emailKind;
     case 'refund':return ({requested:'Refund requested — '+m(),sent:'Refund sent to PayHere',confirmed:'Refund confirmed — '+m(),
       failed:'PayHere refund failed',cancelled:'Refund request cancelled'})[row.step]||'Refund '+row.step;
   }
@@ -3447,7 +3626,7 @@ function lookupOtherBookingsHtml(list){
 function trackingKindLabel(kind){
   return ({confirmation:'booking confirmation',details_needed:'details needed',booking_confirmed:'booking confirmed',cancellation:'cancellation',refund:'refund',
     no_show_notice:'no-show notice',trip_reminder:'trip reminder',review_request:'review request',payment_recovery:'payment reminder',
-    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received'})[kind]||String(kind||'email').replaceAll('_',' ');
+    payment_failed:'payment failed',deposit_received:'deposit received',balance_received:'balance received',pay_on_day_confirmed:'pay on the day confirmed'})[kind]||String(kind||'email').replaceAll('_',' ');
 }
 function trackingEventLabel(row){
   if(row.source==='booking_transition')return 'Booking: '+String(row.fromStatus).replaceAll('_',' ')+' → '+String(row.toStatus).replaceAll('_',' ');
@@ -3625,7 +3804,9 @@ function buildActivity(t,d){
   (d?.payments||[]).forEach(p=>{if(p.status==='succeeded')acts.push(['Payment',`Received · ${money({amount:p.amount,currency:p.currency})}`]);});
   (d?.refunds||[]).forEach(r=>{if(r.status==='manual_confirmed')acts.push([r.confirmedAt?fmtDateTime(r.confirmedAt):'Refund',`Refund confirmed · ${money({amount:r.amountCents,currency:r.currency})} · ${r.confirmedBy||'unknown actor'} · ${r.gatewayRef||'no reference'}`]);});
   if(d?.ops?.vehicleConfirmedAt)acts.push([fmtDateTime(d.ops.vehicleConfirmedAt),'Vehicle confirmed']);
-  if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${STAGE[t.stage].label}”`]);
+  if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${stageLabel(t)}”`]);
+  (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
+  (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
   t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }
@@ -3633,15 +3814,20 @@ function buildActivity(t,d){
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
-  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. The leg rows
-     below render every consecutive stop pair as driven — this line is what contradicts a gap. */
+  /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. */
   const cov=d?.coverage
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[];
+    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
     let rows='';
     for(let i=0;i<stops.length-1;i++){
+      /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
+         pay link left out. Never brief a driver for it. */
+      if(gaps.includes(i)){
+        rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
+        continue;
+      }
       const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
@@ -3660,6 +3846,8 @@ function legsHtmlFor(d){
    refundable, and re-offered the refund button. The server refused the second request
    (refund_exceeds_captured) — the dashboard was inviting an error it could not explain.
    `api_failed` is deliberately in neither set: PayHere told us the money did not move. ── */
+/* Engine rate-card tiers → what ops call them (the quote tool's VEHICLE_LABELS, keyed by tier). */
+const VEHICLE_NAME={car:'Car',van:'Van 6 Seat',van9:'Van 9 Seat',van14:'Van 14 Seat',custom:'Custom'};
 const REFUND_SETTLED=['manual_confirmed','api_confirmed'];
 const REFUND_IN_FLIGHT=['manual_pending','api_processing'];
 const REFUND_LABEL={
@@ -3688,6 +3876,26 @@ function refundTargets(d){
     id:p.id,purpose:p.purpose,provider:p.provider,amount:p.amount,
     remaining:Math.max(0,p.amount-live.filter(r=>r.paymentId===p.id).reduce((n,r)=>n+r.amountCents,0)),
   }));
+}
+/* A typed refund amount → integer cents, or null when it is not a usable amount (spec 2026-10-17
+   §5). Read from the decimal STRING, never parseFloat: "19.99" must be 1999, not 1998.99…
+   Accepts "25", "25.5", "25.50", "$1,200.10"; refuses 0, negatives, >2 decimals, anything else.
+   Commas are THOUSANDS separators only (1,200 — groups of three): "12,50" is refused, not read as
+   1250, because a comma used as a decimal point would otherwise overpay by 100x.
+   Empty is the caller's business — it means "the full remaining amount". */
+function parseRefundCents(raw){
+  const s=String(raw==null?'':raw).trim().replace(/^\$/,'');
+  const m=s.match(/^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/);
+  if(!m)return null;
+  const cents=Number(m[1].replace(/,/g,''))*100+Number((m[2]||'').padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents>0?cents:null;
+}
+/* Filed less than 24h before the trip starts, or after. Display only — mirrors isLateRequest() in
+   domain/reversalWindow.ts. A booking with no trip date is never late. */
+function refundIsLate(t, r){
+  const at=tripStartMs(t),req=Date.parse((r&&r.requestedAt)||'');
+  if(at===null||!Number.isFinite(req))return false;
+  return req>=at-REFUND_CUTOFF_MS;
 }
 /* How an operator tells captures apart: a deposit and a balance by kind, anything else by how the
    money was taken (card through PayHere, or cash / bank transfer recorded by hand). */
@@ -3741,17 +3949,16 @@ function opsGraceOpen(d, now){
   return age < REFUND_CUTOFF_MS;
 }
 
-/* Owner rule 2026-08-02: an ops agent may cancel/refund up to 24 hours before the trip starts
-   and must give a reason; a founder may at any time. Mirrors mayReverse() on the server. */
+/* Owner rule 2026-08-02: an ops agent may CANCEL up to 24 hours before the trip starts and must
+   give a reason; a founder may at any time. Mirrors mayReverse() on the server. Refund requests
+   are not held to it (owner, 2026-10-17) — this guards cancelling only. */
 function mayReverseNow(t, d){
   if(state.caps && state.caps.includes('payments:reverse')) return true; // founder, unlimited
   const detail = d || state.detailData;
   if(state.caps && state.caps.includes('bookings:operate')) return opsGraceOpen(detail) || opsWindowOpen(t);
   return false;
 }
-/* Who may reverse, and whether the ops time window has closed on them. Shared by the refund
-   request form and the cancel block, which were one block until 2026-08-07 and must keep
-   answering this identically — a cancel offered where a refund is refused would be incoherent. */
+/* Who may CANCEL, and whether the ops time window has closed on them. Refund requests are not held to it (owner, 2026-10-17). */
 function reverseGate(t, d){
   const founder = !!(state.caps && state.caps.includes('payments:reverse'));
   const opsAgent = !founder && !!(state.caps && state.caps.includes('bookings:operate'));
@@ -3762,53 +3969,80 @@ function reverseGate(t, d){
        the rule that a founder is never time-limited. */
     blocked: opsAgent && !opsGraceOpen(d) && !opsWindowOpen(t),
     why: tripStartMs(t) === null
-      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still do it'
-      : 'The trip starts in under 24 hours — only a founder can cancel or refund from here',
+      ? 'This booking has no trip date, so the 24-hour rule cannot be checked — a founder can still cancel it'
+      : 'The trip starts in under 24 hours — only a founder can cancel from here',
   };
 }
 
-/* The refund entry point. Lives INSIDE the Refunds block (2026-08-07) rather than at the foot of
-   the sheet: it used to sit in "Cancel & refund" while everything that completes a refund sat two
-   blocks above, and requesting one HIDES this button — a full-amount pending row reserves the
-   balance, so `remaining` drops to 0. Press it and the control vanishes while its follow-up
-   actions are off-screen upward, which reads exactly like a broken button. Owner lost an hour to
-   that on CH-MCF8D. Request and completion now sit in one block, in reading order. */
+/* The refund request form (spec 2026-10-17 §5). Founder and ops may ask for any amount up to what
+   is left; only a founder's press also moves the money. Not held to the 24-hour rule — a founder
+   approves every request, and late ones are flagged on the row instead. Lives INSIDE the Refunds
+   block, above the ledger, so a request and its follow-up actions sit in reading order (2026-08-07). */
 function refundRequestFor(t, d){
-  const g = reverseGate(t, d);
-  if(!g.allowed) return '';
-  const s = refundSummary(d);
-  if(s.remaining <= 0) return '';            // nothing left to ask for; the ledger below says why
-  /* Whether THIS operator can move money decides what the button is called and what it does — an
-     operator without payments:reverse can only file the request. Same capability the pending-row
-     controls gate on, read here because this is a different function. */
-  const mayFire = !!(state.caps && state.caps.includes('payments:reverse'));
-  /* "Request refund", not "Refund $X in full". The old label promised the thing the button does
-     NOT do: it files an intent and moves no money, and the control that moves money is a separate
-     press on the row it creates. The owner read it as done three times in one evening — twice
-     while actively debugging the refund flow, which is about as fair a test as a label can get.
-     Moving the controls closer (this change) helps; a label that stops over-promising helps more.
-     "Request" is also the word the rest of the flow already uses — the row it creates is a refund
-     request, and its sibling control is "Cancel request". */
-  if(g.blocked){
-    return `<div class="reverse-actions"><button class="btn btn-noshow" disabled title="${esc(g.why)}">Request refund ${money({amount:s.remaining,currency:s.currency})}</button></div>
-      <p class="muted" style="margin:8px 0 0">${esc(g.why)}.</p>`;
-  }
+  const founder=!!(state.caps&&state.caps.includes('payments:reverse'));
+  const opsAgent=!founder&&!!(state.caps&&state.caps.includes('bookings:operate'));
+  if((!founder&&!opsAgent)||isBoard(t))return '';
+  const s=refundSummary(d);
+  if(s.remaining<=0)return '';            // nothing left to ask for; the ledger below says why
+  const verb=founder?'Refund':'Request refund';
+  const tip=founder?'Refunds through PayHere immediately — there is no undo':'Files a refund request — a founder approves it before any money moves';
   const targets=refundTargets(d);
-  if(targets.length>1){
-    const buttons=targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${mayFire?'Refunds this payment through PayHere immediately — there is no undo':'Files a refund request for this payment for someone who can move the money'}">${mayFire?'Refund':'Request refund:'} ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('');
-    return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions">${buttons}</div>`;
-  }
-  /* Its own reason field, not one shared with Cancel booking. The two blocks are adjacent, and a
-     reason typed for a cancellation then left behind would be silently attached to a refund —
-     both are written to permanent audit records. One extra id is cheap insurance. */
-  return `<label class="reverse-reason">Reason <span class="req">required</span>
-      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer's flight was cancelled">
-    </label>
-    <div class="reverse-actions"><button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${mayFire?'Refunds through PayHere immediately — there is no undo':'Files a FULL refund request for someone who can move the money'}">${mayFire?'Refund':'Request refund'} ${money({amount:s.remaining,currency:s.currency})}</button></div>`;
+  const several=targets.length>1;
+  const amountBox=`<label class="reverse-reason">Amount <span class="muted">empty = the full remaining amount</span>
+      <input id="refundamount" inputmode="decimal" autocomplete="off" placeholder="${several?'Full remaining of the payment you pick':esc(money({amount:s.remaining,currency:s.currency}))}">
+    </label>`;
+  /* Its own reason field, not one shared with Cancel booking: a reason typed for a cancellation
+     and left behind would be silently attached to a refund — both are permanent audit records. */
+  const reasonBox=`<label class="reverse-reason">Reason <span class="req">required</span>
+      <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer dropped the Kandy → Ella leg">
+    </label>`;
+  const buttons=several
+    ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
+    : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${tip}">${verb}</button>`;
+  return `${several?'':refundLinesHtml(d)}${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
 }
+
+/* The leg picker (refund approvals phase 2): tick legs/extras and the Amount box fills from the
+   booking's frozen line prices — each already its share of what was charged, worked out by the
+   API (refundLinesFor). Ticking every line empties the box, which means the full remaining amount.
+   A convenience only: the amount stays editable and a founder approves every request. Not offered
+   when the booking has several payments to refund against (deposit + balance). */
+function refundLinesHtml(d){
+  const rl=d&&d.refundLines,lines=rl&&rl.lines;
+  if(!Array.isArray(lines)||lines.length<2)return '';
+  return `<fieldset class="refund-lines"><legend>Refund part of the trip <span class="muted">ticks fill the amount</span></legend>
+    ${lines.map((l,i)=>`<label><input type="checkbox" data-refund-line="${i}"><span>${esc(l.label)}</span><span class="muted">${money({amount:l.amountCents,currency:rl.currency})}</span></label>`).join('')}
+    <p class="refund-lines-note muted" hidden></p></fieldset>`;
+}
+/* A tick re-adds the ticked lines into #refundamount and names them after whatever reason was
+   typed; the part it wrote last time (data-auto) is swapped, never what the operator typed. */
+document.addEventListener('change',e=>{
+  if(!e.target.matches||!e.target.matches('[data-refund-line]'))return;
+  const d=state.detailData,lines=(d&&d.refundLines&&d.refundLines.lines)||[];
+  const picked=[...document.querySelectorAll('[data-refund-line]')].filter(b=>b.checked).map(b=>lines[Number(b.dataset.refundLine)]).filter(Boolean);
+  const s=refundSummary(d),cur={currency:s.currency};
+  const all=picked.length===lines.length;
+  const sum=picked.reduce((n,l)=>n+l.amountCents,0);
+  const capped=!all&&sum>s.remaining;
+  const amountEl=$('#refundamount');
+  if(amountEl)amountEl.value=all||!picked.length?'':((capped?s.remaining:sum)/100).toFixed(2);
+  const note=document.querySelector('.refund-lines-note');
+  if(note){
+    note.textContent=all?'Every line ticked — the full remaining amount.'
+      :capped?`Ticked lines come to ${money({...cur,amount:sum})}, but only ${money({...cur,amount:s.remaining})} is left — filled that.`:'';
+    note.hidden=!note.textContent;
+  }
+  const reasonEl=$('#refundreason');
+  if(reasonEl){
+    const prev=reasonEl.dataset.auto||'';
+    let typed=reasonEl.value;
+    if(prev&&typed.endsWith(prev))typed=typed.slice(0,-prev.length);
+    typed=typed.replace(/\s+$/,'');
+    const auto=picked.length?(typed?' — ':'')+'Refunding: '+picked.map(l=>l.label).join('; '):'';
+    reasonEl.value=(typed+auto).slice(0,500);
+    reasonEl.dataset.auto=reasonEl.value.endsWith(auto)?auto:'';
+  }
+});
 
 function reverseActionsFor(t, d){
   const g = reverseGate(t, d);
@@ -3841,10 +4075,11 @@ function settledByHand(d) {
 }
 
 function refundHtmlFor(t,d){
-  if(!state.caps||!state.caps.includes('payments:act'))return '';
+  if(!state.caps||!state.caps.includes('bookings:read'))return '';
   const s=refundSummary(d),refunds=d?.refunds||[];
 
   const mayFire=state.caps.includes('payments:reverse');
+  const mayRequest=state.caps.includes('bookings:operate');
   const byHand=settledByHand(d);
   const rows=refunds.slice().reverse().map(r=>{
     /* Fall back to the raw status rather than a label. The old ternary ended in :'Cancelled',
@@ -3861,7 +4096,19 @@ function refundHtmlFor(t,d){
        retried from here — the money may already have moved. Mirrors the refund_api_indeterminate
        alert, which says the same thing in the same words. */
     const stuck=r.status==='api_processing'
-      ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`:'';
+      ?(mayFire
+        ?`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. Do not retry it; find the payment in PayHere and either confirm this row with its reference or cancel it.</p>`
+        :`<p class="refund-warning">Check PayHere before doing anything else — this refund was sent and we never learned the outcome. A founder must resolve it; do not request it again.</p>`):'';
+    /* Full or partial at a glance (spec 2026-10-17 §5): an empty amount box means "everything",
+       and a founder approving quickly must see which one this is. */
+    const scope=r.status==='manual_pending'
+      ?`<p class="refund-meta">${r.amountCents>=s.captured?'Full refund':`Partial — ${money({amount:r.amountCents,currency:r.currency})} of ${money({amount:s.captured,currency:s.currency})} paid`}</p>`:'';
+    /* Display only: the driver may already be committed (spec §3). */
+    const late=r.status==='manual_pending'&&refundIsLate(t,r)?'<p class="refund-warning">Late — trip starts in under 24h</p>':'';
+    /* Ops filed it (or can see it) but cannot move money: say who acts next, and let them withdraw it. */
+    const waiting=r.status==='manual_pending'&&!mayFire&&mayRequest?`
+      <p class="refund-meta">Waiting for a founder to approve</p>
+      <div class="refund-confirm"><button class="btn btn-noshow" data-act="refundcancel" data-id="${esc(t.id)}" data-refund-id="${esc(r.id)}">Cancel request</button></div>`:'';
     /* A booking paid by hand has no gateway payment to reverse, so the API button is not offered
        — pressing it could only fail — and the copy asks how the money actually went back. */
     const pendingActions=r.status==='manual_pending'&&mayFire?`
@@ -3882,14 +4129,10 @@ function refundHtmlFor(t,d){
     return `<div class="refund-row refund-status-${esc(r.status)}">
       <div class="refund-row-head"><span>${label}</span><span>${money({amount:r.amountCents,currency:r.currency})}</span></div>
       <div class="refund-meta">${esc(r.reason)} · requested by ${esc(r.requestedBy)}${confirmed}${evidence}</div>
-      ${why}${stuck}${pendingActions}</div>`;
+      ${why}${stuck}${scope}${late}${pendingActions}${waiting}</div>`;
   }).join('')||'<p class="muted" style="padding:0">No refund activity.</p>';
-  /* No amount box: our PayHere setup cannot do partial refunds, so offering a field that
-     invites one only creates records the gateway can't honour (owner, 2026-08-02). The button
-     always requests the full refundable remainder. The API still accepts a partial amount — a
-     manual part-refund can be recorded there — the dashboard is simply opinionated.
-     The button came BACK here on 2026-08-07 (it had moved to the sheet foot next to Cancel):
-     see refundRequestFor for why splitting request from completion was the defect. */
+  /* An amount box since 2026-10-17: our PayHere plan now does partial refunds, and a founder
+     approves every request. See refundRequestFor. */
   const request=refundRequestFor(t,d);
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
@@ -3926,13 +4169,13 @@ function bookingPromo(booking) {
 }
 /* ── shared ticket chrome: stage-tinted header, vitals stub, perforation ── */
 function sheetHeadHtml(t,o){
-  const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx?'done':i===o.idx?'cur':''}">${STAGE[s].short}</span>`).join('')}</div>`:'';
+  const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx&&!(s==='paid'&&cashDue(t))?'done':i===o.idx?'cur':''}">${pipeLabel(t,s)}</span>`).join('')}</div>`:'';
   return `<div class="sheet-h">
       <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
       <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
       <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
-        <span class="pill"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
+        <span class="pill${o.pillCls||''}"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
       </div>${pipe}
     </div>
     <div class="sheet-stub">${o.stub}</div>
@@ -3964,7 +4207,7 @@ function sheetFootHtml(t,nx){
   if(t.stage==='awaiting_payment')return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
   if(!nx)return '';
   return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
-    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — emails the forfeited-fare notice">Mark no-show</button></div>`;
+    +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — ${t.paymentArrangement&&!t.paid?'emails that nothing was charged':'emails the forfeited-fare notice'}">Mark no-show</button></div>`;
 }
 /* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
    note must not throw the scroll position away or eat text the operator is mid-typing.
@@ -4038,6 +4281,39 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* Why ops moved a pickup (requirements 2026-10-26 R1) — one label per server code
+   (SCHEDULE_REASONS); opsUi.schedule.test.ts fails if they drift. */
+const SCHED_REASONS={customer_changed_plans:'Customer changed plans',customer_entered_wrong:'Customer entered the wrong date/time',flight_changed:'Flight changed',our_mistake:'Our mistake',other:'Other'};
+/* The statuses the server lets STAFF reschedule (STAFF_SCHEDULE_EDITABLE_STATUSES): unpaid ones too,
+   so a date the customer typed wrong can be fixed before they pay. Never a draft. */
+const SCHED_STATUSES=['awaiting_details','payment_pending','paid','confirmed'];
+/* Pickup set after booking (spec 2026-10-17). One message per refusal the schedule route can
+   send — opsUi.schedule.test.ts fails if the server learns a new one and this list doesn't. */
+const SCHED_ERR={past:'That date has passed',too_soon:'Too soon — we need 12 hours notice',too_far:'More than 12 months ahead',bad_date:'Not a valid date',bad_time:'Not a valid time',conflict:'Someone changed this booking — reloaded, check and try again',not_editable:'This booking can no longer be rescheduled here',reason_required:'Pick a reason for the change'};
+/* The toast after a save: [text, kind]. When the operator asked to email the customer, the
+   result is always stated — a failed or held-back email must never read as a plain "Saved",
+   and the driver line must not hide it. opsUi.schedule.test.ts lifts this. */
+const SCHED_SAVED=(res,asked)=>{
+  const driver=res.driverNotified?'send the new time to the driver':'';
+  if(asked&&!res.emailed)return ['Saved — customer NOT emailed: WhatsApp them'+(driver?'. Also '+driver:''),'error'];
+  const parts=[asked?'customer emailed':'',driver].filter(Boolean);
+  return [parts.length?'Saved — '+parts.join('; '):'Saved',undefined];
+};
+/* `expected` rides along with the save so a change someone else made meanwhile comes back as a
+   conflict, not a silent overwrite. */
+function scheduleFormHtml(t,d){
+  const inp=d.booking.input||{};
+  const driverHasIt=STAGES.indexOf(t.stage)>=STAGES.indexOf('vehicle_confirmed');
+  return `<div class="sched" data-testid="sched-form">
+    <div class="kv"><span class="k">Date</span><span class="v"><input type="date" id="schedDate" value="${esc(inp.date||'')}"></span></div>
+    <div class="kv"><span class="k">Pickup time</span><span class="v"><input type="time" id="schedTime" value="${esc(inp.time||'')}"><span class="sched-hint">Sri Lanka time · blank if not known yet</span></span></div>
+    <div class="kv"><span class="k">Why</span><span class="v"><select id="schedReason" aria-label="Reason for the change"><option value="" selected disabled>Pick a reason</option>${Object.entries(SCHED_REASONS).map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</select></span></div>
+    <div class="kv"><span class="k">Note</span><span class="v"><input type="text" id="schedNote" maxlength="500" placeholder="Optional — e.g. new flight UL 504"></span></div>
+    <label class="togg"><span>Email the customer</span><input type="checkbox" id="schedNotify" checked></label>
+    ${driverHasIt?`<p class="sched-warn" data-testid="sched-driver-warn">A driver already has this job — send them the new time after saving.</p>`:''}
+    <button class="btn btn-go" data-act="schedsave" data-id="${esc(t.id)}">Save</button>
+  </div>`;
+}
 function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
@@ -4049,10 +4325,11 @@ function renderSheet(){
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:st.label,stub:bookingStubHtml(t),pipe:true,idx,
+    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t),pipe:true,idx,
     /* The row's own balance tag, repeated in the header so an open balance is visible without
        scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
-    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''});
+    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`
+      :cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
      print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
   if(!d){
@@ -4062,6 +4339,7 @@ function renderSheet(){
   const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
+  const canSchedule=d?.booking?.mode==='single'&&SCHED_STATUSES.includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
   /* Recording money is a payments:act action (same gate as refunds), so ops-role staff
      see the reminder only. The <select> + confirm() IS the whole interaction — this view
      has no modal layer, and inventing one for three options would be a lot of machinery
@@ -4075,11 +4353,12 @@ function renderSheet(){
      backend has actually issued one) and the manual settle row. The reminder button itself
      is the sheet-foot primary — one copy of each action, never two. */
   let pendingBlock='';
-  if(isPending){
-    const settle=canSettle?`<div class="settle">
+  /* The same settle row records pay-on-the-day cash, at any stage (the status stays put). */
+  const settle=canSettle&&(isPending||(cashDue(t)&&!t.paid))?`<div class="settle">
         <select id="paidmethod" aria-label="Payment method">${PAY_METHODS.map(m=>`<option value="${esc(m[0])}">${esc(m[1])}</option>`).join('')}</select>
-        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">Mark paid</button>
+        <button class="btn" data-act="markpaid" data-id="${esc(t.id)}">${isPending?'Mark paid':'Record cash collected'}</button>
       </div>`:'';
+  if(isPending){
     const link=d&&d.payLink;
     const linkBtn=link?`<button class="btn" data-act="paylink" data-id="${esc(t.id)}">${ICON.copy} Copy payment link</button>`:'';
     /* Both halves of the sentence have to be true for whoever is reading it: the link half
@@ -4091,6 +4370,9 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
+  /* The vehicle the trip was priced on (the API reads the tier off the quote or the website's
+     snapshot — the booking alone only knows car|van). Absent for a shared seat. */
+  const vehicleRow=d?.vehicle?`<div class="kv"><span class="k">Vehicle</span><span class="v" data-testid="sheet-vehicle">${esc(VEHICLE_NAME[d.vehicle]||d.vehicle)}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
   /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
@@ -4131,8 +4413,10 @@ function renderSheet(){
       <div class="block"><h4>Trip</h4>
         <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
         ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}</span></div>
+        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
+        ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
+        ${vehicleRow}
         ${extrasRow}
         <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
@@ -4146,9 +4430,10 @@ function renderSheet(){
         <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
         ${promoRow}
         ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
-        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):'<span style="color:var(--wait);font-weight:700">Awaiting payment</span>'}</span></div>
+        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):`<span style="color:var(--wait);font-weight:700">${cashDue(t)?'Cash due on the day':'Awaiting payment'}</span>`}</span></div>
         <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
+        ${cashDue(t)?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Pay on the day — ${money({amount:t.cashDue,currency:t.currency})} in US dollars cash to the Ceylon Hop team, at the first pickup. ${canSettle?"Record it here when it's collected.":"A founder or finance records it when it's collected."}</p>${settle?`<div class="sheet-actions">${settle}</div>`:''}`
+        :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
         ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
       </div>
       ${paymentAttemptsHtmlFor(d)}
@@ -4195,8 +4480,10 @@ async function openDetail(id, opts){
   if(String(id).indexOf('board:')===0)return;
   try{
     const detail=await api.get('/bookings/'+id);
-    if(state.caps&&state.caps.includes('payments:act')){
-      try{detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');}
+    /* Everyone who works bookings reads the ledger since 2026-10-17. Keep only a list: a mock
+       catch-all (or an odd answer) of {} would otherwise reach refundSummary's .filter and throw. */
+    if(state.caps&&state.caps.includes('bookings:read')){
+      try{const got=await adminApi.get('/bookings/'+id+'/refunds');detail.refunds=Array.isArray(got)?got:[];}
       catch(refundErr){
         if(refundErr.message==='auth')throw refundErr;
         detail.refunds=[];
@@ -4237,7 +4524,9 @@ async function fireRefund(bookingId, refundId){
     return true;
   }catch(err){
     if(err.message==='auth')return false;
-    await reloadRefundDetail(bookingId);
+    /* refreshRow too: a failure before PayHere claims the row leaves it manual_pending, i.e. a new
+       waiting refund — the founder's chip and queue row read that from the list, not the sheet. */
+    await reloadRefundDetail(bookingId);await refreshRow(bookingId);
     if(err.message==='refund_outcome_unknown'){toast('PayHere did not answer — check PayHere before retrying','error');}
     else if(err.message==='refund_declined'){toast('PayHere declined the refund — see the reason on the row','error');}
     else if(err.message==='refund_api_unavailable'){toast('PayHere Refund API not configured — complete it on the row below','error');}
@@ -4248,7 +4537,8 @@ async function fireRefund(bookingId, refundId){
 
 async function reloadRefundDetail(id){
   const detail=await api.get('/bookings/'+id);
-  detail.refunds=await adminApi.get('/bookings/'+id+'/refunds');
+  const got=await adminApi.get('/bookings/'+id+'/refunds');
+  detail.refunds=Array.isArray(got)?got:[];
   if(state.detail===id){state.detailData=detail;renderSheet();}
 }
 
@@ -4305,6 +4595,7 @@ function playRouteIn(){
 function render(){
   if((state.route==='quote'||state.route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))state.route='tickets';
   if(state.route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; silent bounce, same as the quotes guard */
+  if(state.route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))state.route='tickets'; /* founder + finance; the same silent bounce */
   if(state.route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))state.route='tickets'; /* founder-only; the same silent bounce */
   if(state.route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))state.route='tickets'; /* founder + ops; the same silent bounce */
@@ -4343,6 +4634,15 @@ function render(){
     if(entering){
       playRouteIn();
       const navBtn=document.querySelector('#nav [data-route="analytics"]');
+      if(navBtn)navBtn.focus();
+    }
+  }else if(state.route==='health'){
+    hideQuoteView();
+    closeDetail('silent');
+    viewHealth();
+    if(entering){
+      playRouteIn();
+      const navBtn=document.querySelector('#nav [data-route="health"]');
       if(navBtn)navBtn.focus();
     }
   }else if(state.route==='lookup'){
@@ -4420,6 +4720,7 @@ document.addEventListener('click',e=>{
   let route=btn.dataset.route;
   if((route==='quote'||route==='quotes')&&(!state.caps||!state.caps.includes('quote:manage')))route='tickets';
   if(route==='analytics'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
+  if(route==='health'&&(!state.caps||!state.caps.includes('analytics:view')))route='tickets';
   if(route==='lookup'&&(!state.caps||!state.caps.includes('payments:act')))route='tickets';
   if(route==='rates'&&(!state.caps||!state.caps.includes('margin:view')))route='tickets';
   if(route==='experiences'&&(!state.caps||!state.caps.includes('experiences:manage')))route='tickets';
@@ -4551,13 +4852,13 @@ document.addEventListener('click',async e=>{
   const act=el.dataset.act,id=el.dataset.id||null;const t=id?tickets.find(x=>x.id===id):null;
   /* Belt-and-braces: the van sheet renders none of these buttons, but a board row
      must never reach a /bookings/:id mutation — there is no booking behind it. */
-  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel'].includes(act))return;
+  if(isBoard(t)&&['advance','noshow','toggle','addnote','payreminder','paylink','cancelbooking','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'].includes(act))return;
   /* Same in-flight guard the quote action bar got (runAction). Each of these is a booking
      mutation that used to run with no visible sign and no re-entry guard — a double press on
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -4593,12 +4894,31 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
-    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\nThis emails the customer that the fare isn’t refundable. It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
+    case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\n${t.paymentArrangement&&!t.paid?'This emails the customer that nothing was charged.':'This emails the customer that the fare isn’t refundable.'} It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
     case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
     /* clearInput on SUCCESS is load-bearing since the sheet became a diff-render: morphdom
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
        has to be emptied by the code that consumed it. Without it the note stays in the box
        after being saved and reads as "not saved" — an invitation to add it twice. */
+    case 'schedopen':{state.schedOpen=state.schedOpen===id?null:id;renderSheet();break;}
+    case 'schedsave':{
+      const inp=state.detailData?.booking?.input||{};
+      const date=($('#schedDate')||{}).value||'';const time=($('#schedTime')||{}).value||null;
+      if(!date){toast('Pick a date','error');break;}
+      const reason=($('#schedReason')||{}).value||'';
+      if(!reason){toast(SCHED_ERR.reason_required,'error');break;}
+      const payload={date,time,expected:{date:inp.date??null,time:inp.time??null},notifyCustomer:!!($('#schedNotify')||{}).checked,
+        reason,note:(($('#schedNote')||{}).value||'').trim()||null};
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/schedule`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        if(!r.ok){toast(SCHED_ERR[res.error]||'Could not save the date','error');if(res.error==='conflict'){await refreshDetail(id);await refreshRow(id);}break;}
+        state.schedOpen=null;
+        toast(...SCHED_SAVED(res,payload.notifyCustomer));
+        await refreshDetail(id);await refreshRow(id);
+      }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
+      break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
     case 'cancelbooking':{
@@ -4634,7 +4954,9 @@ document.addEventListener('click',async e=>{
       /* Every other consequential action in this sheet states its email consequence, and on the
          PayHere path a booking reaching Paid DOES auto-send a confirmation — so silence here
          reads as "the customer gets told". Recording an out-of-band payment sends nothing. */
-      if(!confirm(`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
+      if(!confirm(cashDue(t)
+        ?`Record ${money({amount:t.cashDue,currency:t.currency})} received ${method==='cash'?'in cash':'by '+label.toLowerCase()} for ${t.ref}? The trip status stays as it is. No email goes to the customer.`
+        :`Record ${money(t)} received for ${t.ref}?\n\nMethod: ${label}. This books the money against the booking and moves it to Paid. The customer is not emailed.`))break;
       el.disabled=true;
       try{await adminApi.post(`/bookings/${id}/mark-paid`,{method});toast(`Payment recorded — ${label}`);await refreshDetail(id);await refreshRow(id);}
       catch(err){
@@ -4645,7 +4967,7 @@ document.addEventListener('click',async e=>{
            in already (a late PayHere webhook) — reading it as a plain failure would invite a
            retry, or worse, a second collection from the customer. */
         if(err.message==='already_paid'){toast('A payment already settled this booking — check before collecting again','error');await refreshRow(id);}
-        else if(err.message==='not_awaiting_payment'){toast('This booking is no longer awaiting payment','error');await refreshRow(id);}
+        else if(err.message==='not_awaiting_payment'){toast('This booking can no longer take a payment','error');await refreshRow(id);}
         else{window.opsReportError&&window.opsReportError('booking markpaid',err);toast('Could not mark paid','error');}
       }
       break;
@@ -4656,19 +4978,25 @@ document.addEventListener('click',async e=>{
     /* "Payment history →" — the Lookup page for this booking. Same payments:act gate as the page. */
     case 'lookup':{if(!state.caps||!state.caps.includes('payments:act'))break;setShellRoute('lookup',{caseRef:el.dataset.ref});break;}
     case 'refundrequest':{
-      if(!mayReverseNow(t,state.detailData))break;
+      /* Founder or ops; never held to the 24-hour rule (spec 2026-10-17). The server enforces the
+         same: request is bookings:operate, sending is payments:reverse. */
+      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
+      if(!willFire&&!(state.caps&&state.caps.includes('bookings:operate')))break;
       const busyKey='request:'+id;if(refundBusy.has(busyKey))break;
-      /* Always the FULL refundable remainder — our PayHere setup can't do partials, so an
-         amount box would only invite records the gateway can't honour. */
       const s=refundSummary(state.detailData);
-      /* A button that names a payment refunds that payment's remainder (deposit bookings, several
-         captures); the plain button refunds the whole booking's remainder as before. */
+      /* A button that names a payment refunds against that payment (deposit bookings); the plain
+         button against the booking's single capture. */
       const paymentId=el.dataset.paymentId||'';
       const target=paymentId?refundTargets(state.detailData).find(p=>p.id===paymentId):null;
-      const amountCents=target?target.remaining:s.remaining;
+      const remaining=target?target.remaining:s.remaining;
+      const amountEl=$('#refundamount');
+      const typed=((amountEl&&amountEl.value)||'').trim();
+      const amountCents=typed?parseRefundCents(typed):remaining;
       const reasonEl=$('#refundreason');
       const reason=((reasonEl&&reasonEl.value)||'').trim();
-      if(!amountCents){toast('Nothing left to refund','error');break;}
+      if(!remaining){toast('Nothing left to refund','error');break;}
+      if(amountCents===null){toast('Enter an amount like 25 or 25.50','error');if(amountEl)amountEl.focus();break;}
+      if(amountCents>remaining){toast('That is more than the '+money({amount:remaining,currency:s.currency})+' left to refund','error');if(amountEl)amountEl.focus();break;}
       if(!reason){toast('Give a reason first — it is saved against the refund','error');if(reasonEl)reasonEl.focus();break;}
       /* Says "below" because it now IS below: the completion controls appear on the pending row
          in this same block. The old wording ("you still have to make the refund in PayHere")
@@ -4681,17 +5009,16 @@ document.addEventListener('click',async e=>{
          Without payments:reverse the operator cannot fire the API at all, so for them the button
          keeps its old meaning — file the request for someone who can. The confirm says which of
          the two is about to happen, in the words that matter: money moves now, or it doesn't. */
-      const willFire=!!(state.caps&&state.caps.includes('payments:reverse'));
       const amountLabel=money({amount:amountCents,currency:s.currency});
       const ask=willFire
         ?`Refund ${amountLabel} now?\n\nThis sends the money back through PayHere immediately. There is no undo.`
-        :`Request a refund of ${amountLabel}?\n\nYou cannot move money yourself — this files the request for someone who can.`;
+        :`Request a refund of ${amountLabel}?\n\nA founder has to approve it before any money moves.`;
       if(!confirm(ask))break;
       refundBusy.add(busyKey);el.disabled=true;
       try{
         const refund=await adminApi.post('/bookings/'+id+'/refunds',{amountCents,currency:s.currency,reason,...(paymentId?{paymentId}:{})});
-        clearInput(reasonEl);
-        if(!willFire){await reloadRefundDetail(id);toast('Refund requested — no money has moved yet');break;}
+        clearInput(reasonEl);clearInput(amountEl);
+        if(!willFire){await reloadRefundDetail(id);await refreshRow(id);toast('Refund requested — waiting for a founder');break;}
         /* fireRefund reloads and toasts on every failure path, and leaves the row pending so the
            manual route below still works — i.e. a failure lands exactly where the old two-step
            flow left you, never somewhere new. */
@@ -4742,12 +5069,12 @@ document.addEventListener('click',async e=>{
       break;
     }
     case 'refundcancel':{
-      if(!state.caps||!state.caps.includes('payments:reverse'))break;
+      if(!state.caps||!state.caps.includes('bookings:operate'))break; // releases a reservation; moves no money
       const refundId=el.dataset.refundId;
       const busyKey='cancel:'+refundId;if(refundBusy.has(busyKey))break;
       if(!confirm('Cancel this pending refund request? This does not perform any PayHere action.'))break;
       refundBusy.add(busyKey);el.disabled=true;
-      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);toast('Refund request cancelled');}
+      try{await adminApi.post('/bookings/'+id+'/refunds/'+refundId+'/cancel',{});await reloadRefundDetail(id);await refreshRow(id);toast('Refund request cancelled');}
       catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('refund cancel',err);toast('Could not cancel refund request','error');if(el.isConnected)el.disabled=false;}}
       finally{refundBusy.delete(busyKey);}
       break;
@@ -4806,6 +5133,7 @@ function bootApp(identity){
   hideLogin();
   state.role=identity.role;state.caps=identity.caps;state.email=identity.email;
   window.opsShowLogin=showLogin; /* the quote module reaches the login overlay through this */
+  window.opsCan=(cap)=>!!(state.caps&&state.caps.includes(cap)); /* the quote module asks about a capability (Mark booked → cash on the day) */
   window.opsGoBookings=()=>{setShellRoute('tickets',{ replace:true });}; /* quote module bounces a 403 (no quote:manage) back to Bookings */
   /* The Experiences page (QuoteView) opens a lead's booking or quote through these. The queue only
      holds open bookings, so a booking it does not carry is fetched once; if it is still absent
@@ -4850,7 +5178,7 @@ function bootApp(identity){
     </div>`;
   applyRailState();
   setNav();
-  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
+  if(state.route==='quote'||state.route==='quotes'||state.route==='analytics'||state.route==='health'||state.route==='lookup'||state.route==='rates'||state.route==='experiences'){render();if(state.route==='quote'&&state.routeQuoteId&&QuoteView.openQuote)QuoteView.openQuote(state.routeQuoteId);} /* paint the quote/analytics/lookup surface immediately — none needs booking data; loadQueue populates Bookings in the background */
   loadOpsRoster(); /* staff names for the queue's assignee chips; repaints the queue when they land */
   loadQueue().catch(e=>{if(e.message!=='auth'){window.opsReportError&&window.opsReportError('loadQueue',e);toast('Could not load bookings','error');}});
 }
@@ -5084,6 +5412,8 @@ var sendBackOpen = false; // inline "send back for changes" note composer (found
 // from submitBlockers() — an incomplete quote must be quiet until you ASK to submit it.
 var submitBlockersOpen = false;
 var bookOpen = false;     // "Mark booked" → create-a-booking confirmation modal
+var bookCashOnDay = false; // "Customer pays cash on the day" ticked in the Mark booked modal (payments:act only)
+var bookPrefillBooking = null; // the quote's converted booking (the customer's pay-page entry), fetched when the modal opens
 var _payLink = null;      // { url, mode } once "Payment link" mints — cleared on quote switch
 var _histOpen = false;    // version-history disclosure
 var _hist = null;         // { forId, rows } — cached per quote, refetched after a save
@@ -5265,6 +5595,7 @@ function applyDiscountFromForm() {
   if (!reason) { toast('A reason is required'); return; }
   state.discount = { method: method, value: wire, reason: reason };
   _discountTouched = true;
+  _discountEdits++;
   markDirty();
   refreshEstimate();
 }
@@ -5272,6 +5603,7 @@ function applyDiscountFromForm() {
 function removeDiscount() {
   state.discount = null;
   _discountTouched = true;
+  _discountEdits++;
   markDirty();
   refreshEstimate();
 }
@@ -5679,6 +6011,14 @@ function armAutosave() {
   if (_autoTimer) clearTimeout(_autoTimer);
   _autoTimer = setTimeout(fireAutosave, 2500);
 }
+// A driving leg still missing an end with no km typed to fall back on: /save has nothing to
+// measure and answers 400 "couldn't find the distance". That is a quote part-way through being
+// built, not a failure, so autosave waits for the leg instead of reporting it red.
+function hasUnfinishedDrivingLeg() {
+  return (state.legs || []).some(function (leg) {
+    return legDrives(leg) && (!legFrom(leg) || !legTo(leg)) && legKm(leg) <= 0;
+  });
+}
 async function fireAutosave() {
   _autoTimer = null;
   if (!_dirty || _autoSaving) return;
@@ -5705,6 +6045,9 @@ async function fireAutosave() {
     return;
   }
   if (_ac && _ac.menuEl) { armAutosave(); return; } // never save mid-place-pick; retry after
+  // Nothing is re-armed: finishing the leg is an edit, and every edit arms autosave itself. The
+  // chip keeps saying "Unsaved"/"Edits pending" meanwhile, which is the truth.
+  if (hasUnfinishedDrivingLeg()) return;
   _autoSaving = true;
   _autoState = 'saving'; updateSaveChip();
   var ok;
@@ -6446,6 +6789,7 @@ function resetToNew() {
     updatedBy: null,
     updatedAt: null,
     convertedBookingId: null, // the booking this quote became, once "Mark booked" completes
+    bookingAwaitingPayment: false, // that booking is still payment_pending: a founder may re-book it as cash on the day
     payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
     balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
     balanceCents: null, // what is still owed on it, for the copy toast
@@ -6577,8 +6921,11 @@ function currentQuoteQueuePatch(saved) {
 }
 
 /* Set only by the founder acting on the control. Reset once a save has carried the intent, so a
-   later autosave falls back to "preserve" rather than re-sending it. */
+   later autosave falls back to "preserve" rather than re-sending it. _discountEdits counts the
+   founder's Apply/Remove presses, so a save only clears the flag if no press landed while it was
+   in flight (that newer intent still has to reach the server). */
 let _discountTouched = false;
+let _discountEdits = 0;
 
 /* A leg's identity ON THE WIRE — everything that decides which distances belong to it, and
    deliberately NOT the distances themselves (those are what we're adopting). */
@@ -6655,6 +7002,7 @@ async function saveQuote(opts) {
     return false;
   }
   var sent = savePayload();
+  var discountEditsSent = _discountEdits;
   var res = await apiSave(sent);
   // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
   // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
@@ -6675,6 +7023,18 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    // The founder's Apply/Remove is now stored; later saves mean "preserve" (see _discountEdits).
+    if (_discountEdits === discountEditsSent) _discountTouched = false;
+    // The priced service changed, so the server dropped the founder's discount (it belongs to the
+    // service it was given on). Clear it here too, or the pane keeps previewing the old saving.
+    // Shown even on a silent autosave: the price just went up and the operator must know why.
+    if (res.discountRemoved) {
+      state.discount = null;
+      _discountTouched = false;
+      refreshEstimate();
+      // 'error' styling on purpose: red and held longer — the price just went UP (owner, 2026-11-01).
+      showToast('Discount removed — the service changed. Re-apply it if you still want one.', 'error');
+    }
     // Take on the distances the server had to resolve to price this. Without it the builder
     // kept showing its PARTIAL total ("Covers the ready legs") while the stored quote — the
     // queue row, the locked estimate, what the customer would be told — was priced on the FULL
@@ -7348,9 +7708,11 @@ async function bookQuote() {
     date: val('bk-date') || undefined,
     time: val('bk-time') || undefined,
   };
+  var cashOnDay = bookCashOnDay && canBookCashOnDay();
+  if (cashOnDay) b.paymentArrangement = 'on_the_day';
   // Client-side required-field guard (server re-validates via Zod).
-  if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date || !b.time) {
-    showToast('Fill in name, email, WhatsApp, country, date and time', 'error');
+  if (!b.customer.firstName || !b.customer.lastName || !b.customer.email || !b.customer.whatsapp || !b.customer.country || !b.date) {
+    showToast('Fill in name, email, WhatsApp, country and date', 'error');
     return;
   }
   // <input type="email"> hands back whatever was typed, so "roshen@gmail" passed the
@@ -7375,7 +7737,10 @@ async function bookQuote() {
   _payLink = null; _payLinkCopied = false; _payLinkShowRow = false; clearTimeout(_payLinkCopiedT); _payPicker = null; _payChooser = false; _payPartial = null; _hist = null; _histOpen = false;
     state.status = 'won';
     state.convertedBookingId = res.id;
-    showToast('Booked · ' + res.reference);
+    state.bookingAwaitingPayment = !cashOnDay && res.status === 'payment_pending';
+    showToast(cashOnDay
+      ? 'Booked ' + res.reference + ': confirmed, cash on the day. A confirmation email is on its way to ' + (b.customer.firstName || 'the customer') + '.'
+      : 'Booked · ' + res.reference);
     if (window.opsRefreshQuotes) window.opsRefreshQuotes();
     render();
   } finally {
@@ -7578,6 +7943,7 @@ async function reopenQuote(id) {
   state.updatedBy = q.updatedBy || null;
   state.updatedAt = q.updatedAt || null; // for the concurrent-edit notice below
   state.convertedBookingId = q.convertedBookingId || null; // back-link if already "Mark booked"-ed
+  state.bookingAwaitingPayment = false; // read below, after the quote renders
   state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
   state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
   state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
@@ -7634,6 +8000,17 @@ async function reopenQuote(id) {
   // "Reopen to edit" status transition (reopenToDraft). Saying "Reopened" here would be
   // misleading for a quote that hasn't actually left the review queue yet. "Opened" is honest.
   showToast('Opened ' + (q.reference || q.id));
+  // Booked without ticking cash on the day (owner, 2026-10-31): the quote is won but its booking
+  // still awaits payment, and the server accepts a re-book of it. Offer Mark booked again — only to
+  // who may book cash on the day, the one thing a re-book of an unpaid booking is for.
+  if (q.status === 'won' && q.convertedBookingId && canBookCashOnDay()) {
+    try {
+      var br = await api('/admin/ops/bookings/' + encodeURIComponent(q.convertedBookingId));
+      var bb = br.ok ? await jsonOrNull(br) : null;
+      if (seq !== _openSeq) return;
+      if (bb && bb.booking && bb.booking.status === 'payment_pending') { state.bookingAwaitingPayment = true; render(); }
+    } catch (e) { /* the button is a convenience; the quote stays as it opened */ }
+  }
 }
 
 // ── Leg tone helpers ──────────────────────────────────────────────────────────
@@ -9001,9 +9378,13 @@ var EXP_LEAD_STATUSES = [['new', 'New'], ['contacted', 'Contacted'], ['link_sent
 var EXP_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // index = the API's weekday number
 var EXP_PHOTO_STEM = /^[a-z0-9-]+(\/[a-z0-9-]+){1,3}$/;           // mirrors PHOTO_STEM in experience.ts
 var EXP_PHOTO_ORIGIN = 'https://ceylonhop.com';
+// An uploaded photo's address (spec 2026-10-17 P2) — mirrors UPLOADED_PHOTO in experience.ts.
+var EXP_PHOTO_UPLOADED = /^https:\/\/img(-staging)?\.ceylonhop\.com\/experiences\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// The server's per-file caps (opsExperiences.ts PHOTO_MAX), which keep an upload under the app-wide 1 MB body limit.
+var EXP_PHOTO_MAX = { large: 700000, small: 250000 };
 var EXP_NOT_LIVE = 'Not live yet — photos appear after the site promote';
 // Server field → the form's data-err key (the rest map to themselves).
-var EXP_ERR_KEY = { partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
+var EXP_ERR_KEY = { slug: 'name', partnerName: 'partner', areaLabel: 'area', priceCents: 'price', priceUnit: 'unit', durationText: 'duration',
   openWeekdays: 'days', startTimes: 'times', lat: 'loc', lng: 'loc', radiusKm: 'radius', partnerContact: 'contact', tripadvisorLocationId: 'ta' };
 
 // "7.977, 80.76" or a Google Maps link (/@lat,lng,… or ?q=lat,lng) → { lat, lng }, else null. Only
@@ -9051,7 +9432,7 @@ function expStatsLine(s) {
   if (s.paidCents.LKR > 0) paid.push('LKR ' + Math.round(s.paidCents.LKR / 100).toLocaleString('en-US'));
   return s.interested + ' interested · ' + s.paid + ' paid' + (paid.length ? ' · ' + paid.join(' + ') : '');
 }
-function expPhotoUrl(stem) { return EXP_PHOTO_ORIGIN + '/img/' + stem + '-900.jpg'; } // photoUrls(stem).small
+function expPhotoUrl(stem) { return (EXP_PHOTO_UPLOADED.test(stem) ? stem : EXP_PHOTO_ORIGIN + '/img/' + stem) + '-900.jpg'; } // photoUrls(stem).small
 
 async function loadExperiences() {
   var seq = _expSeq, ls = ++_expListSeq;
@@ -9060,7 +9441,7 @@ async function loadExperiences() {
     var d = r.ok ? await jsonOrNull(r) : null;
     if (seq !== _expSeq || ls !== _expListSeq) return;
     if (d && Array.isArray(d.experiences)) {
-      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [] };
+      expData = { experiences: d.experiences, stats: Array.isArray(d.stats) ? d.stats : [], uploads: d.uploads === true, businessSearch: d.businessSearch === true };
       expLoadFailed = false;
     } else expLoadFailed = true;
   } catch (e) {
@@ -9422,16 +9803,36 @@ function renderExpForm(e) {
   var days = EXP_DAYS.map(function (n, i) {
     return '<label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-day-' + i + '"' + (d.openWeekdays.indexOf(i) >= 0 ? ' checked' : '') + '> ' + n + '</label>';
   }).join('');
+  var up = !!(expData && expData.uploads);
+  // The six path inputs are the source of truth (expSave reads them). With uploads on they hide behind
+  // "Use a photo already on the site" and ops works with tiles (expRenderPhotoTiles) instead.
   var photos = '';
   for (var i = 0; i < 6; i++) {
-    photos += '<div class="ch-input-wrap" style="margin-top:' + (i ? 6 : 0) + 'px"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1') + '" value="' + esc(d.photos[i] || '') + '"></div>'
+    photos += '<div class="ch-input-wrap" style="margin-top:' + (i ? 6 : 0) + 'px"><input id="exp-photo-' + i + '" class="ch-input" data-photo="' + i + '" autocomplete="off" placeholder="' + (up ? 'guides/sigiriya/ayurveda' : 'experiences/' + (i ? 'slug/photo-' + (i + 1) : 'slug/photo-1')) + '" value="' + esc(d.photos[i] || '') + '"></div>'
       + '<div class="ch-exp-prev" id="exp-photo-' + i + '-prev"></div>';
   }
+  if (up) {
+    photos = '<div class="ch-exp-tiles" id="exp-photo-tiles"></div>'
+      + '<div id="exp-photo-paths" hidden><div class="ch-exp-meta" style="margin-bottom:6px">A photo already on the site: its path under img/, without -900/-1800.</div>' + photos + '</div>'
+      + '<button type="button" class="ch-exp-photo-link" data-action="expPhotoPaths" data-testid="exp-photo-paths">Use a photo already on the site</button>'
+      + '<input type="file" id="exp-photo-file" accept="image/jpeg,image/png,image/webp" hidden>';
+  }
+  // "Find the business on Google" (2026-10-18): with a server key, a search at the top fills partner, area,
+  // pin and contact, and the lat/lng box moves behind "Enter the location by hand".
+  var biz = !!(expData && expData.businessSearch);
   return '<div class="ch-hz-form" id="exp-form">'
     + '<div class="ch-hz-head">' + (e ? 'Edit experience' : 'New experience') + '</div>'
     + '<div class="ch-hz-caption">What travellers see on the booking and quote pages. Nothing is charged on the site — this is the price the team puts on the customer’s PayHere link.</div>'
     + '<div class="ch-exp-grid">'
-    + expInput('slug', 'Slug', d.slug, ' placeholder="ayurvedic-massage"')
+    + (biz ? expField('biz', 'Find the business on Google', '<div style="display:flex;gap:6px;align-items:center">'
+        + '<div class="ch-input-wrap" style="flex:1"><input id="exp-biz-q" class="ch-input" autocomplete="off" placeholder="Business name and town, e.g. Atherya Ayurveda Sigiriya"></div>'
+        + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expBizSearch">Search</button></div>'
+        + '<div id="exp-biz-msg" class="ch-exp-meta" data-testid="exp-biz-msg"></div>'
+        + '<div id="exp-biz-results" class="ch-exp-biz-results"></div>'
+        + '<div id="exp-biz-picked" class="ch-exp-meta" data-testid="exp-biz-picked"></div>'
+        // Google's partner details are a starting point: ops checks them with the partner (Places content
+        // isn't ours to keep as-is), so a Google fill asks for this tick before Save.
+        + '<div id="exp-biz-confirm-row" hidden style="margin-top:6px"><label class="ch-hz-toggle" style="padding-bottom:0"><input type="checkbox" id="exp-biz-confirm"> I’ve checked the partner name, phone and website with the partner</label></div>', 'ch-exp-wide') : '')
     + expInput('name', 'Name', d.name)
     + expInput('partner', 'Partner', d.partnerName)
     + expInput('area', 'Area', d.areaLabel, ' placeholder="Sigiriya"')
@@ -9442,9 +9843,14 @@ function renderExpForm(e) {
     + expInput('duration', 'Duration', d.durationText || '', ' placeholder="90 min"')
     + expInput('times', 'Start times (HH:MM, comma-separated)', d.startTimes.join(', '), ' placeholder="09:00, 14:30"')
     + expField('days', 'Open on', '<div class="ch-exp-days">' + days + '</div>', 'ch-exp-wide')
-    + expField('photos', 'Photos (up to 6 — a path under img/, without -900/-1800)', photos, 'ch-exp-wide')
-    + expField('loc', 'Location (paste "lat, lng" or a Google Maps link)', '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div>'
-      + '<div id="exp-loc-out" class="ch-exp-meta"></div>', 'ch-exp-wide')
+    + expField('photos', up ? 'Photos (up to 6)' : 'Photos (up to 6 — a path under img/, without -900/-1800)', photos
+      // Google's photos can't be copied to our servers (Places terms), so the business's own Google photos are a link.
+      + '<div id="exp-google-photos-row" class="ch-exp-meta" style="margin-top:8px" hidden><a id="exp-google-photos" data-testid="exp-google-photos" target="_blank" rel="noopener">See their photos on Google Maps</a></div>', 'ch-exp-wide')
+    + expField('loc', biz ? 'Location' : 'Location (paste "lat, lng" or a Google Maps link)', '<div id="exp-loc-wrap"' + (biz ? ' hidden' : '') + '>'
+      + '<div class="ch-input-wrap"><input id="exp-loc" class="ch-input" autocomplete="off" placeholder="7.977, 80.76 — or a Google Maps link" value="' + esc(d.lat == null ? '' : d.lat + ', ' + d.lng) + '"></div></div>'
+      + '<div id="exp-loc-out" class="ch-exp-meta"></div>'
+      + (biz ? '<button type="button" class="ch-exp-photo-link" data-action="expLocManual" data-testid="exp-loc-manual">Enter the location by hand</button>' : '')
+      + '<input type="hidden" id="exp-gplace" value="' + esc(d.googlePlaceId || '') + '">', 'ch-exp-wide')
     + expInput('radius', 'Reach (km from the pin)', String(d.radiusKm), ' inputmode="decimal"')
     + expInput('contact', 'Partner contact (ops only)', d.partnerContact || '')
     + expField('ta', 'Tripadvisor listing (paste its web address, or just the number)', '<div class="ch-input-wrap"><input id="exp-ta" class="ch-input" autocomplete="off" placeholder="https://www.tripadvisor.com/…-d6789012-Reviews-…" value="' + esc(d.tripadvisorLocationId || '') + '"></div>'
@@ -9462,7 +9868,10 @@ function renderExpForm(e) {
 function expLocUpdate() {
   var box = document.getElementById('exp-loc'), out = document.getElementById('exp-loc-out');
   if (!box || !out) return null;
-  if (!box.value.trim()) { out.innerHTML = ''; return null; }
+  if (!box.value.trim()) {
+    out.innerHTML = expData && expData.businessSearch ? 'No pin yet — find the business on Google above, or enter the location by hand.' : '';
+    return null;
+  }
   var p = parseLatLng(box.value);
   if (!p) {
     out.innerHTML = '<div class="ch-exp-err" data-testid="exp-loc-error">Couldn’t read a location — paste “lat, lng” (for example 7.977, 80.76) or a Google Maps link.</div>';
@@ -9476,6 +9885,103 @@ function expLocUpdate() {
     + '<a data-testid="exp-loc-check" href="https://www.google.com/maps?q=' + esc(p.lat + ',' + p.lng) + '" target="_blank" rel="noopener">Open in Google Maps</a>';
   return p;
 }
+
+// "Find the business on Google" (2026-10-18): search, then a pick fills partner, area, pin and contact and
+// keeps Google's place id. Only fields Google answered are touched; everything stays editable. A newer search
+// or pick wins over a slower older answer (_expBizSeq).
+var _expBizSeq = 0;
+var EXP_BIZ_OFF = 'Google search isn’t available right now — enter the details by hand.';
+async function expBizSearch() {
+  var q = document.getElementById('exp-biz-q'), msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results');
+  if (!q || !msg || !list) return;
+  var text = q.value.trim();
+  list.innerHTML = '';
+  if (text.length < 2) { msg.textContent = 'Type the business name and town.'; return; }
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Searching Google…';
+  try {
+    var r = await api('/admin/experiences/business-search?q=' + encodeURIComponent(text));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    if (!r.ok || !d || !Array.isArray(d.candidates)) { msg.textContent = EXP_BIZ_OFF; return; }
+    if (!d.candidates.length) { msg.textContent = 'No match on Google — try the business name and town, or enter the details by hand.'; return; }
+    msg.textContent = '';
+    list.innerHTML = d.candidates.map(function (c) {
+      return '<button type="button" class="ch-exp-biz-result" data-action="expBizPick" data-place="' + esc(c.placeId) + '" data-testid="exp-biz-result">'
+        + '<strong>' + esc(c.name) + '</strong><span>' + esc(c.address) + '</span></button>';
+    }).join('');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+async function expBizPick(placeId) {
+  var msg = document.getElementById('exp-biz-msg'), list = document.getElementById('exp-biz-results'), picked = document.getElementById('exp-biz-picked');
+  if (!msg || !list || !picked) return;
+  var seq = ++_expBizSeq;
+  msg.textContent = 'Getting the details from Google…';
+  try {
+    var r = await api('/admin/experiences/business/' + encodeURIComponent(placeId));
+    var d = await jsonOrNull(r);
+    if (seq !== _expBizSeq) return;
+    var b = r.ok && d && d.business;
+    if (!b) { msg.textContent = EXP_BIZ_OFF; return; }
+    var fill = function (k, val) {
+      var el = document.getElementById('exp-' + k);
+      if (!el || !val) return;
+      el.value = val;
+      var err = el.closest('.ch-field') && el.closest('.ch-field').querySelector('[data-err]');
+      if (err) err.textContent = '';
+    };
+    fill('partner', b.name);
+    fill('area', b.area);
+    fill('loc', b.lat + ', ' + b.lng);
+    fill('contact', [b.phone, b.website].filter(Boolean).join(' · ').slice(0, 200));
+    fill('gplace', b.placeId);
+    // Suggestions only where ops hasn't typed yet; Open on follows Google's hours when Google has them.
+    if (!document.getElementById('exp-name').value.trim()) fill('name', b.name);
+    if (Array.isArray(b.openWeekdays) && b.openWeekdays.length) {
+      for (var dd = 0; dd < 7; dd++) { var day = document.getElementById('exp-day-' + dd); if (day) day.checked = b.openWeekdays.indexOf(dd) >= 0; }
+    }
+    var confirmRow = document.getElementById('exp-biz-confirm-row'), confirmBox = document.getElementById('exp-biz-confirm');
+    if (confirmRow) confirmRow.hidden = false;
+    if (confirmBox) confirmBox.checked = false;
+    expGooglePhotosLink();
+    expLocUpdate();
+    list.innerHTML = '';
+    msg.textContent = '';
+    picked.innerHTML = '✓ Filled from Google: <strong>' + esc(b.name) + '</strong>'
+      + (b.mapsUrl ? ' · <a href="' + esc(b.mapsUrl) + '" target="_blank" rel="noopener">View on Google Maps</a>' : '');
+  } catch (x) {
+    if (seq === _expBizSeq) msg.textContent = EXP_BIZ_OFF;
+  }
+}
+// The slug from the experience name: lower-case ASCII words joined by dashes (the slug rule is
+// [a-z0-9-]{3,60}); '' when nothing usable is left.
+function expSlugify(name) {
+  var t = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  return t.length >= 3 ? t : '';
+}
+// "See their photos on Google Maps" for an experience that knows its Google place id.
+function expGooglePhotosLink() {
+  var row = document.getElementById('exp-google-photos-row'), a = document.getElementById('exp-google-photos'), id = document.getElementById('exp-gplace');
+  if (!row || !a || !id) return;
+  var pid = id.value.trim();
+  row.hidden = !pid;
+  if (pid) a.href = 'https://www.google.com/maps/place/?q=place_id:' + encodeURIComponent(pid);
+}
+function expLocManual() {
+  var wrap = document.getElementById('exp-loc-wrap'), link = expEl && expEl.querySelector('[data-action="expLocManual"]');
+  if (wrap) wrap.hidden = false;
+  if (link) link.hidden = true;
+  var box = document.getElementById('exp-loc');
+  if (box) box.focus();
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' || !e.target || e.target.id !== 'exp-biz-q') return;
+  e.preventDefault();
+  expBizSearch();
+});
 
 // The check line under the Tripadvisor box: the id that will be saved and a link to look at the listing,
 // or why the box isn't usable. Returns { id } (id null = empty box, fine) or null when unreadable.
@@ -9502,9 +10008,124 @@ function expPhotoPreview(i) {
   var inp = document.getElementById('exp-photo-' + i), out = document.getElementById('exp-photo-' + i + '-prev');
   if (!inp || !out) return;
   var stem = inp.value.trim();
-  out.innerHTML = EXP_PHOTO_STEM.test(stem)
-    ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '"><span class="ch-exp-note" data-testid="exp-photo-note" hidden>' + EXP_NOT_LIVE + '</span>'
-    : '';
+  // An uploaded photo is live the moment the upload succeeds, so it never gets the "Not live yet" note.
+  out.innerHTML = EXP_PHOTO_UPLOADED.test(stem)
+    ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '">'
+    : EXP_PHOTO_STEM.test(stem)
+      ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '"><span class="ch-exp-note" data-testid="exp-photo-note" hidden>' + EXP_NOT_LIVE + '</span>'
+      : '';
+}
+
+// Photo tiles (uploads on): a thumbnail per filled slot with Replace / Remove, then one "Add photo" tile
+// for the first empty slot. Rebuilt from the path inputs after every change.
+function expRenderPhotoTiles() {
+  var host = document.getElementById('exp-photo-tiles');
+  if (!host) return;
+  var html = '', free = -1;
+  for (var i = 0; i < 6; i++) {
+    var inp = document.getElementById('exp-photo-' + i), stem = inp ? inp.value.trim() : '';
+    if (!stem) { if (free < 0) free = i; continue; }
+    var uploaded = EXP_PHOTO_UPLOADED.test(stem), ok = uploaded || EXP_PHOTO_STEM.test(stem);
+    html += '<div class="ch-exp-tile" data-testid="exp-photo-tile-' + i + '"><div class="ch-exp-tile-img">'
+      + (ok ? '<img class="ch-exp-img" alt="" src="' + esc(expPhotoUrl(stem)) + '">' : '')
+      + (uploaded ? '' : '<span class="ch-exp-note" data-testid="exp-photo-note"' + (ok ? ' hidden' : '') + '>' + (ok ? EXP_NOT_LIVE : 'Not a photo path') + '</span>')
+      + '</div><div class="ch-exp-tile-acts">'
+      + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoPick" data-slot="' + i + '" data-testid="exp-photo-replace-' + i + '">Replace</button>'
+      + '<button type="button" class="ch-btn ch-btn-outline ch-btn-sm" data-action="expPhotoRemove" data-slot="' + i + '" data-testid="exp-photo-remove-' + i + '">Remove</button>'
+      + '</div></div>';
+  }
+  if (free >= 0) html += '<button type="button" class="ch-btn ch-btn-dashed ch-exp-tile-add" data-action="expPhotoPick" data-slot="' + free + '" data-testid="exp-photo-add">+ Add photo</button>';
+  host.innerHTML = html;
+}
+function expPhotoRemove(slot) {
+  var inp = document.getElementById('exp-photo-' + slot);
+  if (!inp) return;
+  inp.value = '';
+  expPhotoPreview(slot);
+  expRenderPhotoTiles();
+}
+// Swaps between the tiles and the raw path boxes; coming back rebuilds the tiles from what was typed.
+function expPhotoPathsToggle() {
+  var paths = document.getElementById('exp-photo-paths'), tiles = document.getElementById('exp-photo-tiles');
+  var link = expEl && expEl.querySelector('[data-action="expPhotoPaths"]');
+  if (!paths || !tiles) return;
+  var open = paths.hidden;
+  paths.hidden = !open;
+  tiles.hidden = open;
+  if (link) link.textContent = open ? 'Back to photo tiles' : 'Use a photo already on the site';
+  if (!open) expRenderPhotoTiles();
+}
+
+// Photo upload (spec 2026-10-17 P3/P6): shrink in the browser to the guides' two sizes (drawing on a canvas
+// also drops the camera data, GPS included), post both, put the returned address in the slot. Nothing is
+// saved until ops presses Save.
+var _expPhotoSlot = -1;
+var EXP_UPLOAD_ERR = {
+  too_large: 'This photo is too big even after shrinking — try a smaller one.',
+  payload_too_large: 'This photo is too big even after shrinking — try a smaller one.',
+  not_jpeg: 'Couldn’t read this photo — save it as JPEG and try again.',
+  uploads_off: 'Uploads are off on this server.',
+};
+function expPhotoPick(slot) {
+  var f = document.getElementById('exp-photo-file');
+  if (!f) return;
+  _expPhotoSlot = slot;
+  f.value = '';
+  f.click();
+}
+document.addEventListener('change', function (e) {
+  var t = e.target;
+  if (!t || t.id !== 'exp-photo-file' || !t.files || !t.files[0] || _expPhotoSlot < 0) return;
+  expPhotoUpload(_expPhotoSlot, t.files[0]);
+});
+// One JPEG, longest edge `edge` (never enlarged), under `maxBytes`: quality steps down until it fits.
+// Resolves null when even the lowest step is too big.
+async function expShrink(file, edge, maxBytes) {
+  var bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  var s = Math.min(1, edge / Math.max(bmp.width, bmp.height));
+  var c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * s));
+  c.height = Math.max(1, Math.round(bmp.height * s));
+  var ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; // a transparent PNG would otherwise turn black as a JPEG
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  var steps = [0.82, 0.72, 0.62, 0.5];
+  for (var i = 0; i < steps.length; i++) {
+    var blob = await new Promise(function (res, rej) {
+      c.toBlob(function (b) { b ? res(b) : rej(new Error('encode failed')); }, 'image/jpeg', steps[i]);
+    });
+    if (blob.size <= maxBytes) return blob;
+  }
+  return null;
+}
+async function expPhotoUpload(slot, file) {
+  var btn = expEl && expEl.querySelector('[data-action="expPhotoPick"][data-slot="' + slot + '"]');
+  var err = expEl && expEl.querySelector('[data-err="photos"]');
+  var label = btn ? btn.textContent : '';
+  if (err) err.textContent = '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Uploading…'; }
+  try {
+    var large, small;
+    try { large = await expShrink(file, 1800, EXP_PHOTO_MAX.large); small = await expShrink(file, 900, EXP_PHOTO_MAX.small); }
+    catch (x) { if (err) err.textContent = EXP_UPLOAD_ERR.not_jpeg; return; }
+    if (!large || !small) { if (err) err.textContent = EXP_UPLOAD_ERR.too_large; return; }
+    var fd = new FormData();
+    fd.append('large', large, 'large.jpg');
+    fd.append('small', small, 'small.jpg');
+    var res = await api('/admin/experiences/photos', { method: 'POST', body: fd });
+    var j = await jsonOrNull(res);
+    if (!res.ok || !j || typeof j.stem !== 'string') {
+      if (err) err.textContent = (j && EXP_UPLOAD_ERR[j.error]) || 'Upload failed — try again.';
+      return;
+    }
+    var inp = document.getElementById('exp-photo-' + slot);
+    if (inp) { inp.value = j.stem; expPhotoPreview(slot); expRenderPhotoTiles(); }
+  } catch (x) {
+    if (err) err.textContent = 'Upload failed — try again.';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  }
 }
 
 function expOpenForm(id) {
@@ -9512,12 +10133,16 @@ function expOpenForm(id) {
   if (id && !e) return;
   var host = expEl && expEl.querySelector('#exp-form-host');
   if (!host) return;
-  expForm = { id: id || null };
+  // The slug is an internal key (unique, a GA4 label) ops never see: an edit keeps its own, a new one
+  // is made from the name at save (expSave).
+  expForm = { id: id || null, slug: e ? e.slug : null };
   host.innerHTML = renderExpForm(e || null);
   expLocUpdate();
   expTaUpdate();
   for (var i = 0; i < 6; i++) expPhotoPreview(i);
-  var first = document.getElementById('exp-slug');
+  expRenderPhotoTiles();
+  expGooglePhotosLink();
+  var first = document.getElementById('exp-biz-q') || document.getElementById('exp-name');
   if (first && first.scrollIntoView) first.scrollIntoView({ block: 'center' });
   if (first) first.focus({ preventScroll: true });
 }
@@ -9547,17 +10172,22 @@ function expReadForm() {
   if (!isFinite(radius) || radius <= 0) errors.radius = 'Enter the reach in km, for example 5.';
   var ta = expTaUpdate(); // an unreadable box already shows its own message
   var p = expLocUpdate();
-  if (!p && !v('loc')) errors.loc = 'Paste the pin: “lat, lng” or a Google Maps link.'; // a bad pin already shows its own message
+  if (!p && !v('loc')) errors.loc = expData && expData.businessSearch // a bad pin already shows its own message
+    ? 'Find the business on Google above, or enter the location by hand.'
+    : 'Paste the pin: “lat, lng” or a Google Maps link.';
+  var bizRow = document.getElementById('exp-biz-confirm-row');
+  if (bizRow && !bizRow.hidden && !document.getElementById('exp-biz-confirm').checked)
+    errors.biz = 'Check the partner name, phone and website with the partner, then tick the box.';
   if (!ta || !p || Object.keys(errors).length) return { errors: errors };
   var days = [], photos = [];
   for (var i = 0; i < 7; i++) if (document.getElementById('exp-day-' + i).checked) days.push(i);
   for (var j = 0; j < 6; j++) { var ph = document.getElementById('exp-photo-' + j).value.trim(); if (ph) photos.push(ph); }
   var times = v('times').split(',').map(function (t) { return t.trim(); }).filter(Boolean);
   return { body: {
-    slug: v('slug'), name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
+    slug: expForm.slug || expSlugify(v('name')) || expSlugify(v('partner') + ' ' + v('name')) || 'experience', name: v('name'), partnerName: v('partner'), areaLabel: v('area'), summary: v('summary'),
     details: v('details'), priceCents: Math.round(price * 100), priceUnit: document.getElementById('exp-unit').value,
     durationText: v('duration') || null, openWeekdays: days, startTimes: Array.from(new Set(times)).sort(),
-    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id,
+    lat: p.lat, lng: p.lng, radiusKm: radius, photos: photos, partnerContact: v('contact') || null, tripadvisorLocationId: ta.id, googlePlaceId: v('gplace') || null,
     active: document.getElementById('exp-active').checked,
   } };
 }
@@ -9572,9 +10202,15 @@ async function expSave() {
   expBusy = true;
   if (btn) btn.disabled = true;
   try {
-    var r = await api(id ? '/admin/experiences/' + encodeURIComponent(id) : '/admin/experiences',
-      { method: id ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
-    if (seq !== _expSeq) return;
+    var base = f.body.slug, r;
+    // A new experience whose name-slug is taken tries base-2, base-3… (an edit keeps its slug, so never clashes).
+    for (var n = 1; n <= 20; n++) {
+      if (n > 1) f.body.slug = base.slice(0, 57).replace(/-+$/, '') + '-' + n;
+      r = await api(id ? '/admin/experiences/' + encodeURIComponent(id) : '/admin/experiences',
+        { method: id ? 'PATCH' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(f.body) });
+      if (seq !== _expSeq) return;
+      if (r.status !== 409 || id) break;
+    }
     if (r.ok) {
       expCloseForm();
       ratesToast(id ? 'Experience saved' : 'Experience created');
@@ -9584,7 +10220,7 @@ async function expSave() {
     var d = await jsonOrNull(r);
     if (seq !== _expSeq) return;
     var errors = {};
-    if (r.status === 409) errors.slug = 'That slug is taken';
+    if (r.status === 409) errors.name = 'Another experience already has this name — change it a little.';
     else if (r.status === 400 && d && Array.isArray(d.issues)) {
       d.issues.forEach(function (iss) {
         var k = iss.path && iss.path.length ? String(iss.path[0]) : '';
@@ -9659,12 +10295,19 @@ document.addEventListener('click', function (e) {
   else if (action === 'expEdit') expOpenForm(el.getAttribute('data-id'));
   else if (action === 'expCancel') expCloseForm();
   else if (action === 'expSave') expSave();
+  else if (action === 'expPhotoPick') expPhotoPick(Number(el.getAttribute('data-slot')));
+  else if (action === 'expPhotoRemove') expPhotoRemove(Number(el.getAttribute('data-slot')));
+  else if (action === 'expPhotoPaths') expPhotoPathsToggle();
+  else if (action === 'expBizSearch') expBizSearch();
+  else if (action === 'expBizPick') expBizPick(el.getAttribute('data-place'));
+  else if (action === 'expLocManual') expLocManual();
   else if (action === 'expToggle') expToggle(el.getAttribute('data-id'), el);
   else if (action === 'expRetry') { expLoadFailed = false; renderExperiencesPage(); loadExperiences(); }
   else if (action === 'expTab') {
     expTab = el.getAttribute('data-tab') === 'leads' ? 'leads' : 'catalogue';
     renderExperiencesPage();
     if (expTab === 'leads') loadExpLeads(); // fresh on every visit: leads arrive while the page is open
+    else loadExperiences(); // and the Catalogue's "N interested · N paid" moves with the leads (loadExperiences is seq-guarded)
   }
   else if (action === 'expLeadsRetry') { expLeadsFailed = false; renderExperiencesPage(); loadExpLeads(); }
   else if (action === 'expLeadOpen') expLeadOpen(el.getAttribute('data-id'));
@@ -10171,11 +10814,11 @@ function computeFlags() {
   }
 
   // red: car luggage limit
-  if (st.vehicleType === 'car' && st.luggageCount > 3) {
+  if (st.vehicleType === 'car' && st.luggageCount > 2) {
     flags.push({
       level: 'red',
       title: 'Car luggage limit',
-      detail: 'A car fits a maximum of 3 bags — ' + st.luggageCount + ' requested. Confirm with the customer or size up to a van.',
+      detail: 'A car fits a maximum of 2 bags — ' + st.luggageCount + ' requested. Confirm with the customer or size up to a van.',
     });
   }
 
@@ -10913,7 +11556,7 @@ function renderActionBar() {
     else if (s === 'pending_review') { out.push(GB('approveReady', 'Approve — ready to send', 'ch-btn-teal'), B('sendBack', 'Send back for changes', 'ch-btn-outline'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger'), B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
-    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && (!state.convertedBookingId || state.bookingAwaitingPayment)) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
   } else {
     if (s === 'draft') { out.push(GB('submitForReview', 'Submit for review', 'ch-btn-teal'), SAVE); }
@@ -10925,7 +11568,7 @@ function renderActionBar() {
        like the pending_review row: the action-bar tests scan this bar line-by-line. */
     else if (s === 'ready') { out.push(B('markSent', 'Mark as sent to customer', 'ch-btn-primary'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('reopenToDraft', 'Reopen to edit', 'ch-btn-ghost')); }
     else if (s === 'sent') { out.push(B('markWon', 'Mark booked', 'ch-btn-teal'), QUOTELINK, PAYLINK); if (PAYPART) out.push(PAYPART); out.push(B('markLost', 'Mark lost', 'ch-btn-ghostdanger')); }
-    else if (s === 'won' && !state.convertedBookingId) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
+    else if (s === 'won' && (!state.convertedBookingId || state.bookingAwaitingPayment)) { out.push(B('markWon', 'Mark booked', 'ch-btn-teal')); }
     else if (s === 'won' && state.convertedBookingId && state.balancePayLink) { out.push(BALLINK); }
     /* Ops self-approval (plan 2026-08-11). A non-approver gets Approve here ONLY when the server
        says this particular quote qualifies — a single-leg, standard-priced, undiscounted private
@@ -11143,18 +11786,71 @@ function renderReviewBanner() {
   return '';
 }
 
+// What the modal opens with. The customer's own pay-page entry (the converted booking) wins over
+// the quote's single contact box; a blank on either side never overwrites a value (2026-10-29).
+function bookPrefill(st, booking) {
+  var c = (booking && booking.input && booking.input.customer) || {};
+  var contact = (st.contact || '').trim();
+  function pick(a, b) { return (a && String(a).trim()) || b || ''; }
+  return {
+    first: pick(c.firstName, st.firstName),
+    last: pick(c.lastName, st.lastName),
+    email: pick(c.email, isValidEmail(contact) ? contact : ''),
+    whatsapp: pick(c.whatsapp, isValidPhone(contact) ? contact : ''),
+    country: pick(c.country, ''),
+    date: (st.legs[0] && st.legs[0].date) || '',
+  };
+}
+// Opens "Mark booked". A quote the customer already tapped the pay link on has a converted
+// booking holding what they typed there — fetch it so the modal starts from that, not blanks.
+async function openBookModal() {
+  bookPrefillBooking = null;
+  bookCashOnDay = false; // never carried over from a previous open
+  if (state.convertedBookingId) {
+    var seq = _openSeq;
+    var body = null;
+    try {
+      var r = await api('/admin/ops/bookings/' + encodeURIComponent(state.convertedBookingId));
+      body = r.ok ? await jsonOrNull(r) : null;
+    } catch (e) { body = null; } // pre-fill is a convenience; never block the modal
+    if (seq !== _openSeq) return; // a different quote is open now — never open on it with this customer
+    bookPrefillBooking = body && body.booking ? body.booking : null;
+  }
+  bookOpen = true;
+  render();
+}
 // "Mark booked" modal body: collects the contact/date/vehicle details the quote itself
-// doesn't carry (spec 2026-07-18). Pre-fills from state where it can — name, pax, bags,
-// the first leg's date — and splits the single f-contact field back into email/whatsapp
-// where it recognizably is one or the other; email/whatsapp/country/date/time have no
-// safe default, so the operator must fill them (guarded client-side in bookQuote()).
+// doesn't carry (spec 2026-07-18). Name, email, WhatsApp and country come from the customer's
+// pay-page booking when the quote has one (bookPrefill), else from the quote — its single
+// f-contact field split back into email/whatsapp where it recognizably is one or the other;
+// pax, bags and the first leg's date come from the quote. Time has no safe default, so the
+// operator always types it (required fields guarded client-side in bookQuote()).
+// Booking a customer as cash-on-the-day is founder/finance only (the server enforces it; this hides the box).
+function canBookCashOnDay() { return !!(window.opsCan && window.opsCan('payments:act')); }
+function bookCashCents() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  if (typeof bt === 'number') return bt;
+  return lastEstimate && lastEstimate.total && lastEstimate.total.cents != null ? lastEstimate.total.cents : null;
+}
+// One amber line when the existing booking was priced differently from what the builder shows.
+function bookCashWarn() {
+  var bt = bookPrefillBooking && bookPrefillBooking.total;
+  var shown = lastEstimate && lastEstimate.total ? lastEstimate.total.cents : null;
+  if (!bookCashOnDay || typeof bt !== 'number' || shown == null || bt === shown) return '';
+  return 'Heads up: the customer’s existing booking is ' + fmtUsd(bt) + ', not the ' + fmtUsd(shown) + ' on this quote. The email will ask for ' + fmtUsd(bt) + '.';
+}
+function bookCashHelp() {
+  if (!bookCashOnDay) return 'Leave unticked if they’ll still pay by card. The booking stays “Awaiting payment”, as today.';
+  var first = val('bk-first') || 'The customer';
+  // The email states the BOOKING's total: the customer's own pay-page booking when there is one, else the quote's.
+  var bc = bookCashCents(), total = bc != null ? fmtUsd(bc) : 'the quote total';
+  return 'Confirms the booking now. ' + first + ' is emailed to pay ' + total + ' in US dollars, cash, to the Ceylon Hop team at the first pickup. You record the cash when it’s collected.';
+}
 function renderBookModal() {
   var st = state;
-  var contact = (st.contact || '').trim();
-  var prefEmail = isValidEmail(contact) ? contact : '';
-  var prefWhatsapp = isValidPhone(contact) ? contact : '';
+  var p = bookPrefill(st, bookPrefillBooking);
+  var c = (bookPrefillBooking && bookPrefillBooking.input && bookPrefillBooking.input.customer) || null;
   var prefVehicle = (st.vehicleType === 'car') ? 'car' : 'van'; // booking schema only knows car/van
-  var prefDate = (st.legs[0] && st.legs[0].date) || '';
   function field(label, req, inputHtml) {
     return '<div class="ch-field">'
       + '<label class="ch-field-label">' + esc(label) + (req ? ' <em class="req">*</em>' : '') + '</label>'
@@ -11162,21 +11858,27 @@ function renderBookModal() {
       + '</div>';
   }
   return [
+    c ? '<p class="ch-book-prefill-hint" style="margin:0 0 12px;font-size:13px;color:var(--muted)">Filled in from what ' + esc((c.firstName && String(c.firstName).trim()) || 'the customer') + ' entered on the pay page. Check before confirming.</p>' : '',
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 14px">',
-    field('First name', true, '<input class="ch-input" id="bk-first" type="text" value="' + esc(st.firstName) + '" />'),
-    field('Last name', true, '<input class="ch-input" id="bk-last" type="text" value="' + esc(st.lastName) + '" />'),
-    field('Email', true, '<input class="ch-input" id="bk-email" type="email" value="' + esc(prefEmail) + '" />'),
-    field('WhatsApp', true, '<input class="ch-input" id="bk-whatsapp" type="tel" placeholder="+94 77 123 4567" value="' + esc(prefWhatsapp) + '" />'),
-    field('Country', true, '<input class="ch-input" id="bk-country" type="text" placeholder="e.g. LK" value="" />'),
+    field('First name', true, '<input class="ch-input" id="bk-first" type="text" value="' + esc(p.first) + '" />'),
+    field('Last name', true, '<input class="ch-input" id="bk-last" type="text" value="' + esc(p.last) + '" />'),
+    field('Email', true, '<input class="ch-input" id="bk-email" type="email" value="' + esc(p.email) + '" />'),
+    field('WhatsApp', true, '<input class="ch-input" id="bk-whatsapp" type="tel" placeholder="+94 77 123 4567" value="' + esc(p.whatsapp) + '" />'),
+    field('Country', true, '<input class="ch-input" id="bk-country" type="text" placeholder="e.g. LK" value="' + esc(p.country) + '" />'),
     field('Vehicle', false, '<select class="ch-input" id="bk-vehicle">'
       + '<option value="car"' + (prefVehicle === 'car' ? ' selected' : '') + '>Car</option>'
       + '<option value="van"' + (prefVehicle === 'van' ? ' selected' : '') + '>Van</option>'
       + '</select>'),
     field('Pax', false, '<input class="ch-input" id="bk-pax" type="number" min="1" value="' + esc(st.passengerCount) + '" />'),
     field('Bags', false, '<input class="ch-input" id="bk-bags" type="number" min="0" value="' + esc(st.luggageCount) + '" />'),
-    field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(prefDate) + '" />'),
-    field('Time', true, '<input class="ch-input" id="bk-time" type="time" value="" />'),
+    field('Date', true, '<input class="ch-input" id="bk-date" type="date" min="' + fmtISODateLocal(new Date()) + '" value="' + esc(p.date) + '" />'),
+    field('Time', false, '<input class="ch-input" id="bk-time" type="time" value="" />'),
     '</div>',
+    canBookCashOnDay() ? '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px">'
+      + '<label style="display:flex;align-items:center;gap:8px;font-weight:600"><input type="checkbox" id="bk-cash-on-day"' + (bookCashOnDay ? ' checked' : '') + ' /> Customer pays cash on the day</label>'
+      + '<p id="bk-cash-help" style="margin:6px 0 0;font-size:13px;color:var(--muted)">' + esc(bookCashHelp()) + '</p>'
+      + '<p id="bk-cash-warn" style="margin:6px 0 0;font-size:13px;color:#7a4f0c"' + (bookCashWarn() ? '' : ' hidden') + '>' + esc(bookCashWarn()) + '</p>'
+      + '</div>' : '',
   ].join('');
 }
 
@@ -11761,7 +12463,7 @@ function render() {
       renderBookModal(),
       '      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">',
       '        <button class="ch-btn ch-btn-outline" data-action="cancelBook">Cancel</button>',
-      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">Confirm booking</button>',
+      '        <button class="ch-btn ch-btn-teal" data-action="confirmBook">' + (bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking') + '</button>',
       '      </div>',
       '    </div>',
       '  </div>',
@@ -12271,8 +12973,7 @@ function attachEventListeners() {
     } else if (action === 'confirmPlacePick') {
       pickConfirmPlace(parseInt(el.getAttribute('data-idx'), 10));
     } else if (action === 'markWon') {
-      bookOpen = true;
-      render();
+      openBookModal();
     } else if (action === 'markLost') {
       runAction(action, function(){ return markOutcome('lost'); });
     } else if (action === 'confirmBook') {
@@ -12363,6 +13064,13 @@ function attachEventListeners() {
     // artifact 'change': the typing-flicker loop (docs/bug-ops-quote-typing-flicker.md).
     if (_renderSwapping) return;
     var el = e.target;
+    if (el.id === 'bk-cash-on-day') { // update the two nodes in place: a re-render would wipe the typed fields
+      bookCashOnDay = el.checked;
+      var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp();
+      var warn = document.getElementById('bk-cash-warn'); if (warn) { warn.textContent = bookCashWarn(); warn.hidden = !warn.textContent; }
+      var cb = document.querySelector('.ch-modal [data-action="confirmBook"]'); if (cb) cb.textContent = bookCashOnDay ? 'Confirm: cash on the day' : 'Confirm booking';
+      return;
+    }
     if (el.getAttribute('data-action') === 'assignQuote') { assignQuote(el.value); return; }
     var legId = el.getAttribute('data-leg');
     var field = el.getAttribute('data-field');
@@ -12475,6 +13183,7 @@ function attachEventListeners() {
 
   app.addEventListener('input', function(e) {
     var el = e.target;
+    if (el && el.id === 'bk-first' && bookCashOnDay) { var help = document.getElementById('bk-cash-help'); if (help) help.textContent = bookCashHelp(); }
     if (!el || !el.matches || !el.matches('.ch-output-editor[data-output-tab]')) return;
     var tab = el.getAttribute('data-output-tab');
     if (tab === 'whatsapp' || tab === 'email') outputDrafts[tab] = el.value;

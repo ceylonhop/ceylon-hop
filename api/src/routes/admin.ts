@@ -1,4 +1,7 @@
 import { Hono, type Context } from 'hono';
+import { refreshExperiencePins } from '../experiences/pinRefresh';
+import type { ExperienceRepo } from '../db/experienceRepo';
+import type { BusinessPlacesAdapter } from '../adapters/businessPlaces';
 import { z } from 'zod';
 import type { BookingRepo, Booking } from '../db/bookingRepo';
 import type { DepartureRepo } from '../db/departureRepo';
@@ -11,36 +14,40 @@ import {
   sendRefundConfirmation,
   sendNoShowNotice,
 } from '../services/notifications';
-import { runScheduledNotifications, sweepStaleSharedHolds } from '../services/scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds, NOTIFICATIONS_TICK } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
-import { teamCancelledEmail, teamRefundedEmail } from '../services/opsNotifications';
+import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
+import { runRideBoardFillTips, type FillTipSender } from '../services/rideBoardFillTips';
+import { committedSeats, countsForSeat, isSeedMember, type RideList, type RideMember } from '../domain/rideList';
 import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
-import { runWatchdog, checkWatchdogLiveness } from '../services/watchdog';
+import { runWatchdog, checkWatchdogLiveness, type WatchdogEmailQuota } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import type { AlertAdapter } from '../adapters/alerts';
 import type { AlertLogRepo } from '../db/alertLogRepo';
-import { opsIdentity, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
+import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
-import { mayReverse } from '../domain/reversalWindow';
+import { paidCents } from '../domain/balance';
+import { mayReverse, isLateRequest } from '../domain/reversalWindow';
+import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import { createJobCorrelation } from '../lib/correlation';
 
-// Capability-gated staff API (RBAC reconciliation, T-E): cancel/refund require a HUMAN
-// session with payments:act (founder or finance) — the machine key (system) does NOT
-// have payments:act, so a leaked x-admin-key can no longer issue refunds (spec D6).
+// Capability-gated staff API. Refunds (owner, 2026-10-17): founder and ops may REQUEST any
+// amount; only a founder (payments:reverse) sends or confirms one. Cancelling a booking keeps
+// the 24-hour rule (domain/reversalWindow.ts). The machine key (system) holds none of these.
 // Cron/watchdog endpoints stay machine-driven via admin:jobs (system or founder).
 export function adminRoutes(deps: {
   bookings: BookingRepo;
@@ -55,6 +62,8 @@ export function adminRoutes(deps: {
   alerts?: AlertAdapter;
   alertLog?: AlertLogRepo;
   digestTo?: string;
+  /** Daily re-fetch of Google-sourced experience pins (Places lat/lng may be kept 30 days). Absent = no Google key. */
+  experiencePins?: { experiences: ExperienceRepo; business: BusinessPlacesAdapter };
   // Digest dashboard link (Task 4), optional so the digest degrades gracefully without it.
   opsBaseUrl?: string;
   // Test bookings (2026-09-24): config.TEAM_EMAILS, left out of the digest's status counts.
@@ -72,6 +81,9 @@ export function adminRoutes(deps: {
   // callers work; when wired, the notifications tick also confirms/expires due lists.
   rideLists?: RideListRepo;
   ridePaygw?: TokenizedPaymentAdapter;
+  // "How to fill your van" (2026-10-27): the customer mail the fill-tip sweep sends. Unset →
+  // the sweep does not run (the tick reports fillTips: null, the manual job 409s).
+  rideFillTip?: FillTipSender;
   refunds: RefundRepo;
   // The gateway itself, for API refunds. Optional: without it (or without an adapter that
   // implements refund()) the execute route 409s and ops uses the manual dashboard flow, which
@@ -85,6 +97,8 @@ export function adminRoutes(deps: {
   // ONE tick may send before it stops and pages. Optional so existing callers/tests keep
   // their uncapped behaviour; the production mount always passes config.NOTIFY_MAX_PER_RUN.
   notifyMaxPerRun?: number;
+  // Resend daily-cap early warning for the watchdog (spec 2026-10-13 §6); absent without counters.
+  emailQuota?: WatchdogEmailQuota;
   // Relevance window + epoch (R6). Both optional; unset means unbounded, as before.
   notifyMaxTripAgeDays?: number;
   notifyEpoch?: Date;
@@ -93,6 +107,11 @@ export function adminRoutes(deps: {
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
   const r = new Hono();
   r.use('*', opsIdentity(auth));
+
+  // Same CSRF rule as /admin/ops and /admin/quote, on every write: the ch_ops cookie is ambient
+  // browser state. Cron callers send no browser headers, so they pass and the key still applies.
+  const csrf = opsCsrf;
+  r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   r.get('/bookings', requireCap('bookings:read'), async (c) => {
     const status = c.req.query('status');
@@ -171,7 +190,7 @@ export function adminRoutes(deps: {
   // grant applied by reversalGate() below so the rule is readable in one place.
   const CancelRequest = z.object({ reason: z.string().trim().min(1).max(500) }).strict();
 
-  // Shared by all four reversal routes. Returns a Response to send, or null to proceed.
+  // Guards booking cancellation only (the refund routes left it on 2026-10-17). Returns a Response to send, or null to proceed.
   const reversalGate = async (c: Context, bookingId: string): Promise<Response | null> => {
     const booking = await bookings.get(bookingId);
     if (!booking) return c.json({ error: 'booking_not_found' }, 404);
@@ -193,7 +212,8 @@ export function adminRoutes(deps: {
       const refundedCents = (await deps.refunds.list(updated.id))
         .filter((r) => r.status === 'manual_confirmed' || r.status === 'api_confirmed')
         .reduce((n, r) => n + r.amountCents, 0);
-      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, refundedCents }, deps.opsBaseUrl ?? '');
+      const paid = paidCents(await deps.payments.findByBookingId(updated.id));
+      const mail = teamCancelledEmail(updated, { by, reason: parsed.data.reason, statusBefore: before.status, paidCents: paid, refundedCents }, deps.opsBaseUrl ?? '');
       await alerts.send({
         severity: 'info',
         kind: 'booking_cancelled',
@@ -222,16 +242,16 @@ export function adminRoutes(deps: {
     return c.json({ error: error.code }, 409);
   };
 
-  // Reading refund history stays on payments:act — finance must be able to reconcile the books
-  // without being able to move money. Only the four REVERSAL routes below are founder-only.
-  r.get('/bookings/:id/refunds', requireCap('payments:act'), async (c) => {
+  // Everyone who works bookings reads the ledger — ops needs to see its own requests waiting.
+  // Moving money is gated on the routes below, never here.
+  r.get('/bookings/:id/refunds', requireCap('bookings:read'), async (c) => {
     if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
     return c.json(await deps.refunds.list(c.req.param('id')), 200);
   });
 
+  // A request moves no money and a founder decides every one, so it is not held to the 24-hour
+  // rule (owner, 2026-10-17). It still reserves the amount, so requests never exceed the capture.
   r.post('/bookings/:id/refunds', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     const parsed = RefundRequest.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'invalid_refund_request' }, 400);
     try {
@@ -241,6 +261,38 @@ export function adminRoutes(deps: {
         currency: parsed.data.currency.toUpperCase(),
         requestedBy: c.get('identity').email,
       });
+      // Founders hear about every request someone else files (spec 2026-10-17 §2). A founder's
+      // own request is about to be fired, so it needs no email. Best-effort: never fails the request.
+      const identity = c.get('identity');
+      try {
+        if (!can(identity.role, 'payments:reverse')) {
+          const booking = await bookings.get(refund.bookingId);
+          if (booking) {
+            const capturedCents = (await deps.payments.findByBookingId(booking.id))
+              .filter((p) => p.status === 'succeeded')
+              .reduce((sum, p) => sum + p.amount, 0);
+            // Full/partial on the title: an empty amount box means "everything" (spec §2).
+            const scope = refund.amountCents >= capturedCents ? 'full' : 'partial';
+            const late = isLateRequest(booking, refund.requestedAt);
+            const fmt = (cents: number) => `${(cents / 100).toFixed(2)} ${refund.currency}`;
+            const link = bookingDeepLink(booking.id, deps.opsBaseUrl ?? '');
+            void alerts.send({
+              severity: 'info',
+              kind: 'refund_requested',
+              title: `Refund requested: ${booking.reference} · ${fmt(refund.amountCents)} (${scope})${late ? ' · LATE' : ''}`,
+              body:
+                `${identity.email} asked for a refund of ${fmt(refund.amountCents)} of ${fmt(capturedCents)} paid ` +
+                `on ${booking.reference}.\n\n` +
+                `Reason: ${refund.reason}\n` +
+                (late ? '\nLate — the trip starts in under 24 hours; the driver may already be committed.\n' : '') +
+                `\nNo money has moved. Approve or cancel it in the ops tool${link ? `:\n${link}` : '.'}`,
+              dedupeKey: refund.id,
+            }).catch((error) => console.error(`refund_requested alert failed for ${refund.id}:`, error));
+          }
+        }
+      } catch (error) {
+        console.error(`refund_requested alert failed for ${refund.id}:`, error);
+      }
       return c.json(refund, 201);
     } catch (error) {
       return refundError(c, error);
@@ -309,12 +361,7 @@ export function adminRoutes(deps: {
     }
   };
 
-  // Confirm and cancel-request carry the SAME gate as the request. The money actually moves at
-  // confirm, so the protected last day has to be protected there too; if ops runs out of window
-  // mid-flow a founder finishes it, and nothing is stranded.
-  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/confirm', requireCap('payments:reverse'), async (c) => {
     const parsed = RefundConfirm.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json({ error: 'gateway_ref_required' }, 400);
     const before = await bookings.get(c.req.param('id'));
@@ -334,8 +381,8 @@ export function adminRoutes(deps: {
     }
   });
 
-  // Refund through PayHere's API instead of by hand. Same gate as confirm — this is the moment
-  // money moves, so the protected last day is protected here too.
+  // Refund through PayHere's API instead of by hand. Same gate as confirm: founder only — this is the
+  // moment money moves.
   //
   // The order below is the entire safety design and must not be rearranged:
   //   1. beginApi() claims the row as api_processing and commits, BEFORE any HTTP call
@@ -343,9 +390,7 @@ export function adminRoutes(deps: {
   //   3. only a DEFINITE answer settles the row
   // An indefinite answer leaves it in api_processing on purpose. PayHere's Refund API has no
   // idempotency key, so a retry against an unknown outcome is how a customer is refunded twice.
-  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
+  r.post('/bookings/:id/refunds/:refundId/execute', requireCap('payments:reverse'), async (c) => {
     const adapter = deps.paymentAdapter;
     if (!adapter?.refund) return c.json({ error: 'refund_api_unavailable' }, 409);
     const before = await bookings.get(c.req.param('id'));
@@ -430,9 +475,8 @@ export function adminRoutes(deps: {
     }
   });
 
+  // Cancelling a pending request releases the reservation and moves no money: ops may do it.
   r.post('/bookings/:id/refunds/:refundId/cancel', requireCap('bookings:operate'), async (c) => {
-    const blocked = await reversalGate(c, c.req.param('id'));
-    if (blocked) return blocked;
     try {
       return c.json(
         await deps.refunds.cancel({
@@ -452,7 +496,8 @@ export function adminRoutes(deps: {
     transitionAndNotify(c, 'confirmed', async () => {}),
   );
   // Ops marks a no-show (confirmed/in_progress → no_show); fare is forfeited.
-  r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', sendNoShowNotice));
+  r.post('/bookings/:id/no-show', requireCap('payments:act'), (c) => transitionAndNotify(c, 'no_show', async (b, e) =>
+      sendNoShowNotice(b, e, { paidCents: paidCents(await deps.payments.findByBookingId(b.id)) })));
 
   const MarkPaid = z
     .object({
@@ -490,16 +535,23 @@ export function adminRoutes(deps: {
     const idempotencyKey = `manual-paid:${booking.id}`;
     const claimed = await deps.payments.findByIdempotencyKey(idempotencyKey);
     // The money of an earlier attempt is already in the ledger; only the booking may still be
-    // behind. Short-circuit ONLY once the booking has actually reached paid — the second half of
+    // behind. Short-circuit ONLY once the booking has actually reached paid (or, for a pay-on-the-day booking, is
+    // already confirmed or later, where its status never moves) — the second half of
     // the same window as the pending case above: if setStatus threw something other than an
     // IllegalTransitionError (a pool timeout, a connection blip), the payment is succeeded while
     // the booking sits in payment_pending, and nothing else can move it (no webhook is coming for
     // cash, and confirm/cancel/no-show do not start from payment_pending). Answering 200 with the
     // unchanged booking would strand it for good, repairable only by hand-written SQL in prod.
     const recorded = claimed?.status === 'succeeded';
-    if (recorded && booking.status === 'paid') return c.json(booking, 200);
+    // Pay on the day: status is the trip, money is the ledger. A booking with a payment arrangement
+    // is already confirmed (or later) with nothing paid, so ops may record the cash the team
+    // collected without moving its status. A plain confirmed booking is still refused.
+    const awaitingPayment = booking.status === 'payment_pending';
+    const arrangedLater = !!booking.paymentArrangement
+      && (booking.status === 'confirmed' || booking.status === 'in_progress' || booking.status === 'completed');
+    if (recorded && (booking.status === 'paid' || arrangedLater)) return c.json(booking, 200);
 
-    if (booking.status !== 'payment_pending') {
+    if (!awaitingPayment && !arrangedLater) {
       return c.json({ error: 'not_awaiting_payment', status: booking.status }, 400);
     }
 
@@ -542,22 +594,24 @@ export function adminRoutes(deps: {
     // repair path as well (idempotent), and before the status move, which closes its payment_pending guard.
     await bookings.setAmountDueNowToTotal(booking.id);
 
-    let paid: Booking;
-    try {
-      paid = await bookings.setStatus(booking.id, 'paid', undefined, {
-        source: 'ops',
-        actorType: 'staff',
-        actorId: c.get('identity').email,
-        requestId: c.get('requestId'),
-        reason: `manual_payment:${method}`,
-        relatedEntityType: 'payment',
-        relatedEntityId: transitionPaymentId,
-      });
-    } catch (err) {
-      if (!(err instanceof IllegalTransitionError)) throw err;
-      // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
-      // money is recorded either way, so report the booking as it now stands, not a 500.
-      paid = (await bookings.get(booking.id)) ?? booking;
+    let paid: Booking = booking;
+    if (awaitingPayment) {
+      try {
+        paid = await bookings.setStatus(booking.id, 'paid', undefined, {
+          source: 'ops',
+          actorType: 'staff',
+          actorId: c.get('identity').email,
+          requestId: c.get('requestId'),
+          reason: `manual_payment:${method}`,
+          relatedEntityType: 'payment',
+          relatedEntityId: transitionPaymentId,
+        });
+      } catch (err) {
+        if (!(err instanceof IllegalTransitionError)) throw err;
+        // A webhook or a concurrent mark-paid moved the booking between the guard and here. The
+        // money is recorded either way, so report the booking as it now stands, not a 500.
+        paid = (await bookings.get(booking.id)) ?? booking;
+      }
     }
 
     // Cash landing wins the quote exactly like a webhook settle does (pay-link flow) —
@@ -610,12 +664,14 @@ export function adminRoutes(deps: {
     if (c.req.query('dryRun')) {
       const preview = await runScheduledNotifications(new Date(), {
         bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, dryRun: true, correlation,
+        payments: deps.payments, rideOps: deps.rideOps,
       });
       return c.json({ ...preview, dryRun: true }, 200);
     }
 
     const result = await runScheduledNotifications(new Date(), {
       bookings, log: notificationLog, email, baseUrl, linkSecret, budget, ...window, correlation,
+      payments: deps.payments, rideOps: deps.rideOps,
     });
     let staleSharedHolds = 0;
     try {
@@ -633,6 +689,18 @@ export function adminRoutes(deps: {
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);
+      }
+    }
+    // "How to fill your van" rides the same tick, best-effort, on the same budget: one mail per
+    // traveller on a ride still short of its minimum, a day after they joined, never twice.
+    let fillTips: Awaited<ReturnType<typeof runRideBoardFillTips>> | null = null;
+    if (deps.rideLists && deps.rideFillTip) {
+      try {
+        fillTips = await runRideBoardFillTips(new Date(), {
+          rideLists: deps.rideLists, send: deps.rideFillTip, alertLog: deps.alertLog, budget,
+        });
+      } catch (err) {
+        console.error('ride-board fill-tip sweep failed:', err);
       }
     }
     // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
@@ -681,7 +749,7 @@ export function adminRoutes(deps: {
         !deps.alertLog || (await deps.alertLog.shouldSend('ops_digest', 'daily', DIGEST_COOLDOWN_MS, new Date()));
       if (doDigest) {
         try {
-          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents });
+          const d = await buildDigest(new Date(), { bookings, alertLog: deps.alertLog, quotes: deps.quotes, opsBaseUrl: deps.opsBaseUrl, teamEmails: deps.teamEmails, checkoutEvents: deps.checkoutEvents, notificationLog, rideOps: deps.rideOps });
           await email.send({ to: deps.digestTo, subject: d.subject, html: d.html, text: d.text, audience: 'ops' });
           digest = true;
         } catch (err) {
@@ -702,8 +770,24 @@ export function adminRoutes(deps: {
         console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
       }
     }
+    // Experience pins from Google ride the same tick, once per ~day however often the cron POSTs (20h
+    // cooldown on the alert ledger, as the digest), best-effort like every rider here.
+    let experiencePins: Awaited<ReturnType<typeof refreshExperiencePins>> | null = null;
+    if (deps.experiencePins) {
+      const due = !deps.alertLog || (await deps.alertLog.shouldSend('experience_pin_refresh', 'daily', 20 * 3600_000, new Date()));
+      if (due) {
+        try {
+          experiencePins = await refreshExperiencePins(deps.experiencePins);
+        } catch (err) {
+          console.error('experience pin refresh failed:', err);
+        }
+      }
+    }
+    // Footprint, last (spec 2026-10-13 §4) — the watchdog's WATCHDOG_TICK for this tick, so the
+    // ops Health tab can say when the daily run last completed. Zero cooldown: every run overwrites.
+    await deps.alertLog?.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date());
     return c.json(
-      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, ga4, watchdogStale, suppressed: budget?.report().suppressed ?? 0 },
+      { ...result, staleSharedHolds, expiredQuotes, abandonedDrafts, digest, rideBoard, fillTips, ga4, watchdogStale, experiencePins, suppressed: budget?.report().suppressed ?? 0 },
       200,
     );
   });
@@ -726,6 +810,62 @@ export function adminRoutes(deps: {
     return c.json(result, 200);
   });
 
+  // The fill-tip sweep by hand (2026-10-27). The daily tick runs the same sweep; this exists
+  // so a human can POST ?dryRun=1 with the system key and read who the FIRST real run would
+  // mail — that run is the backfill for everyone already on the board — before letting the
+  // tick (or a plain POST here) send it. Idempotent via the alert ledger. 409 rather than a
+  // silent no-op when no sender is wired: "ran fine, sent nothing" would hide that.
+  r.post('/jobs/board-fill-tips', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideLists || !deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const result = await runRideBoardFillTips(new Date(), {
+      rideLists: deps.rideLists,
+      send: deps.rideFillTip,
+      alertLog: deps.alertLog,
+      dryRun: !!c.req.query('dryRun'),
+    });
+    return c.json(result, 200);
+  });
+
+  // One real "how to fill your van" email to one named inbox (owner ask 2026-10-28: see it in a
+  // mail client on staging). ?code= sends it for that REAL ride — its route, date, seat count,
+  // cutoff and links, addressed as to its starter — the way the sweep will; without a code, a
+  // sample ride. Either way it goes through the wired sender and the real provider and touches
+  // no ledger, so the sweep still owes every member their own email when it is due. The dev
+  // preview only renders in the browser and the sweep would mail whoever is in the database.
+  r.post('/jobs/board-fill-tips/test', requireCap('admin:jobs'), async (c) => {
+    if (!deps.rideFillTip) return c.json({ error: 'not_configured' }, 409);
+    const to = (c.req.query('to') ?? '').trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return c.json({ error: 'to_required' }, 400);
+    const code = (c.req.query('code') ?? '').trim();
+    if (code) {
+      const found = deps.rideLists ? await deps.rideLists.getByCode(code) : null;
+      if (!found) return c.json({ error: 'ride_not_found' }, 404);
+      const live = found.members.filter((m) => countsForSeat(m) && !isSeedMember(m)).sort((a, b) => a.position - b.position);
+      const starter = live.find((m) => m.sub === found.list.createdBy) ?? live[0];
+      if (!starter) return c.json({ error: 'ride_has_no_members' }, 409);
+      await deps.rideFillTip({
+        to, firstName: starter.firstName, list: found.list, member: starter,
+        committed: committedSeats(found.members), isStarter: starter.sub === found.list.createdBy,
+      });
+      return c.json({ sent: true, to, ride: found.list.code }, 200);
+    }
+    const now = new Date();
+    const inDays = (d: number) => new Date(now.getTime() + d * 86_400_000);
+    const list: RideList = {
+      id: '00000000-0000-4000-8000-00000000f111', code: 'EL-0000', corridorId: 'ella-mirissa',
+      fromPlace: 'Ella', toPlace: 'Mirissa', date: inDays(10).toISOString().slice(0, 10), slot: 'morning',
+      lockedTime: null, minSeats: 4, capacity: 6, seatPrice: 2300, status: 'gathering', note: null,
+      cutoffAt: inDays(8), createdBy: 'test-starter', createdAt: now, updatedAt: now,
+    };
+    const member: RideMember = {
+      id: '00000000-0000-4000-8000-00000000f112', listId: list.id, position: 1, sub: 'test-starter',
+      firstName: 'Mia', country: 'DE', email: to, phone: null, photoUrl: null, preferredTime: null, seats: 1,
+      preapprovalRef: null, preapprovalOrderId: null, preapprovalExpiresAt: null, status: 'held', joinedAt: now,
+    };
+    await deps.rideFillTip({ to, firstName: member.firstName, list, member, committed: 1, isStarter: true });
+    return c.json({ sent: true, to, sample: list.code }, 200);
+  });
+
   // M17 — payments watchdog tick. Idempotent (alerts dedupe per booking inside their
   // cooldown); driven every ~15 min by the external cron with the x-admin-key header.
   r.post('/jobs/watchdog', requireCap('admin:jobs'), async (c) => {
@@ -737,6 +877,7 @@ export function adminRoutes(deps: {
       rideLists: deps.rideLists,
       customerCommunications: deps.customerCommunications,
       correlation,
+      emailQuota: deps.emailQuota,
     });
     // One line per sweep in the server log, so "when did the watchdog run, and what did it
     // see?" can be answered from Render's logs as well as from the ledger (CH-V43ZU).

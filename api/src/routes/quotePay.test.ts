@@ -1663,3 +1663,128 @@ describe('POST /quotes/pay/start — repeated cancellations on one link', () => 
     expect(await bookings.list()).toHaveLength(4); // earlier link's + two cancelled + the live one
   });
 });
+
+// Requirements 2026-10-26 R13: once the customer has started paying, the booking exists, and ops
+// may re-date it before payment (the customer typed the wrong day). The page must then describe
+// the BOOKING's day — the quote's is what was wrong. Before /start there is nothing to re-date.
+describe('GET /quotes/pay/view — the date follows a re-dated booking', () => {
+  it('shows the booking\'s new pickup date once ops has changed it, not the quote\'s', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes); // one leg, quoted for 2026-09-01
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    expect((await (await view(app, t)).json()).copy.subtitle).toBe('Tuesday 1 September 2026');
+
+    const { bookingId } = await (await start(app, t)).json();
+    const r = await bookings.setSchedule(bookingId, {
+      date: '2026-11-04', time: '09:30', expected: { date: '2026-09-01', time: null },
+      actor: { type: 'staff', id: 'f@x.com' }, reason: 'customer_entered_wrong',
+    });
+    expect(r.ok).toBe(true);
+
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payable');
+    expect(body.copy.subtitle).toBe('Wednesday 4 November 2026');
+    expect(body.copy.title).toBe('Colombo Airport (CMB) → Galle'); // nothing else moves
+  });
+
+  it('keeps the quote\'s date while the booking still has it', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const app = createApp({ quotes, bookings });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await start(app, t);
+    expect((await (await view(app, t)).json()).copy.subtitle).toBe('Tuesday 1 September 2026');
+  });
+});
+
+// Pay on the day (owner 2026-10-29/30): a founder books a WhatsApp customer whose card failed as
+// cash on the day — booking `confirmed` + `paymentArrangement: 'on_the_day'`, NO payment, quote
+// `won`. Reopening the link must say what is still owed, never "Paid", and must not offer a card.
+describe('the pay_on_day state', () => {
+  async function payOnDay() {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t)).json();
+    await bookings.setPaymentArrangement(bookingId, 'on_the_day');
+    await bookings.setStatus(bookingId, 'confirmed');
+    await quotes.patch(q.id, { status: 'won' });
+    const booking = (await bookings.get(bookingId))!;
+    return { quotes, bookings, payments, app, q, t, bookingId, booking };
+  }
+
+  it('/view: a confirmed on-the-day booking with no payment reads pay_on_day with what is owed', async () => {
+    const { app, t, booking } = await payOnDay();
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('pay_on_day');
+    expect(body).not.toHaveProperty('paid');
+    expect(body.payOnDay).toEqual({ reference: booking.reference, firstName: 'Nimal', amountUsd: '$219.00', title: expect.any(String) });
+    // Nothing that could start a card payment.
+    expect(body).not.toHaveProperty('totals');
+    expect(body).not.toHaveProperty('copy');
+  });
+
+  it('/view: once ops records the cash, the link shows the paid keepsake as today', async () => {
+    const { app, t, payments, bookingId, booking } = await payOnDay();
+    const p = await payments.create({ bookingId, provider: 'cash', orderId: booking.reference, amount: 21900, currency: 'USD', idempotencyKey: `cash:${bookingId}` });
+    await payments.markSucceeded(p.id);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe('$219.00');
+    expect(body).not.toHaveProperty('payOnDay');
+  });
+
+  it('/view: a won quote whose booking has no arrangement is paid, unchanged', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    await start(app, t);
+    await quotes.patch(q.id, { status: 'won' });
+    expect((await (await view(app, t)).json()).state).toBe('paid');
+  });
+
+  it('/start on a pay_on_day link is refused exactly like a paid link — no card checkout', async () => {
+    const { app, t, bookings } = await payOnDay();
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_paid');
+    expect((await bookings.list()).length).toBe(1);
+  });
+
+  // A cancelled or no-show arranged booking keeps the quote won — the link must not say "You're
+  // booked … nothing to pay online" next to the cancellation / no-show email.
+  it('/view: an arranged booking that went no_show or was cancelled reads unavailable', async () => {
+    const noShow = await payOnDay();
+    await noShow.bookings.setStatus(noShow.bookingId, 'no_show');
+    expect((await (await view(noShow.app, noShow.t)).json()).state).toBe('unavailable');
+
+    const cancelled = await payOnDay();
+    await cancelled.bookings.setStatus(cancelled.bookingId, 'cancelled');
+    expect((await (await view(cancelled.app, cancelled.t)).json()).state).toBe('unavailable');
+  });
+
+  it('/start on a cancelled arranged booking is refused', async () => {
+    const { app, t, bookings, bookingId } = await payOnDay();
+    await bookings.setStatus(bookingId, 'cancelled');
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('quote_unavailable');
+    expect((await bookings.list()).length).toBe(1);
+  });
+
+  it('/balance on a pay_on_day link is refused', async () => {
+    const { app, t } = await payOnDay();
+    const res = await payBalance(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('no_balance_due');
+  });
+});

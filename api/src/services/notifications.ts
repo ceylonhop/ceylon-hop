@@ -1,12 +1,13 @@
 import type { Booking } from '../db/bookingRepo';
 import { shortPlace } from '../quote/shortPlace';
+import { isAirportPlace } from '../quote/payPageCopy';
 import type {
   CustomerCommunicationKind,
   CustomerCommunicationTracking,
   EmailAdapter,
   SendOutcome,
 } from '../adapters/email';
-import { sharedRouteLabel } from '../db/departureRepo';
+import { sharedRouteLabel, sharedProductFor } from '../db/departureRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 // Brand palette — "concierge letter" direction, held to docs/brand-book.md. Colours are
@@ -29,16 +30,22 @@ const PAPER = '#F0EEE5'; // Marshmallow — outer page tone (--cream)
 const CARD = '#fffdf8'; // letter surface (--paper; was one digit off at #fffefb)
 const HAIR = '#e7e3d6'; // hairline dividers (--line; was a near-miss #efe6d6)
 const ROUTE_LINE = '#dcc9a9'; // the connecting journey line
-const SERIF = "'Bodoni 72', 'Bodoni Moda', Didot, Georgia, 'Times New Roman', serif";
-const SANS = "'Poppins', Helvetica, Arial, sans-serif";
-const MONO = "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace";
+// One family everywhere (owner, 2026-10-29). Clients that block web fonts (Gmail, Outlook)
+// get Georgia, the nearest serif they all ship.
+const SERIF = "'Source Serif 4', Georgia, 'Times New Roman', serif";
+const SANS = SERIF;
+const MONO = SERIF;
 const WA_URL = 'https://wa.me/94779669662';
 const REVIEW_URL = 'https://g.page/ceylonhop/review';
+// Shared by the paid confirmation's and the pay-on-the-day email's "What happens next" box.
+const WHAT_HAPPENS_NEXT =
+  'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.';
 
 const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunicationTracking, 'templateKey' | 'source' | 'actorType'>> = {
   confirmation: { templateKey: 'booking-confirmation', source: 'payment_webhook', actorType: 'provider' },
   details_needed: { templateKey: 'booking-details-needed', source: 'payment_webhook', actorType: 'provider' },
   booking_confirmed: { templateKey: 'booking-confirmed', source: 'ops', actorType: 'staff' },
+  pay_on_day_confirmed: { templateKey: 'booking-pay-on-day', source: 'quote_conversion', actorType: 'staff' },
   cancellation: { templateKey: 'booking-cancellation', source: 'ops', actorType: 'staff' },
   refund: { templateKey: 'booking-refund', source: 'refund', actorType: 'staff' },
   no_show_notice: { templateKey: 'booking-no-show', source: 'ops', actorType: 'staff' },
@@ -48,6 +55,9 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   payment_failed: { templateKey: 'payment-failed', source: 'payment_webhook', actorType: 'provider' },
   deposit_received: { templateKey: 'deposit-received', source: 'payment_webhook', actorType: 'provider' },
   balance_received: { templateKey: 'balance-received', source: 'payment_webhook', actorType: 'provider' },
+  schedule_set: { templateKey: 'booking-schedule-set', source: 'ops', actorType: 'staff' },
+  details_reminder_1: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  details_reminder_2: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
 };
 
 function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
@@ -97,7 +107,8 @@ function travellers(adults: number, children: number): string {
   return s;
 }
 
-interface Stop { color: string; label: string; place: string; sub?: string }
+// `gapAfter`: the stretch to the next stop is the customer's own (trip_request.gaps), drawn dashed.
+interface Stop { color: string; label: string; place: string; sub?: string; gapAfter?: boolean }
 
 // True when a trip's last stop is the same place it started (a round trip). The website
 // has no round-trip flag — it just repeats the origin as the final stop.
@@ -115,14 +126,19 @@ function journey(booking: Booking): Stop[] {
     const stops = booking.input.stops;
     const nights = booking.input.nights ?? [];
     const dates = booking.input.dates ?? [];
+    const gaps = booking.input.gaps ?? [];
     const roundTrip = isRoundTrip(booking);
     return stops.map((s, i) => {
       const last = i === stops.length - 1;
+      const gapAfter = !last && gaps.includes(i);
       const parts: string[] = [];
       const n = nights[i] ?? 0;
       if (n > 0) parts.push(`${n} night${n > 1 ? 's' : ''}`);
-      if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
+      // A self-arranged stretch (their own train) must not read as a transfer we drive.
+      if (gapAfter) parts.push(`Your own travel to ${shortPlace(stops[i + 1]!)}, not with us`);
+      else if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
       return {
+        ...(gapAfter ? { gapAfter } : {}),
         color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
         label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
         // Short labels (2026-08-06) — an email column is narrow, and a full address swamps it.
@@ -234,6 +250,11 @@ export function factRows(booking: Booking): [string, string][] {
       ['Seats', String(booking.input.seats)],
       ['Date & time', dateTime(booking.input.date, booking.input.time)],
     ];
+    // Where to stand and where they are set down, as published (owner, 2026-10-29) — the
+    // town alone left customers guessing. Only a recorded leg can name its points.
+    const leg = booking.input.fromPlace && booking.input.toPlace ? sharedProductFor(booking.input.fromPlace, booking.input.toPlace) : null;
+    if (leg?.pickup) rows.push(['Pick-up point', leg.pickup]);
+    if (leg?.dropoff) rows.push(['Drop-off point', leg.dropoff]);
     // One bag per seat rides free; the rest were charged. Showing the count is what makes the
     // total add up — before this the surcharge was simply unexplained (audit 2026-09-22 #1).
     const bags = booking.input.bags ?? 0;
@@ -241,6 +262,8 @@ export function factRows(booking: Booking): [string, string][] {
       const extra = Math.max(0, bags - booking.input.seats);
       rows.push(['Luggage', `${bags} bag${bags > 1 ? 's' : ''}${extra > 0 ? ` · ${extra} over the free allowance` : ''}`]);
     }
+    const addOns = addOnsLabel(booking);
+    if (addOns) rows.push(['Extras', addOns]);
     return rows;
   }
   const rows: [string, string][] = [
@@ -307,13 +330,14 @@ const BADGE_DEPOSIT: Badge = { label: 'Deposit paid', bg: '#e7f6ec', color: '#0c
 const BADGE_FAILED: Badge = { label: 'Payment failed', bg: '#fff6e8', color: '#8a5a12' };
 const AMBER = '#8a5a12';
 
-// True when a paid booking still has an open detail we must confirm (a flexible/"to
-// confirm" date). Drives the "we still need your details" follow-up. The exact pickup
-// is always captured as an area (input.from is required), so date is the open field.
+// True when a paid booking still has an open detail we must confirm. A single transfer needs
+// BOTH a date and a pickup time — "Decide later" can leave either blank (booking.js), and a
+// driver can't be sent with only one. A trip needs at least one date. Shared rides always book
+// a fixed departure. Drives the "we still need your details" email and its reminders.
 export function needsDetails(booking: Booking): boolean {
-  if (booking.mode === 'shared') return false; // shared always books a fixed departure
+  if (booking.mode === 'shared') return false;
   if (booking.mode === 'trip') return !booking.input.dates?.some(Boolean);
-  return !booking.input.date;
+  return !booking.input.date || !booking.input.time;
 }
 
 // Header lockup: a teal monogram + serif wordmark on the warm card (no heavy band —
@@ -411,7 +435,7 @@ function routeRow(booking: Booking): string {
       .map(
         (s, i) =>
           `<tr>
-            <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
+            <td valign="top" style="width:20px;border-left:2px ${s.gapAfter ? 'dashed' : 'solid'} ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
             <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}</td>
           </tr>`,
       )
@@ -529,7 +553,7 @@ function footer(): string {
 function page(inner: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light">
-  <style>@import url('https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600;6..96,700&family=Poppins:wght@400;500;600;700;800&display=swap');</style>
+  <style>@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,400..800;1,8..60,400..800&display=swap');</style>
   </head><body style="margin:0;padding:0;background:${PAPER};font-family:${SANS};color:${INK};-webkit-font-smoothing:antialiased">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAPER};padding:26px 12px">
     <tr><td align="center">
@@ -612,7 +636,7 @@ function renderHtml(
       (manageLink ? manageButton(manageLink) : '') +
       infoBox(
         'What happens next',
-        'Our team will message you on WhatsApp during Sri Lanka service hours (8am–9pm, GMT+5:30) to check your pickup details. Your driver and vehicle details will be sent on WhatsApp before pickup.',
+        WHAT_HAPPENS_NEXT,
         cancellationPolicy(booking),
       ) +
       footer(),
@@ -738,8 +762,16 @@ export async function sendTripReminder(
   booking: Booking,
   email: EmailAdapter,
   links: { manage?: string } = {},
+  // Pay on the day only: what the ledger still says is owed. Undefined = ledger not consulted.
+  opts: { cashDueCents?: number } = {},
 ): Promise<void> {
   const first = esc(booking.input.customer.firstName);
+  // Pay on the day: never say "Paid" until the cash is on the ledger (status = trip, money = ledger).
+  const unsettled = !!booking.paymentArrangement && opts.cashDueCents !== 0;
+  const cashLine =
+    unsettled && opts.cashDueCents
+      ? `Have ${money(opts.cashDueCents, booking.currency)} in US dollars cash ready. You’ll pay the Ceylon Hop team at your first pickup.`
+      : null;
   const html = page(
     brandHeader() +
       introBlock(
@@ -748,7 +780,10 @@ export async function sendTripReminder(
         `Your trip is almost here, ${first}`,
         'A quick reminder about your upcoming Ceylon Hop journey — here are the details again.',
       ) +
-      ticketCard(booking, BADGE_PAID) +
+      ticketCard(booking, unsettled ? BADGE_CONFIRMED : BADGE_PAID) +
+      (cashLine
+        ? `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>`
+        : '') +
       (links.manage ? manageButton(links.manage) : '') +
       infoBox(
         'Before you travel',
@@ -759,6 +794,7 @@ export async function sendTripReminder(
   const text = textShell('your trip is coming up', 'A quick reminder about your upcoming journey:', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
+    ...(cashLine ? [cashLine] : []),
     'Your driver and vehicle details will be sent on WhatsApp before pickup.',
     ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
   ]);
@@ -1040,8 +1076,58 @@ export async function sendBookingConfirmed(
   });
 }
 
+// ── Pay on the day (ops Mark booked: confirmed, customer pays USD cash at first pickup) ──
+export async function sendPayOnDayConfirmed(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const amount = money(booking.total, booking.currency);
+  const cashLine = `Please pay ${amount} in US dollars, cash, to the Ceylon Hop team at your first pickup.`;
+  const next = WHAT_HAPPENS_NEXT;
+  const html = page(
+    brandHeader() +
+      introBlock(
+        '✓ Confirmed',
+        TEAL_DEEP,
+        `You’re confirmed, ${first}!`,
+        'Your trip is booked. You’ll pay in cash on the day, so there’s nothing to pay online.',
+      ) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      totalBlock('To pay on the day', amount) +
+      `<tr><td style="padding:4px 34px 18px;font-family:${SERIF};font-size:15px;line-height:1.55;color:${INK}">${esc(cashLine)}</td></tr>` +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('What happens next', next, cancellationPolicy(booking)) +
+      footer(),
+  );
+  const text = textShell('your booking is confirmed', 'Your trip is booked — you’ll pay in cash on the day.', booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    `To pay on the day: ${amount}`,
+    cashLine,
+    '',
+    `What happens next: ${next}`,
+    cancellationPolicy(booking),
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `You’re confirmed — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'pay_on_day_confirmed'),
+  });
+}
+
 // ── No-show (confirmed/in_progress → no_show; fare forfeited) ──────────────
-export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): Promise<void> {
+// Pay on the day with nothing on the ledger: nothing was collected, so "the fare isn't refundable"
+// would be false — say the booking is closed instead. `paidCents` comes from the payments ledger.
+export async function sendNoShowNotice(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { paidCents?: number } = {},
+): Promise<void> {
+  const nothingCharged = Boolean(booking.paymentArrangement) && opts.paidCents === 0;
   const first = esc(booking.input.customer.firstName);
   const html = page(
     brandHeader() +
@@ -1052,16 +1138,23 @@ export async function sendNoShowNotice(booking: Booking, email: EmailAdapter): P
         'Your driver was at the pickup at the booked time, but we weren’t able to reach you.',
       ) +
       ticketCard(booking, BADGE_NO_SHOW) +
-      infoBox(
-        'About your fare',
-        'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
-      ) +
+      (nothingCharged
+        ? infoBox(
+            'About your booking',
+            'We’ve marked this booking as a no-show and closed it. Nothing was charged. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )
+        : infoBox(
+            'About your fare',
+            'Because the driver was dispatched and waited, this booking is marked as a no-show and the fare isn’t refundable. Still need to travel? Message us and we’ll help you arrange a new booking.',
+          )) +
       footer(),
   );
   const text = textShell('missed pickup', 'Your driver was at the pickup, but we couldn’t reach you.', booking, [
     ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
     '',
-    'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
+    nothingCharged
+      ? 'This booking is marked as a no-show and closed. Nothing was charged. Message us to arrange a new booking.'
+      : 'This booking is marked as a no-show and the fare isn’t refundable. Message us to arrange a new booking.',
   ]);
   await email.send({
     to: booking.input.customer.email,
@@ -1107,6 +1200,97 @@ export async function sendDetailsNeeded(
     html,
     text,
     tracking: emailTracking(booking, 'details_needed'),
+  });
+}
+
+// ── Reminder: we still need the pickup date/time (Phase 2, plan 2026-10-18) ─
+// Sent by the scheduled tick at ~2 and ~7 days after payment while a single transfer is still
+// missing its date or time. WhatsApp is the ask — the reference is already typed, so replying is
+// one tap. Says plainly to ignore it if they already told us: ops may not have entered it yet.
+export async function sendDetailsReminder(
+  booking: Booking,
+  email: EmailAdapter,
+  opts: { nth: 1 | 2; manage?: string },
+): Promise<void> {
+  if (booking.mode !== 'single') return;
+  const first = esc(booking.input.customer.firstName);
+  // An arrival knows when the flight lands, not when a driver should turn up (owner, 2026-10-21).
+  const noun = isAirportPlace(booking.input.from) ? 'flight landing' : 'pickup';
+  const missing = !booking.input.date && !booking.input.time
+    ? `${noun} date and time`
+    : !booking.input.date ? `${noun} date` : `${noun} time`;
+  const msg = `Hi Ceylon Hop, for booking ${booking.reference} my ${missing} is: `;
+  const ask: Cta = { ...CTA_WHATSAPP, href: `${WA_URL}?text=${encodeURIComponent(msg).replace(/'/g, '%27')}` };
+  // The form on the manage page leads (Phase 4); WhatsApp stays as the fallback. `#pickup` opens it.
+  const form = opts.manage ? `${opts.manage}#pickup` : null;
+  const html = page(
+    brandHeader() +
+      introBlock(
+        'Reminder',
+        AMBER,
+        `What's your ${missing}, ${first}?`,
+        `Your booking is paid and safe. We just need your ${missing} to book your driver.`,
+      ) +
+      ticketCard(booking, BADGE_ACTION) +
+      (form ? ctaRow(form, `Add your ${missing}`) : '') +
+      infoBox(
+        form ? 'Or tell us on WhatsApp' : 'Tell us on WhatsApp',
+        `Tap below and send us your ${missing}. Already told us? You can ignore this email.`,
+        undefined,
+        ask,
+      ) +
+      footer(),
+  );
+  const text = textShell(`what's your ${missing}?`, `Your booking is paid — we just need your ${missing}.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    ...(form ? [`Add it here: ${form}`, ''] : []),
+    `${form ? 'Or tell us' : 'Tell us'} on WhatsApp: ${ask.href}`,
+    'Already told us? You can ignore this email.',
+  ]);
+  await email.send({
+    to: booking.input.customer.email,
+    subject: `Reminder: your ${missing} — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, opts.nth === 1 ? 'details_reminder_1' : 'details_reminder_2'),
+  });
+}
+
+// ── Your pickup is set (date/time filled or changed after booking) ─────────
+// Spec 2026-10-17 §4. The reader is often abroad, so the time is labelled Sri Lanka time and the
+// weekday is spelled out — this is where a wrong date is easiest to catch.
+export async function sendScheduleSet(
+  booking: Booking,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  if (booking.mode !== 'single' || !booking.input.date) return;
+  const first = esc(booking.input.customer.firstName);
+  const lands = isAirportPlace(booking.input.from);
+  const when = booking.input.time
+    ? `${fmtDate(booking.input.date)} · ${lands ? 'lands ' : ''}${booking.input.time} (Sri Lanka time)`
+    : `${fmtDate(booking.input.date)} · ${lands ? 'landing' : 'pickup'} time to confirm`;
+  const html = page(
+    brandHeader() +
+      introBlock('Pickup set', TEAL_DEEP, `Your pickup is set, ${first}`, `${esc(when)}. Please check it now.`) +
+      ticketCard(booking, BADGE_CONFIRMED) +
+      (links.manage ? manageButton(links.manage) : '') +
+      infoBox('Something not right?', 'Message us on WhatsApp with your booking reference and we will fix it.') +
+      footer(),
+  );
+  const text = textShell('your pickup is set', `${when}. Please check it now.`, booking, [
+    ...factRows(booking).map(([k, v]) => `${k}: ${v}`),
+    '',
+    'Something not right? Message us on WhatsApp with your booking reference.',
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `Your pickup is set — ${booking.reference}`,
+    html,
+    text,
+    tracking: emailTracking(booking, 'schedule_set'),
   });
 }
 

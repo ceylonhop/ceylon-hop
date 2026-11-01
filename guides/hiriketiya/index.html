@@ -19,7 +19,7 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="../../favicon.svg">
 <link rel="apple-touch-icon" href="../../img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="../../site.css?v=33723b0702">
+<link rel="stylesheet" href="../../site.css?v=0afd32962e">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -247,12 +247,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .live{display:inline-flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ink-soft);margin-top:18px}
   .live i{width:9px;height:9px;border-radius:50%;background:var(--teal)}
   .all{margin:20px 0 0;font-size:.95rem}.all a{font-weight:600}
-  .ask{background:var(--btn-accent);color:#fff}
-  .ask .wrap{display:grid;gap:22px;align-items:center}
-  @media(min-width:760px){.ask .wrap{grid-template-columns:1fr auto}}
-  .ask .eyebrow{color:#fff;opacity:.85}.ask .eyebrow::before{background:#fff}
-  .ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
-  .ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
+  section.ask{background:var(--btn-accent);color:#fff} /* section.: the Eat/Stay card is .pl.ask too */
+  section.ask .wrap{display:grid;gap:22px;align-items:center}
+  @media(min-width:760px){section.ask .wrap{grid-template-columns:1fr auto}}
+  section.ask .eyebrow{color:#fff;opacity:.85}section.ask .eyebrow::before{background:#fff}
+  section.ask h2{color:#fff;margin:0 0 .5rem;line-height:1.08}
+  section.ask p{margin:0;color:rgba(255,255,255,.88);max-width:36rem;font-size:1.02rem}
   .credits{padding:20px 0 30px;font-size:.74rem;color:var(--ink-soft)}
   .credits .wrap{display:flex;flex-wrap:wrap;gap:6px 14px}
   @media(max-width:759px){
@@ -294,7 +294,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <h1>Hiriketiya</h1>
       <p class="sub">A small horseshoe bay just outside Dickwella on the south coast, ringed by coconut palms, with a gentle beach break on one side and a reef wave on the other. Brunch cafés, yoga in the jungle behind the beach, and a much slower pace than Mirissa.</p>
     </div>
-    <span class="credit">Photo: Zoshua Colah / Unsplash</span>
   </div>
   <div class="facts"><div class="wrap"><div class="fact"><small>Stay</small><b>2–4 nights</b></div><div class="fact"><small>Surf season</small><b>Dec–Mar</b></div><div class="fact"><small>Daytime</small><b>29–31<span class="unit">°C</span></b></div><div class="fact"><small>Between</small><b>Mirissa &amp; Yala</b></div></div></div>
   <div class="jump" id="jump"><div class="wrap"><a href="#here" class="on">Getting here</a><a href="#see">See &amp; do</a><a href="#plan">Itinerary</a><a href="#when">When to come</a><a href="#eat">Eat &amp; stay</a><a href="#night">Nightlife</a><a href="#qa">Your questions</a><a href="#next">Where next</a></div></div>
@@ -305,7 +304,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="route reveal">
         <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM23 17a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM3 17l2-7h14l2 7M7 10V6h10v4"/></svg></span>
         <h3>Straight from the airport</h3><p class="from">CMB · 199 km · about 3 h · expressway most of the way</p>
-        <p class="sell">Your driver meets you at arrivals and takes the expressway down the coast past Galle and Matara, then country lanes for the last few kilometres to the bay.</p>
+        <p class="sell">Airport pickup included, then the expressway down the coast past Galle and Matara, then country lanes for the last few kilometres to the bay.</p>
         <a class="btn btn-cta" href="../../search.html?from=cmb-airport&amp;to=hiriketiya">See price &amp; book</a>
       </div>
       <div class="route reveal">
@@ -321,7 +320,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         <a class="btn btn-cta" href="../../search.html?from=yala&amp;to=hiriketiya">See price &amp; book</a>
       </div>
     </div>
-    <details class="alt reveal"><summary>Thinking about the train?</summary><div class="dc"><div><p><b>There’s no station in Hiriketiya.</b> The nearest is Wewurukannala, on the line that runs on past Matara to Beliatta, about 10 minutes away; a few direct trains a day come from Colombo Fort, taking 3 h 40 to nearly 5 hours. Matara, about 20 km away, has many more. The coastal line was disrupted by a derailment in April 2026, so check before you rely on it. We drive it door to door, and the expressway is quicker.</p></div></div></details>
+    <details class="alt reveal"><summary>Thinking about the train?</summary><div class="dc"><div><p><b>There’s no station in Hiriketiya.</b> The nearest is Wewurukannala, on the line that runs on past Matara to Beliatta, about 10 minutes away; a few direct trains a day come from Colombo Fort, taking 3 h 40 to nearly 5 hours. Matara, about 20 km away, has many more. We drive it door to door, and the expressway is quicker.</p></div></div></details>
   </div></section>
   <section class="section" id="see"><div class="wrap">
     <div class="sh reveal"><div class="eyebrow">Things to see &amp; do</div><h2>Five things worth your time</h2><p>In the order we’d do them. Every one has hours, how far from town, how long to give it, and our honest tip.</p></div>
@@ -373,7 +372,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       </article>
     </div>
     <div class="sh reveal far-head"><div class="eyebrow">Further afield</div><h2 class="h2-small">Worth a whole day, if you have one</h2></div>
-    <div class="far"><div class="fx reveal"><span class="km">15 min<small>each way</small></span><b>Hummanaya blowhole, Kudawella</b><p>A blowhole in the rocks east of Dickwella that throws sea spray high into the air when the swell is up — best on a rough morning between May and September. Foreigners pay a small entry fee, about LKR 500.</p></div><div class="fx reveal"><span class="km">About 1 h<small>each way</small></span><b>Mirissa</b><p>Whale boats from November to April, Coconut Tree Hill and a bigger beach scene, about an hour west. Easy as a day out, or as your next stop.</p></div><div class="fx reveal"><span class="km">About 3 h<small>each way</small></span><b>Yala</b><p>The leopard park is about three hours east — better as your next stop than a day trip. Leave after breakfast and you’re there for an early start in the park the next morning.</p></div></div>
+    <div class="far"><div class="fx reveal"><span class="km">15 min<small>each way</small></span><b>Hummanaya blowhole, Kudawella</b><p>A blowhole in the rocks east of Dickwella that throws sea spray high into the air when the swell is up — best on a rough morning between May and September. Foreigners pay a small entry fee, about LKR 500.</p></div><div class="fx reveal"><span class="km">About 45 min<small>each way</small></span><b>Mirissa</b><p>Whale boats from November to April, Coconut Tree Hill and a bigger beach scene, about 45 minutes west. Easy as a day out, or as your next stop.</p></div><div class="fx reveal"><span class="km">About 3 h<small>each way</small></span><b>Yala</b><p>The leopard park is about three hours east — better as your next stop than a day trip. Leave after breakfast and you’re there for an early start in the park the next morning.</p></div></div>
     <div class="checked"><i></i>Hours and fees checked October 2026 — <a href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%20%E2%80%94%20a%20question%20about%20Hiriketiya%3A%20">tell us on WhatsApp</a> if something has changed</div>
   </div></section>
   <section class="section" id="plan"><div class="wrap">
@@ -493,7 +492,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     <div class="reveal"><div class="eyebrow">Real people, real answers</div><h2>Not sure about something?</h2><p>Whether the waves are working, which places are open this month, whether the Blue Beach camp is running — message us and we’ll check. That’s what we’re here for.</p></div>
     <a class="wa reveal" href="https://wa.me/94779669662?text=Hi%20Ceylon%20Hop%20%E2%80%94%20a%20question%20about%20Hiriketiya%3A%20"><i></i>Message us on WhatsApp</a>
   </div></section>
-  <div class="credits"><div class="wrap"><span>Photos:</span><span>Zoshua Colah</span><span>Sören Funk</span><span>Mariam G</span><span>Romain Gal</span><span>Prazanthy Ramesh</span><span>Kike Salazar N</span><span>Kwesi Morton</span><span>Juan Bacab</span><span>Dinuka Lankaloka</span><span>Norbert Braun</span><span>Lou Lou B Photo</span><span>Sasha Kaunas</span><span>— on Unsplash · <a href="../../credits.html">all credits</a></span></div></div>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../guide-page.js?v=44015c5fcb"></script>
 </main>

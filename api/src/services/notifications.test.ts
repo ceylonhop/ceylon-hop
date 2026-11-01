@@ -144,6 +144,49 @@ describe('sendBookingConfirmation — trip (chauffeur)', () => {
   });
 });
 
+// known-bugs 2026-07-30 / 2026-08-04: the customer's own Ella → Galle train read, in their own
+// itinerary, as a leg we drive.
+describe('sendBookingConfirmation — trip with a self-arranged stretch', () => {
+  const gapped: Booking = {
+    mode: 'trip',
+    id: 'id4',
+    reference: 'CH-GAP01',
+    status: 'paid',
+    createdAt: new Date().toISOString(),
+    total: 30000,
+    currency: 'USD',
+    channel: 'whatsapp',
+    input: {
+      stops: ['Colombo', 'Ella', 'Galle', 'Colombo'],
+      nights: [0, 0, 0],
+      dates: ['2026-11-02', '', '2026-11-05'],
+      pax: 2,
+      vehicleType: 'car',
+      serviceType: 'private',
+      customer,
+      gaps: [1],
+    },
+  };
+
+  it('says the stretch after Ella is their own travel, drawn as a dashed line', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(gapped, email);
+    const html = email.sent[0].html;
+    expect(html).toContain('Your own travel to Galle, not with us');
+    expect(html.match(/border-left:2px dashed/g)).toHaveLength(1);
+  });
+
+  it('draws every stretch solid when the trip has no gaps', async () => {
+    const email = new FakeEmailAdapter();
+    const input = { ...(gapped.input as Extract<Booking, { mode: 'trip' }>['input']) };
+    delete input.gaps;
+    await sendBookingConfirmation({ ...gapped, input } as Booking, email);
+    const html = email.sent[0].html;
+    expect(html).not.toContain('Your own travel');
+    expect(html).not.toContain('dashed');
+  });
+});
+
 describe('sendBookingConfirmation — shared seat', () => {
   const shared: Booking = {
     mode: 'shared',
@@ -231,6 +274,36 @@ describe('sendTripReminder', () => {
   });
 });
 
+describe('sendTripReminder — pay on the day', () => {
+  const arranged = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  const send = async (b: Booking, opts?: { cashDueCents?: number }) => {
+    const email = new FakeEmailAdapter();
+    await sendTripReminder(b, email, {}, opts);
+    return email.sent[0];
+  };
+  it('owing cash: Confirmed badge, not Paid, and a cash-ready line in html and text', async () => {
+    const m = await send(arranged, { cashDueCents: 34200 });
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+    }
+  });
+  it('ledger unknown: Confirmed badge, no cash line, never Paid', async () => {
+    const m = await send(arranged);
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).not.toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+    expect(m.text).not.toContain('US dollars');
+  });
+  it('cash already recorded: the usual Paid reminder, no cash line', async () => {
+    const m = await send(arranged, { cashDueCents: 0 });
+    expect(m.html).toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
+  });
+});
+
 describe('sendReviewRequest', () => {
   it('thanks the customer and asks for a review, with reference and a review link — once', async () => {
     const email = new FakeEmailAdapter();
@@ -313,8 +386,11 @@ describe('sendRefundConfirmation', () => {
 import {
   sendPaymentIncomplete,
   sendBookingConfirmed,
+  sendPayOnDayConfirmed,
   sendNoShowNotice,
   sendDetailsNeeded,
+  sendScheduleSet,
+  sendDetailsReminder,
   needsDetails,
 } from './notifications';
 
@@ -375,6 +451,28 @@ describe('sendBookingConfirmed — driver arranged', () => {
   });
 });
 
+describe('sendPayOnDayConfirmed — pay in cash on the day', () => {
+  const booking = { ...single, status: 'confirmed', total: 34200, amountDueNow: 0, paymentArrangement: 'on_the_day' } as Booking;
+  it('confirms the trip and says to pay cash USD to the team at the first pickup', async () => {
+    const email = new FakeEmailAdapter();
+    const out = await sendPayOnDayConfirmed(booking, email, { manage: 'https://ceylonhop.com/manage.html?t=xyz' });
+    expect(out).toEqual(expect.objectContaining({ delivered: true }));
+    const m = email.sent[0];
+    expect(m.subject).toBe('You’re confirmed — CH-ABC12');
+    expect(m.tracking?.kind).toBe('pay_on_day_confirmed');
+    expect(m.html).toContain('Confirmed');
+    expect(m.html).toContain('manage.html?t=xyz');
+    for (const body of [m.html, m.text]) {
+      for (const s of ['To pay on the day', '$342.00', 'US dollars', 'the Ceylon Hop team', 'first pickup']) expect(body).toContain(s);
+      for (const s of ['Total paid', 'Deposit paid', 'Balance due']) expect(body).not.toContain(s);
+      expect(body).not.toMatch(/pay (?:the|your) driver|driver (?:will )?collect/i);
+      expect(body).toContain('to the Ceylon Hop team');
+      expect(body).toContain('Your driver and vehicle details will be sent on WhatsApp before pickup.');
+    }
+    expect(m.html).not.toContain('>Paid<');
+  });
+});
+
 describe('sendNoShowNotice — fare forfeited', () => {
   it('states the fare is not refundable and offers rebooking', async () => {
     const email = new FakeEmailAdapter();
@@ -384,6 +482,35 @@ describe('sendNoShowNotice — fare forfeited', () => {
     expect(m.html.toLowerCase()).toContain("isn’t refundable");
     expect((m.text ?? "").toLowerCase()).toContain("isn’t refundable");
     expect(m.text).not.toContain('<');
+  });
+});
+
+describe('sendNoShowNotice — pay on the day', () => {
+  const arranged = { ...single, status: 'no_show', paymentArrangement: 'on_the_day' } as typeof single;
+
+  it('says nothing was charged when a pay-on-the-day booking has no money on the ledger', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 0 });
+    const m = email.sent[0];
+    expect(m.html).toContain('Nothing was charged');
+    expect(m.text).toContain('Nothing was charged');
+    expect(m.html.toLowerCase()).not.toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).not.toContain('isn’t refundable');
+  });
+
+  it('keeps the forfeited-fare wording when the arranged booking did pay something', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice(arranged, email, { paidCents: 34200 });
+    const m = email.sent[0];
+    expect(m.html.toLowerCase()).toContain('isn’t refundable');
+    expect((m.text ?? '').toLowerCase()).toContain('isn’t refundable');
+    expect(m.html).not.toContain('Nothing was charged');
+  });
+
+  it('keeps the forfeited-fare wording without an arrangement, even at 0 paid', async () => {
+    const email = new FakeEmailAdapter();
+    await sendNoShowNotice({ ...single, status: 'no_show' }, email, { paidCents: 0 });
+    expect(email.sent[0].html.toLowerCase()).toContain('isn’t refundable');
   });
 });
 
@@ -401,9 +528,11 @@ describe('sendDetailsNeeded — flexible booking follow-up', () => {
 });
 
 describe('needsDetails', () => {
-  it('true for a single transfer with no date, false once a date is set', () => {
-    expect(needsDetails(single)).toBe(true); // fixture has no date
-    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(false);
+  it('true for a single transfer missing its date or its time, false once both are set', () => {
+    expect(needsDetails(single)).toBe(true); // fixture has neither
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01' } } as Booking)).toBe(true); // no time
+    expect(needsDetails({ ...single, input: { ...single.input, time: '09:00' } } as Booking)).toBe(true); // no date
+    expect(needsDetails({ ...single, input: { ...single.input, date: '2026-08-01', time: '09:00' } } as Booking)).toBe(false);
   });
   it('true for a trip with no dates, false when a date exists', () => {
     const noDates: Booking = {
@@ -659,6 +788,17 @@ describe('partial-booking coverage (spec 2026-08-04)', () => {
 // their own prices, so its ends name no customer's journey.
 //
 // The leg is now recorded on the booking, and every label reads that.
+describe('shared seat — the email names its extras', () => {
+  it('lists the hotel pick-up & drop-off the customer paid for', () => {
+    const b = { ...single, mode: 'shared', input: { corridorId: 'airport-cultural', date: '2026-09-23', time: '07:30', seats: 2, customer }, addOns: ['Hotel pick-up & drop-off'] } as Booking;
+    expect(factRows(b)).toContainEqual(['Extras', 'Hotel pick-up & drop-off']);
+  });
+  it('has no Extras row without one', () => {
+    const b = { ...single, mode: 'shared', input: { corridorId: 'airport-cultural', date: '2026-09-23', time: '07:30', seats: 2, customer } } as Booking;
+    expect(factRows(b).some(([k]) => k === 'Extras')).toBe(false);
+  });
+});
+
 describe('shared seat — the email names the leg that was sold', () => {
   const seat: Booking = {
     mode: 'shared',
@@ -698,6 +838,24 @@ describe('shared seat — the email names the leg that was sold', () => {
 
   it('reads as a directed leg, because a sold leg has a direction', () => {
     expect(routeText(seat)).toBe('Shared shuttle · Colombo Airport (CMB) → Sigiriya / Dambulla');
+  });
+
+  // Customers could not tell where the shared taxi picks them up or sets them down: the email
+  // named the towns only (owner, 2026-10-29). It now names the leg's published points.
+  it('names the pick-up and drop-off points of the leg', async () => {
+    expect(factRows(seat)).toEqual(expect.arrayContaining([
+      ['Pick-up point', 'CMB Airport'],
+      ['Drop-off point', 'Barista Cafe, Sigiriya'],
+    ]));
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(seat, email);
+    expect(email.sent[0].html).toContain('Barista Cafe, Sigiriya');
+    expect(email.sent[0].text).toContain('Drop-off point: Barista Cafe, Sigiriya');
+  });
+
+  it('a row with no recorded leg names no point, since it cannot know which', () => {
+    const legacy = { ...seat, input: { ...seat.input, fromPlace: undefined, toPlace: undefined } } as Booking;
+    expect(factRows(legacy).map(([k]) => k)).not.toContain('Pick-up point');
   });
 
   // Rows booked before the leg was recorded cannot be resolved. The corridor ends
@@ -904,5 +1062,91 @@ describe('sendBookingConfirmation — experience interests', () => {
     expect(cancelled.subject).toContain('cancelled');
     expect(cancelled.html).not.toContain('Interested in');
     expect(cancelled.text).not.toContain('Interested in');
+  });
+});
+
+describe('sendScheduleSet — pickup set after booking', () => {
+  const scheduled = { ...single, status: 'paid', input: { ...single.input, date: '2026-11-04', time: '09:00' } } as Booking;
+
+  it('states the weekday, date and Sri Lanka time, and offers WhatsApp for corrections', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(scheduled, email, { manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    expect(email.sent).toHaveLength(1);
+    const m = email.sent[0];
+    expect(m.subject).toBe('Your pickup is set — CH-ABC12');
+    expect(m.html).toMatch(/Wed,? 4 Nov 2026/); // ICU builds differ on the comma
+    expect(m.html).toContain('09:00');
+    expect(m.html).toContain('Sri Lanka time');
+    expect(m.html.toLowerCase()).toContain('whatsapp');
+    expect(m.html).toContain('manage.html?t=abc');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('schedule_set');
+  });
+
+  it('says the time is still to confirm when only the date is set', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...scheduled, input: { ...scheduled.input, from: 'Kandy', time: undefined } } as Booking, email);
+    expect(email.sent[0].html).toContain('pickup time to confirm');
+  });
+
+  it('tells an airport arrival their driver meets the landing time', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet({ ...single, input: { ...single.input, date: '2030-11-04', time: '09:00' } } as Booking, email);
+    expect(email.sent[0].html).toContain('lands 09:00 (Sri Lanka time)');
+  });
+
+  it('sends nothing for a booking without a date', async () => {
+    const email = new FakeEmailAdapter();
+    await sendScheduleSet(single, email);
+    expect(email.sent).toHaveLength(0);
+  });
+});
+
+describe('sendDetailsReminder — still need the pickup date/time', () => {
+  it('asks on WhatsApp with the reference already typed, and says to ignore it if they already told us', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy' } } as Booking, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    expect(m.subject).toBe('Reminder: your pickup date and time — CH-ABC12');
+    expect(m.html).toContain('wa.me/94779669662?text=');
+    expect(m.html).toContain(encodeURIComponent('CH-ABC12'));
+    expect(m.html.toLowerCase()).toContain('already told us');
+    expect(m.text).not.toContain('<');
+    expect(m.tracking?.kind).toBe('details_reminder_1');
+  });
+
+  it('names only what is missing', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy', date: '2026-11-04' } } as Booking, email, { nth: 2 });
+    expect(email.sent[0].html).toContain('pickup time');
+    expect(email.sent[0].html).not.toContain('pickup date and time');
+    expect(email.sent[0].tracking?.kind).toBe('details_reminder_2');
+  });
+
+  it('leads with the manage page, form open, and keeps WhatsApp as the fallback', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1, manage: 'https://ceylonhop.com/manage.html?t=abc' });
+    const m = email.sent[0];
+    const form = m.html.indexOf('manage.html?t=abc#pickup');
+    expect(form).toBeGreaterThan(-1);
+    expect(form).toBeLessThan(m.html.indexOf('wa.me/94779669662'));
+    expect(m.html).toContain('Or tell us on WhatsApp');
+    expect(m.html).not.toContain('View your booking'); // the form link replaces it
+    const text = m.text ?? '';
+    expect(text.indexOf('manage.html?t=abc#pickup')).toBeGreaterThan(-1);
+    expect(text.indexOf('#pickup')).toBeLessThan(text.indexOf('wa.me'));
+  });
+
+  it('asks an airport arrival for their flight landing date and time', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder(single, email, { nth: 1 }); // fixture: from 'Colombo Airport'
+    expect(email.sent[0].subject).toBe('Reminder: your flight landing date and time — CH-ABC12');
+    expect(email.sent[0].html).toContain('flight landing date and time');
+  });
+
+  it('keeps "pickup" for a pickup that is not an airport', async () => {
+    const email = new FakeEmailAdapter();
+    await sendDetailsReminder({ ...single, input: { ...single.input, from: 'Kandy' } } as Booking, email, { nth: 1 });
+    expect(email.sent[0].subject).toBe('Reminder: your pickup date and time — CH-ABC12');
   });
 });

@@ -154,7 +154,9 @@ export async function installEstimateStub(page, opts = {}) {
     } = o;
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
     if (status !== 200) {
-      return r.fulfill({ status, contentType: 'application/json', body: '{"error":"not_found"}' });
+      // `body` lets a spec answer with a real refusal (e.g. 422 quote_unpriced); the default is
+      // the flag-off 404 shape every existing spec relies on.
+      return r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(rest.body ?? { error: 'not_found' }) });
     }
     return r.fulfill(json({ ...rest, totalCents, amountDueNowCents, estimated, legs }));
   });
@@ -194,6 +196,7 @@ export async function gotoBooking(page, opts = {}) {
     routeKm = 100,
     bookingStatus = 201,
     checkout = 'fake',
+    captureBooking = false,          // push each POST /bookings/(single|trip) body onto the returned bookingBodies
     bookingTotal = 12100,            // server-authoritative total (minor units) from /bookings/single
     bookingAmountDueNow = undefined, // optional charge-now amount (deposit); defaults to total
     googleDelay = 0,
@@ -271,12 +274,15 @@ export async function gotoBooking(page, opts = {}) {
 
   // booking creation
   await page.route('**/bookings/single', (r) => {
+    captureBody(r);
     if (bookingStatus !== 201) return r.fulfill({ status: bookingStatus, contentType: 'application/json', body: '{"error":"boom"}' });
     const b = { id: 'e2e-booking-1', reference: 'CH-E2E01', status: 'draft', total: bookingTotal, currency: 'USD', mode: 'single', checkoutToken: 'e2e-checkout-token' };
     if (bookingAmountDueNow !== undefined) b.amountDueNow = bookingAmountDueNow;
     return r.fulfill(json(b));
   });
-  await page.route('**/bookings/trip', (r) => r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip', checkoutToken: 'e2e-trip-checkout-token' })));
+  const bookingBodies = [];
+  const captureBody = (r) => { if (captureBooking) { try { bookingBodies.push(JSON.parse(r.request().postData() || 'null')); } catch { bookingBodies.push(r.request().postData()); } } };
+  await page.route('**/bookings/trip', (r) => (captureBody(r), r.fulfill(json({ id: 'e2e-trip-1', reference: 'CH-E2ET1', status: 'draft', mode: 'trip', checkoutToken: 'e2e-trip-checkout-token' }))));
   await page.route('**/bookings/shared', (r) => r.fulfill(json({ id: 'e2e-shared-1', reference: 'CH-E2ES1', status: 'draft', mode: 'shared', checkoutToken: 'e2e-shared-checkout-token' })));
 
   // Rate-lock: the client mints a 7-day locked quote before a single-transfer booking (§5).
@@ -348,7 +354,7 @@ export async function gotoBooking(page, opts = {}) {
   }
 
   await page.goto(`${path}?${query}`);
-  return { gateway, sdk, checkoutBodies, fields, viewTokens, nearRequests, ratingRequests };
+  return { gateway, sdk, checkoutBodies, bookingBodies, fields, viewTokens, nearRequests, ratingRequests };
 }
 
 // What the stub API's checkout hands the page: the shape PayHerePaymentAdapter signs, with the
@@ -396,5 +402,8 @@ export async function pickPlace(page, inputId, menuId, text, index = 0) {
   await page.evaluate(() => window.goStep && window.goStep(2));
   await page.fill(inputId, text);
   await page.waitForSelector(`#${menuId} .ac-item`);
+  // Google's rows arrive after CH_MAP.suggest's typing pause; until then the menu holds a
+  // "Searching Google…" row. Pick from the settled menu, as a customer would.
+  await page.waitForSelector(`#${menuId} .ac-item.loading`, { state: 'detached' });
   await page.click(`#${menuId} .ac-item >> nth=${index}`);
 }

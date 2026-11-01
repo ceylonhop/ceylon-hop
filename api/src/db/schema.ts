@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, boolean, timestamp, date, unique, uniqueIndex, jsonb, doublePrecision, index, check, primaryKey } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const customers = pgTable('customers', {
@@ -80,10 +80,18 @@ export const bookings = pgTable(
     // The customer's own "Anything we should know?" note from the booking page (0059). Plain
     // text, at most 1,000 characters. Null when they left none, and on every older row.
     customerNotes: text('customer_notes'),
+    // How the customer will pay when it isn't "now, by card" (0077). Null = the normal flow.
+    // 'on_the_day' = USD cash to the Ceylon Hop team at the first pickup; the only thing that lets a booking be confirmed with
+    // no payment (domain/status.ts). Money facts come from the payments ledger, never this field.
+    paymentArrangement: text('payment_arrangement'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     check('bookings_total_nonnegative', sql`${t.total} >= 0`),
+    check(
+      'bookings_payment_arrangement_valid',
+      sql`${t.paymentArrangement} is null or ${t.paymentArrangement} in ('on_the_day')`,
+    ),
     check(
       'bookings_customer_notes_length',
       sql`${t.customerNotes} is null or char_length(${t.customerNotes}) <= 1000`,
@@ -302,6 +310,12 @@ export const tripRequests = pgTable('trip_request', {
   // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2, 0061_route_variant).
   // One entry per consecutive stop pair. Null means no leg chose the toll-free road.
   routeVariants: text('route_variants').array(),
+  // Self-arranged stretches (0076_trip_request_gaps): indexes of the wires stops[i] → stops[i+1]
+  // the customer covers themselves. Null means none — every pair is a leg we drive.
+  gaps: integer('gaps').array(),
+  // Wires the car drives straight on from (0078_trip_request_through): stops[i+1] is a stop on the
+  // way inside one leg. Null means none — every pair is its own leg.
+  through: integer('through').array(),
 });
 
 // One record per journey in a booking, so a customer-supplied hotel attaches to a JOURNEY rather
@@ -607,6 +621,37 @@ export const bookingStatusEvents = pgTable(
   ],
 );
 
+// Every pickup date/time change made AFTER booking (spec 2026-10-17 §4, migration 0072). The
+// change overwrites transfer_request + booking_legs in place, so this is the only record of what
+// it was before and who moved it. Written only by BookingRepo.setSchedule, inside the same write.
+export const bookingScheduleEvents = pgTable(
+  'booking_schedule_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    fromDate: text('from_date'),
+    fromTime: text('from_time'),
+    toDate: text('to_date').notNull(),
+    toTime: text('to_time'),
+    actorType: text('actor_type').notNull(),
+    actorId: text('actor_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    // Ops date/time changes (requirements 2026-10-26, migration 0075). Null on rows written before
+    // it, and on customer fills. legId names the leg a multi-stop change moved; null = the booking.
+    reason: text('reason'),
+    note: text('note'),
+    legId: uuid('leg_id').references(() => bookingLegs.id),
+  },
+  (t) => [
+    check('booking_schedule_events_actor_type_valid', sql`${t.actorType} in ('staff', 'customer')`),
+    check(
+      'booking_schedule_events_reason_valid',
+      sql`${t.reason} is null or ${t.reason} in ('customer_changed_plans', 'customer_entered_wrong', 'flight_changed', 'our_mistake', 'other')`,
+    ),
+    index('booking_schedule_events_booking_created_idx').on(t.bookingId, t.createdAt),
+  ],
+);
+
 // M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
 // never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
 export const customerCommunications = pgTable(
@@ -633,7 +678,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2', 'pay_on_day_confirmed')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),
@@ -679,6 +724,9 @@ export const rideOps = pgTable('ride_ops', {
   sentAt: timestamp('sent_at', { withTimezone: true }),
   acknowledgedAt: timestamp('acknowledged_at', { withTimezone: true }),
   vehicleConfirmedAt: timestamp('vehicle_confirmed_at', { withTimezone: true }),
+  // "Driver told?" (requirements 2026-10-26 R8, migration 0075): set when a date moves on a job a
+  // driver already has, cleared when ops ticks it. Null = nothing to tell.
+  driverUpdatePendingSince: timestamp('driver_update_pending_since', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -1002,6 +1050,8 @@ export const experiences = pgTable('experiences', {
   partnerContact: text('partner_contact'),
   // Tripadvisor listing id (D22) - the only Tripadvisor datum we may store; ratings are fetched live.
   tripadvisorLocationId: text('tripadvisor_location_id'),
+  // Google place id the experience was filled from ("Find the business on Google"); refreshes the pin later.
+  googlePlaceId: text('google_place_id'),
   active: boolean('active').notNull().default(true),
   createdBy: text('created_by'),
   updatedBy: text('updated_by'),
@@ -1040,3 +1090,16 @@ export const experienceInterests = pgTable('experience_interests', {
   uniqueIndex('experience_interests_quote_uq').on(t.experienceId, t.quoteId).where(sql`${t.quoteId} IS NOT NULL`),
   index('experience_interests_status_idx').on(t.status),
 ]);
+
+// Usage counters (spec 2026-10-13 §1): one row per UTC day and counter key — provider email sends
+// against the Resend caps, live Google calls per method, 429s served. Written by UsageMeter as
+// coalesced upserts that ADD; read only by the ops Health tab. migration 0071.
+export const usageCounters = pgTable(
+  'usage_counters',
+  {
+    day: date('day').notNull(),
+    key: text('key').notNull(),
+    n: integer('n').notNull().default(0),
+  },
+  (t) => [primaryKey({ name: 'usage_counters_pkey', columns: [t.day, t.key] })],
+);

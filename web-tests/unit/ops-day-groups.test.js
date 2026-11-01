@@ -50,6 +50,7 @@ const { dayGroup, inGroup } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
   const dayGroup=${extractConst('dayGroup')};
+  ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
   const inGroup=${extractConst('inGroup')};
   return { dayGroup, inGroup };
 `)(CLOSED, TODAY, TOMORROW);
@@ -116,6 +117,11 @@ describe('bookings queue filter chips', () => {
     expect(inGroup(overdue, 'all')).toBe(false);
     expect(inGroup(expired, 'all')).toBe(false);
     expect(inGroup(closed, 'all')).toBe(false);
+    // …except a completed pay-on-the-day trip whose cash is still unrecorded: the list shows it until
+    // the cash is recorded, so the badge (which counts what the list shows) can point at it.
+    const cashOwed = { stage: 'completed', date: LAST_WEEK, paymentArrangement: 'on_the_day', cashDue: 34200 };
+    expect(inGroup(cashOwed, 'all')).toBe(true);
+    expect(inGroup({ ...cashOwed, cashDue: 0 }, 'all')).toBe(false);
   });
 
   it('keeps every live row in "All open", dated or not', () => {
@@ -157,6 +163,8 @@ describe('bookings queue filter chips', () => {
   // The nav badge has to count the same rows the list shows, or it points somewhere the reader
   // cannot get to. Against the real queue the unscoped version read ~60 for a forward book of 10.
   it('scopes the nav badge to open work', () => {
-    expect(html).toContain("const attn=tickets.filter(t=>inGroup(t,'all')&&isAttn(t)&&!t.test).length;");
+    // A founder's badge also adds the refunds waiting on them (closed bookings included); the
+    // open-work half is still scoped to "All open", so the count never reaches back into old rows.
+    expect(html).toContain("const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;");
   });
 });

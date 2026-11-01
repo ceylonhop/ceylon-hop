@@ -25,8 +25,9 @@ import {
   type PriceOutcome,
 } from '../services/pricing';
 import { measureLeg } from '../quote/routeChoice';
-import { promoDiscount, roadRow } from '../services/notifications';
-import { websitePricingSnapshot, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { promoDiscount, roadRow, sendScheduleSet, manageUrl } from '../services/notifications';
+import { websitePricingSnapshot, sharedPricingSnapshot, SCHEDULE_EDITABLE_STATUSES, type BookingRepo, type Booking } from '../db/bookingRepo';
+import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
 import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
@@ -36,6 +37,9 @@ import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
 import type { MapsAdapter, DistanceResult, RouteVariants } from '../adapters/maps';
 import { canonPlace } from '../adapters/maps';
 import type { ConciergeTaskRepo } from '../db/conciergeTaskRepo';
+import type { AlertAdapter } from '../adapters/alerts';
+import { teamUnpricedEmail, teamScheduleSetEmail } from '../services/opsNotifications';
+import type { EmailAdapter } from '../adapters/email';
 import type { QuoteRepo } from '../db/quoteRepo';
 import { rateCardFor } from '../quote/rateLock';
 import { RATE_CARD, type RateCard } from '../quote/rateCard';
@@ -179,18 +183,31 @@ export interface CustomerBookingView {
   totalCents: number;
   amountDueNowCents: number;
   balanceDueCents: number;
+  // 'on_the_day' = the customer pays USD cash to the team at the first pickup; absent otherwise. The
+  // manage page words the balance row from it.
+  paymentArrangement?: 'on_the_day';
   // Money actually received (Σ succeeded payments) and whether the manage page may offer the
   // balance (spec 2026-10-07 §5.3).
   paidCents: number;
   balancePayable: boolean;
+  // The engine couldn't price this booking: `totalCents` is a placeholder checkout refuses, and
+  // ops prices it by hand. The manage page shows neither the amount nor a Pay button then.
+  needsPricing: boolean;
   // The add-ons the customer chose, as the quote named them. Absent when there are none.
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
   road?: string;
+  // A shared leg's published meeting points (departureRepo SHARED_PRODUCTS). Absent unless the
+  // booking recorded its leg and the catalogue names the point (owner, 2026-10-29).
+  pickupPoint?: string;
+  dropoffPoint?: string;
   // The promo code the booking was made with and what it took off (promoDiscount) — the card's
   // Promo row above Total. Both absent on every booking without a code.
   promoCode?: string;
   discountCents?: number;
+  // Who made the latest pickup date/time change after booking (booking_schedule_events). Absent
+  // when nobody has. The manage page says "set by our team" for 'staff' and never "set by you".
+  scheduleSetBy?: 'staff' | 'customer';
 }
 
 export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBookingView {
@@ -206,8 +223,10 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     totalCents: b.total,
     amountDueNowCents: dueNow,
     balanceDueCents: balanceDueCents(b, payments),
+    ...(b.paymentArrangement ? { paymentArrangement: b.paymentArrangement } : {}),
     paidCents: paidCents(payments),
     balancePayable: isBalanceOpen(b, payments),
+    needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),
     ...(road ? { road } : {}),
     ...(promo ? { promoCode: promo.code, discountCents: promo.cents } : {}),
@@ -255,8 +274,11 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
   // because the corridor's endpoints are the van's route and not this traveller's (CH-6HE3V).
   const label = sharedRouteLabel(b.input);
   const leg = label?.kind === 'leg' ? label : null;
+  const product = leg ? sharedProductFor(leg.from, leg.to) : null;
   return {
     ...base,
+    ...(product?.pickup ? { pickupPoint: product.pickup } : {}),
+    ...(product?.dropoff ? { dropoffPoint: product.dropoff } : {}),
     from: leg?.from ?? 'Pickup',
     to: leg?.to ?? 'Drop-off',
     date: b.input.date,
@@ -305,6 +327,12 @@ export function bookingRoutes(deps: {
   // Partner experiences (spec 2026-10-06 D10). Unset → "I'm interested" taps are not recorded.
   experiences?: ExperienceRepo;
   experienceInterests?: ExperienceInterestRepo;
+  // The team's "Unpriced:" email (CH-E7EE8). Unset → the ops task is the only signal.
+  alerts?: AlertAdapter;
+  opsBaseUrl?: string;
+  // The customer's "Your pickup is set" email after they fill it on the manage page (Phase 4).
+  // Unset → nothing is emailed; the change still saves.
+  email?: EmailAdapter;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -312,6 +340,14 @@ export function bookingRoutes(deps: {
   const r = new Hono();
   const checkoutNow = deps.checkoutNow ?? Date.now;
   const promoNow = deps.promoNow ?? (() => new Date());
+
+  // The server's own idempotency keys are namespaced with ':' (book:quote:<id>, pay:quote:…,
+  // checkout:…). A client key in that namespace could pre-claim one — e.g. attach a cheap booking
+  // to a quote (review 2026-10-25). The website sends 'ch-<base36>', so ':' is never legitimate.
+  r.use('*', async (c, next) => {
+    if (c.req.header('Idempotency-Key')?.includes(':')) return c.json({ error: 'invalid_idempotency_key' }, 400);
+    return next();
+  });
 
   // §6.1 step 1 — a sent code resolved to a working PromoCode, or the error to answer with. Runs
   // before any Maps call, so a bad code costs nothing. The use count is taken later, under the lock.
@@ -333,6 +369,18 @@ export function bookingRoutes(deps: {
       ...booking,
       checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()),
     };
+  }
+
+  // An Idempotency-Key replays only to the customer who made the booking. The website's key is a
+  // 32-bit hash of the payload, so two customers can collide by chance, and a guessed key must not
+  // fetch a stranger's booking and checkout token (review 2026-10-25). A key held by someone else is
+  // dropped: this request books afresh without it, so a colliding customer is never stuck.
+  async function claimIdempotencyKey(key: string | undefined, email: string): Promise<{ replay?: Booking; key?: string }> {
+    if (!key) return {};
+    const existing = await bookings.findByIdempotencyKey(key);
+    if (!existing) return { key };
+    const owner = existing.input.customer.email.trim().toLowerCase();
+    return owner === email.trim().toLowerCase() ? { replay: existing } : {};
   }
 
   function bearerToken(authorization: string | undefined): string | undefined {
@@ -452,6 +500,23 @@ export function bookingRoutes(deps: {
       // Say WHY: "distance unresolved" is wrong when the route is fine and Google was simply
       // down, and it would send ops hunting for a bad place name that isn't there.
       await flagForOps(booking, resolved.reason ? `${UNPRICED_NOTE_PREFIX} (${resolved.reason})` : UNPRICED_NOTE);
+      // The task alone sat unseen for weeks (CH-E7EE8): tell the team now. Best-effort, like
+      // the task — the booking exists and the customer is mid-checkout.
+      if (deps.alerts) {
+        const reason = resolved.reason ?? 'distance unresolved';
+        try {
+          await deps.alerts.send({
+            severity: 'warning',
+            kind: 'booking_unpriced',
+            title: `Unpriced: ${booking.reference} needs a price before the customer can pay`,
+            body: `${booking.reference} was saved without a price (${reason}). Set the price in ops, then send a pay link.`,
+            email: teamUnpricedEmail(booking, reason, deps.opsBaseUrl ?? ''),
+            dedupeKey: booking.id,
+          });
+        } catch (err) {
+          console.error(`unpriced alert failed for ${booking.reference}:`, err);
+        }
+      }
     }
   }
 
@@ -534,6 +599,26 @@ function tripGapsProblem(t: TripInput): string | null {
   return null;
 }
 
+// Stops on the way (TripInput.through): wire i continues the same leg onto wire i+1, so stops[i+1]
+// is a stop, not an overnight. Each rule here is a shape the planner never produces; a violation
+// means a hand-built or stale request, and pricing it would silently merge or split legs.
+function tripThroughProblem(t: TripInput): string | null {
+  const through = t.through ?? [];
+  if (!through.length) return null;
+  const wires = t.stops.length - 1;
+  if (new Set(through).size !== through.length) return 'each wire can be listed once';
+  if (through.some((w) => w >= wires - 1)) return `only wires 0–${Math.max(0, wires - 2)} can continue onto a next wire`;
+  const gaps = new Set(t.gaps ?? []);
+  if (through.some((w) => gaps.has(w) || gaps.has(w + 1))) return 'a stop on the way cannot sit on a self-arranged stretch';
+  if (through.some((w) => (t.nights[w + 1] ?? 0) !== 0)) return 'a stop on the way has no nights';
+  const dates = t.dates ?? [];
+  if (through.some((w) => (dates[w] || dates[w + 1]) && (dates[w] ?? '') !== (dates[w + 1] ?? ''))) return 'a leg with stops runs on one date';
+  const rv = t.routeVariants ?? [];
+  const inRun = new Set(through.flatMap((w) => [w, w + 1]));
+  if ([...inRun].some((w) => rv[w] === 'no_tolls')) return 'a leg with stops has no road choice';
+  return null;
+}
+
 // Promo code (spec 2026-09-14 §6.1), read off the raw body for the same reason as billing and terms
 // above: the shared domain input schemas stay untouched. Blank counts as not sent.
 function promoCodeFrom(body: unknown): { sent: false } | { sent: true; code: string | null } {
@@ -573,11 +658,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), parsed.data.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     const now = promoNow();
     const promo = await lookupPromo(body, now);
@@ -672,6 +755,8 @@ function invalidRequest(error: ZodError) {
     if (!notes.ok) return c.json(INVALID_NOTES, 400);
     const gapsProblem = tripGapsProblem(parsed.data);
     if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
+    const throughProblem = tripThroughProblem(parsed.data);
+    if (throughProblem) return c.json({ error: 'invalid_request', message: `through: ${throughProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
@@ -688,11 +773,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'lead_time_too_short', message: PRIVATE_NOTICE_MESSAGE }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), parsed.data.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     const now = promoNow();
     const promo = await lookupPromo(body, now);
@@ -794,11 +877,9 @@ function invalidRequest(error: ZodError) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
     }
 
-    const key = c.req.header('Idempotency-Key');
-    if (key) {
-      const existing = await bookings.findByIdempotencyKey(key);
-      if (existing) return c.json(withCheckoutToken(existing), 200);
-    }
+    const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), req.customer.email);
+    if (claim.replay) return c.json(withCheckoutToken(claim.replay), 200);
+    const key = claim.key;
 
     // The catalogue decides what is sellable, not corridor adjacency. A corridor holds
     // several products at different prices (airport-cultural sells Negombo->Sigiriya at
@@ -859,11 +940,8 @@ function invalidRequest(error: ZodError) {
 
     // GL-3 — the catalogue price is authoritative; the client's quotedTotal is never
     // stored, only compared and flagged when it disagrees.
-    const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priceShared(
-      req.seats,
-      product.seatPrice,
-      req.bags ?? 0,
-    );
+    const priced = priceShared(req.seats, product.seatPrice, req.bags ?? 0, req.extras ?? []);
+    const { currency, totalCents: total, amountDueNowCents: amountDueNow } = priced;
     const input = {
       corridorId: corridor.id,
       // Record WHAT WAS SOLD, in the catalogue's spelling rather than the request's. A
@@ -887,7 +965,8 @@ function invalidRequest(error: ZodError) {
     try {
       booking = await bookings.create(
         { mode: 'shared', input, total, amountDueNow, currency, billing: billing.billing, customerNotes: notes.notes },
-        { idempotencyKey: key },
+        // The priced lines are the booking's record of its add-ons (hotel pick-up, hotel drop-off).
+        { idempotencyKey: key, pricingSnapshot: sharedPricingSnapshot({ routeId: product.id, seats: req.seats, seatPriceCents: product.seatPrice }, priced, RATE_CARD.version) },
       );
     } catch (err) {
       // Compensate the hold so a failed create doesn't strand seats on the departure
@@ -966,8 +1045,13 @@ function invalidRequest(error: ZodError) {
     if (!id) return c.json({ error: 'invalid_link' }, 401);
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    const last = (await deps.bookings.listScheduleEvents(booking.id)).at(-1);
     // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
-    return c.json({ ...projectBooking(booking, await payments.findByBookingId(booking.id)), ga4Item: browserItem(booking) }, 200);
+    return c.json({
+      ...projectBooking(booking, await payments.findByBookingId(booking.id)),
+      ...(last ? { scheduleSetBy: last.actorType } : {}),
+      ga4Item: browserItem(booking),
+    }, 200);
   });
 
   r.post('/view/checkout-token', async (c) => {
@@ -980,7 +1064,12 @@ function invalidRequest(error: ZodError) {
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
     ) {
-      return c.json({ error: 'not_chargeable', status: booking.status }, 409);
+      // `reason` tells an open booking awaiting a hand price apart from a closed one, so the
+      // manage page never tells that customer it is "already paid or closed".
+      return c.json(
+        { error: 'not_chargeable', ...(booking.needsPricing ? { reason: 'awaiting_price' } : {}), status: booking.status },
+        409,
+      );
     }
     // bookingId rides along because POST /bookings/:id/checkout needs it in the path and the
     // customer-safe view projection deliberately withholds it. The caller has already proved
@@ -993,6 +1082,66 @@ function invalidRequest(error: ZodError) {
       },
       200,
     );
+  });
+
+  // Dateless capture Phase 4 (spec 2026-10-17 §5): the customer fills a BLANK pickup date/time on
+  // the manage page. Set-once (D2): customerScheduleFill refuses to change anything already set —
+  // that goes through WhatsApp → ops. Same bearer token as /view/checkout-token (never the query
+  // string, which reaches logs). Under /bookings/*, so the per-IP POST limiter already applies.
+  r.post('/view/schedule', async (c) => {
+    const id = verifyBookingToken(bearerToken(c.req.header('authorization')), deps.linkSecret);
+    if (!id) return c.json({ error: 'invalid_link' }, 401);
+    const body = z.object({ date: z.string().nullable(), time: z.string().nullable() })
+      .safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    if (booking.mode !== 'single' || !(SCHEDULE_EDITABLE_STATUSES as readonly string[]).includes(booking.status)) {
+      return c.json({ error: 'not_editable' }, 409);
+    }
+    const current = { date: booking.input.date ?? null, time: booking.input.time ?? null };
+    const fill = customerScheduleFill(current, body.data);
+    if (!fill.ok) return c.json(fill.reason === 'already_set' ? { error: fill.reason, current } : { error: fill.reason }, fill.reason === 'already_set' ? 409 : 400);
+    // No allowShortNotice: the 12 h rule binds the customer, not ops (spec §4).
+    const problem = scheduleProblem(fill.next.date, fill.next.time);
+    if (problem) return c.json({ error: problem }, 400);
+
+    const result = await bookings.setSchedule(id, { ...fill.next, expected: current, actor: { type: 'customer', id: 'manage_link' } });
+    if (!result.ok) {
+      if (result.reason === 'not_found') return c.json({ error: 'not_found' }, 404);
+      const b = result.booking;
+      const now = b.mode === 'single' ? { date: b.input.date ?? null, time: b.input.time ?? null } : null;
+      return c.json({ error: result.reason, current: now }, 409);
+    }
+
+    // Both best-effort: a mail failure must not undo what the customer just set.
+    let emailed = false;
+    if (deps.email) {
+      try {
+        const links = deps.manageBaseUrl ? { manage: manageUrl(result.booking, deps.manageBaseUrl, deps.linkSecret) } : {};
+        await sendScheduleSet(result.booking, deps.email, links);
+        emailed = true;
+      } catch (err) {
+        console.error(`schedule_set email failed for ${result.booking.reference}:`, err);
+      }
+    }
+    if (deps.alerts) {
+      try {
+        await deps.alerts.send({
+          severity: 'info',
+          kind: 'schedule_set_by_customer',
+          title: `Date set: ${result.booking.reference} by the customer`,
+          body: `${result.booking.reference}: pickup set to ${fill.next.date}${fill.next.time ? ` ${fill.next.time}` : ''} on the manage page.`,
+          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(await payments.findByBookingId(id))),
+          // A later time-only fill is a new event, not a repeat of the first.
+          dedupeKey: `${result.booking.id}:${fill.next.date}:${fill.next.time ?? ''}`,
+        });
+      } catch (err) {
+        console.error(`Date set alert failed for ${result.booking.reference}:`, err);
+      }
+    }
+    const view = { ...projectBooking(result.booking, await payments.findByBookingId(id)), scheduleSetBy: 'customer' as const };
+    return c.json({ view, emailed }, 200);
   });
 
   // 5.2 — start payment. Creates a pending payment (idempotent per booking), moves the

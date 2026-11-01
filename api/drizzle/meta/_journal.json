@@ -491,6 +491,62 @@
       "when": 1791849600000,
       "tag": "0070_experience_pay_page_source",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791936000000,
+      "tag": "0071_usage_counters",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1791979200000,
+      "tag": "0074_experience_google_place_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1792022400000,
+      "tag": "0072_booking_schedule_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1792108800000,
+      "tag": "0073_details_reminder_kinds",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1792281600000,
+      "tag": "0075_schedule_change_reason_leg_driver_task",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1792368000000,
+      "tag": "0076_trip_request_gaps",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0077_booking_payment_arrangement",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1792540800000,
+      "tag": "0078_trip_request_through",
+      "breakpoints": true
     }
   ]
 }

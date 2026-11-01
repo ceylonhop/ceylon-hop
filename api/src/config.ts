@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { z } from 'zod';
 import { parseTeamEmails } from './services/testBookings';
 import { tripadvisorUrl } from './adapters/tripadvisor';
+import { PHOTO_UPLOAD_ORIGINS } from './experiences/experience';
 
 // The public, referrer-restricted browser Maps JS key the website already uses. The ops
 // itinerary map defaults to it (no separate config needed) — just add the ops/API domain to
@@ -155,6 +156,14 @@ const Env = z.object({
   // when this AND the key are set. Validated in buildConfig (https on a Tripadvisor host); a bad value is
   // treated as unset with a warning - it must never stop the API booting.
   TRIPADVISOR_LOGO_URL: z.string().optional(),
+  // Experience photo uploads (spec 2026-10-17 P4/P5). Dormant until ALL five are set: an R2 bucket per
+  // environment, an API token scoped to it, and the bucket's public custom domain. PHOTO_PUBLIC_ORIGIN must
+  // be one of PHOTO_UPLOAD_ORIGINS (validated in buildConfig); any other value leaves uploads off.
+  R2_ACCOUNT_ID: z.string().optional(),
+  R2_ACCESS_KEY_ID: z.string().optional(),
+  R2_SECRET_ACCESS_KEY: z.string().optional(),
+  R2_BUCKET: z.string().optional(),
+  PHOTO_PUBLIC_ORIGIN: z.string().optional(),
   // RESEND_WEBHOOK_SECRET: enables signed POST /webhooks/resend delivery evidence and
   // bounce/complaint/failure alerts.
   RESEND_WEBHOOK_SECRET: z.string().optional(),
@@ -164,6 +173,10 @@ const Env = z.object({
   // bookings newly eligible all at once. 25 is far above any legitimate tick at current
   // volume and far below a blast; raise it (and re-run the tick) if a real day needs more.
   NOTIFY_MAX_PER_RUN: z.coerce.number().default(25),
+  // Resend plan caps (spec 2026-10-13 §6): the ops Health tab shows sends against them and the
+  // watchdog pages at 70 % of the daily one. Free plan defaults; raise both on upgrade.
+  EMAIL_DAILY_LIMIT: z.coerce.number().int().positive().default(100),
+  EMAIL_MONTHLY_LIMIT: z.coerce.number().int().positive().default(3000),
   // Outbound mail guard (same spec, R3). Both default to "off" so production is unchanged.
   // EMAIL_ALLOWLIST: when set, ONLY these recipients can be mailed — entries are exact
   // addresses or an `@domain` suffix, comma-separated. STAGING SETS THIS (`@ceylonhop.com`),
@@ -213,6 +226,12 @@ export function buildConfig(env: Record<string, string | undefined>) {
     const valid = logo ? tripadvisorUrl(logo) : null;
     if (logo && !valid) console.warn('[config] TRIPADVISOR_LOGO_URL ignored: it must be an https URL on a Tripadvisor host (*.tripadvisor.com, *.tacdn.com). Ratings stay off.');
     cfg.TRIPADVISOR_LOGO_URL = valid ?? undefined;
+  }
+  if (cfg.PHOTO_PUBLIC_ORIGIN !== undefined) {
+    const origin = cfg.PHOTO_PUBLIC_ORIGIN.trim().replace(/\/+$/, '');
+    const ok = (PHOTO_UPLOAD_ORIGINS as readonly string[]).includes(origin);
+    if (origin && !ok) console.warn(`[config] PHOTO_PUBLIC_ORIGIN ignored: it must be one of ${PHOTO_UPLOAD_ORIGINS.join(', ')}. Photo uploads stay off.`);
+    cfg.PHOTO_PUBLIC_ORIGIN = ok ? origin : undefined;
   }
   if (cfg.NODE_ENV === 'production' && (!cfg.OPS_SESSION_SECRET || cfg.OPS_SESSION_SECRET === DEV_OPS_SECRET)) {
     throw new Error(

@@ -17,7 +17,7 @@
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="../../favicon.svg">
 <link rel="apple-touch-icon" href="../../img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="../../site.css?v=33723b0702">
+<link rel="stylesheet" href="../../site.css?v=0afd32962e">
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
 gtag('consent','default',{analytics_storage:'granted',ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted'});
@@ -130,6 +130,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .pickups{list-style:none;margin:.7rem 0 0;padding:0;display:grid;gap:.25rem}
   .pickups li{font-size:.92rem;color:var(--ink-soft,#6c6a6b)}
   .pickups li b{color:var(--ink,#3A3739);display:inline-block;min-width:4.6em}
+  .pickups .pt-map{color:inherit;text-decoration:underline;text-decoration-color:var(--line,#e7e3d6);text-underline-offset:3px}
+  .pickups .pt-map:hover{color:var(--teal-deep,#1f6f78);text-decoration-color:currentColor}
   .opt-cta{margin-top:16px;width:100%;text-align:center}
   .share-board{margin-top:22px;padding-top:18px;border-top:1px solid var(--line,#e7e3d6)}
   .share-board h3{margin:0 0 .3rem;font-family:var(--body);font-size:.98rem;font-weight:600}
@@ -197,7 +199,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .drive-photo{position:relative;margin:0}
   .drive-photo img{display:block;width:100%;height:auto;aspect-ratio:4/5;object-fit:cover;border-radius:26px}
   .drive-photo figcaption{position:absolute;left:18px;bottom:16px;background:var(--paper,#fffdf8);border-radius:12px;
-    padding:6px 14px;font-family:var(--hand,'Caveat',cursive);font-weight:600;font-size:1.3rem;line-height:1.2;
+    padding:6px 14px;font-family:var(--hand);font-weight:600;font-size:1.3rem;line-height:1.2;
     transform:rotate(-2deg);box-shadow:0 8px 20px -8px rgba(0,0,0,.4)}
   /* ── what's included, and the proof row under it ──────────────────────────────
      The four marks are the house line family, so each carries one filled waypoint dot.
@@ -365,7 +367,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
 </style>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https://ceylonhop.com/"},{"@type":"ListItem","position":2,"name":"Routes","item":"https://ceylonhop.com/trip/"},{"@type":"ListItem","position":3,"name":"Ella to Yala","item":"https://ceylonhop.com/trip/ella-to-yala/"}]}</script>
-<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the drive take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 125 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Ella to Yala?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $55 and an air-conditioned van (up to 6 people) from $75, fixed and door to door — the price you see is the price you pay. A shared seat is from $22.99 per person."}},{"@type":"Question","name":"How does the Ella to Yala shared taxi work?","acceptedAnswer":{"@type":"Answer","text":"The shared taxi runs every Wednesday and Saturday, leaving Barn by Starbeans Cafe, Ella at 9:00am. A seat is $22.99, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"How long does the drive take?","acceptedAnswer":{"@type":"Answer","text":"Plan for approx. 125 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way."}},{"@type":"Question","name":"How much is a taxi from Ella to Yala?","acceptedAnswer":{"@type":"Answer","text":"A private car is from $55 and an air-conditioned van (up to 6 people) from $75, fixed and door to door — the price you see is the price you pay. A shared seat is from $22.99 per person."}},{"@type":"Question","name":"How does the Ella to Yala shared taxi work?","acceptedAnswer":{"@type":"Answer","text":"The shared taxi runs every Wednesday and Saturday, leaving Barn by Starbeans Cafe, Ella at 9:00am, and drops you at Chef Lady, Tissamaharama. A seat is $22.99, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed."}},{"@type":"Question","name":"Can we stop along the way?","acceptedAnswer":{"@type":"Answer","text":"Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way."}},{"@type":"Question","name":"How do I book?","acceptedAnswer":{"@type":"Answer","text":"Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking."}}]}</script>
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Service","serviceType":"Taxi & private intercity transfer","name":"Ella to Yala taxi — private transfer","areaServed":"Sri Lanka","provider":{"@type":"TravelAgency","name":"Ceylon Hop","url":"https://ceylonhop.com/","telephone":"+94779669662"},"offers":{"@type":"Offer","priceCurrency":"USD","price":"55","url":"https://ceylonhop.com/trip/ella-to-yala/"}}</script>
 </head>
 <body>
@@ -424,7 +426,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <article class="opt opt-shared">
         <div class="seat-price"><b>$22.99</b> <span>/ seat</span></div>
         <p class="runs-line">Runs every <b>Wednesday &amp; Saturday</b> · guaranteed departure · paid when you book</p>
-        <ul class="pickups"><li><b>9:00am</b> Barn by Starbeans Cafe, Ella</li></ul>
+        <ul class="pickups"><li><b>9:00am</b> <a class="pt-map" href="https://www.google.com/maps/search/?api=1&amp;query=Barn%20by%20Starbeans%20Cafe%2C%20Ella%2C%20Sri%20Lanka" target="_blank" rel="noopener">Barn by Starbeans Cafe, Ella</a></li><li class="drop"><b>Drop-off</b> <a class="pt-map" href="https://www.google.com/maps/search/?api=1&amp;query=Chef%20Lady%2C%20Tissamaharama%2C%20Sri%20Lanka" target="_blank" rel="noopener">Chef Lady, Tissamaharama</a></li></ul>
         <div data-shared-cta data-from="Ella" data-to="Yala" data-min="3" data-days="3,6">
           <a class="btn btn-cta opt-cta" href="../../booking.html?from=ella&amp;to=yala&amp;mode=shared&amp;price=22.99&amp;times=09%3A00&amp;days=3%2C6&amp;corridor=ella-east">Book a seat</a>
           <div class="share-board">
@@ -482,7 +484,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       <div class="faq-acc">
           <details open><summary>How long does the drive take?</summary><p>Plan for approx. 125 km · 3h 15m by road. Your driver takes the fastest safe route and can add stops along the way.</p></details>
           <details><summary>How much is a taxi from Ella to Yala?</summary><p>A private car is from <span data-fare="car">$55</span> and an air-conditioned van (up to 6 people) from <span data-fare="van">$75</span>, fixed and door to door — the price you see is the price you pay. A shared seat is from $22.99 per person.</p></details>
-          <details><summary>How does the Ella to Yala shared taxi work?</summary><p>The shared taxi runs every Wednesday and Saturday, leaving Barn by Starbeans Cafe, Ella at 9:00am. A seat is $22.99, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed.</p></details>
+          <details><summary>How does the Ella to Yala shared taxi work?</summary><p>The shared taxi runs every Wednesday and Saturday, leaving Barn by Starbeans Cafe, Ella at 9:00am, and drops you at Chef Lady, Tissamaharama. A seat is $22.99, paid when you book. If those days don't suit you, start your own ride on the ride board: it runs once 3 travellers are going, and you're only charged once it's confirmed.</p></details>
           <details><summary>Can we stop along the way?</summary><p>Of course. A private transfer is door to door and yours for the trip — add sightseeing stops when you book and we'll build them into your route — photos, lunch or a quick sight along the way.</p></details>
           <details><summary>How do I book?</summary><p>Get an instant fixed price and book online, or message us on WhatsApp and we'll arrange it. You pay securely online to confirm your booking.</p></details>
       </div>
@@ -530,7 +532,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script>
 (function(){var n=document.querySelector('[data-nav]');function s(){if(n)n.classList.toggle('scrolled',window.scrollY>20);}s();window.addEventListener('scroll',s,{passive:true});var b=document.querySelector('[data-burger]'),m=document.querySelector('[data-mobile]');if(b&&m)b.addEventListener('click',function(){m.classList.toggle('open');});})();
 </script>
-<script src="../../ch-pricing.js?v=74a30546ee"></script>
+<script src="../../ch-pricing.js?v=3a152c88c1"></script>
 <script src="../../route-page-fares.js?v=2e89d5aa59"></script>
 <script src="../../route-list-fares.js?v=62f1985096"></script>
 <script src="../../route-page-select.js?v=196875bb50"></script>

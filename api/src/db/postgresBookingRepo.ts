@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import type { Db } from './client';
 import {
   customers,
@@ -11,9 +11,12 @@ import {
   promoCodes,
   quotes,
   bookingStatusEvents,
+  bookingScheduleEvents,
 } from './schema';
 import { addOnsFor } from '../quote/quoteAlternative';
 import type { PayLinkSelection } from '../quote/paySelection';
+import type { SharedSeatCount } from '../domain/scheduledSeats';
+import type { ScheduleReason } from '../domain/bookingSchedule';
 import type { RouteVariant } from '../quote/routeChoice';
 import {
   type BookingRepo,
@@ -28,9 +31,14 @@ import {
   type WebsitePricingSnapshot,
   BookingNotFoundError,
   BookingTransitionContextRequiredError,
+  scheduleEditable,
+  type ScheduleChange,
+  type SetScheduleResult,
+  type BookingScheduleEvent,
   generateReference,
   snapshotAddOns,
   PAYER_EDITABLE_STATUSES,
+  SEAT_SOLD_STATUSES,
 } from './bookingRepo';
 import { toPromoCode } from './promoCodeRow';
 import {
@@ -43,6 +51,7 @@ import {
   type PromoCode,
 } from '../domain/promoCode';
 import { assertTransition, IllegalTransitionError, type BookingStatus } from '../domain/status';
+import type { PaymentArrangement } from '../domain/paymentMethod';
 import type { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { deriveLegsForMode, type NewLegRow } from '../domain/bookingLegs';
 import { track } from '../observability/track';
@@ -69,7 +78,9 @@ export async function applyBookingStatusTransition(
   const [row] = await tx.select().from(bookings).where(eq(bookings.id, input.id));
   if (!row) throw new BookingNotFoundError(input.id);
   const from = row.status as BookingStatus;
-  assertTransition(from, input.to);
+  // The arrangement is read in the same row as the status; it is set only while awaiting money and
+  // never cleared, so it cannot change under the guarded UPDATE below.
+  assertTransition(from, input.to, { paymentArrangement: row.paymentArrangement });
   if (input.transitionTrackingEnabled && !input.context) {
     throw new BookingTransitionContextRequiredError();
   }
@@ -244,6 +255,7 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
       : null,
     termsAcceptedAt: row.termsAcceptedAt ? row.termsAcceptedAt.toISOString() : null,
     customerNotes: row.customerNotes,
+    paymentArrangement: row.paymentArrangement as PaymentArrangement | null,
     // Only bookings made with a code carry these, so every other booking's shape is unchanged.
     ...(row.promoCodeId
       ? {
@@ -270,6 +282,10 @@ function build(row: BookingRow, cust: CustomerRow, req: RequestRow): Booking {
         // Undefined, not null, when the row never recorded any — so an old booking's shape is
         // byte-identical (0061_route_variant is additive/nullable, no backfill).
         ...(tr.routeVariants ? { routeVariants: tr.routeVariants as RouteVariant[] } : {}),
+        // Same rule for the self-arranged stretches (0076_trip_request_gaps).
+        ...(tr.gaps?.length ? { gaps: tr.gaps } : {}),
+        // Same rule for wires that continue the leg (0078_trip_request_through).
+        ...(tr.through?.length ? { through: tr.through } : {}),
         customer,
       },
     };
@@ -496,6 +512,8 @@ export class PostgresBookingRepo implements BookingRepo {
           days: t.days ?? null,
           driverNights: t.driverNights ?? null,
           routeVariants: t.routeVariants ?? null,
+          gaps: t.gaps?.length ? t.gaps : null,
+          through: t.through?.length ? t.through : null,
         });
       } else if (b.mode === 'shared') {
         const t = b.input;
@@ -603,6 +621,13 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  // The column also holds a quote conversion's snapshot (no engine); only a website one counts.
+  async websitePricingSnapshot(bookingId: string): Promise<WebsitePricingSnapshot | null> {
+    const [row] = await this.db.select({ s: bookings.pricingSnapshotJson }).from(bookings).where(eq(bookings.id, bookingId));
+    const s = row?.s as Partial<WebsitePricingSnapshot> | null | undefined;
+    return s && s.source === 'website' ? (s as WebsitePricingSnapshot) : null;
+  }
+
   // person_key is the generated lower(btrim(email)) column, indexed (0032). One query for the
   // rows, then the same batched assembly list() uses.
   async listByPersonKey(personKey: string, limit: number): Promise<Booking[]> {
@@ -692,6 +717,77 @@ export class PostgresBookingRepo implements BookingRepo {
     return fresh;
   }
 
+  async setPaymentArrangement(id: string, arrangement: PaymentArrangement): Promise<Booking> {
+    // The status guard is part of the UPDATE, not a read-then-write (see refreshPayerDetails).
+    await this.db
+      .update(bookings)
+      .set({ paymentArrangement: arrangement })
+      .where(and(eq(bookings.id, id), inArray(bookings.status, [...PAYER_EDITABLE_STATUSES])));
+    const fresh = await this.get(id);
+    if (!fresh) throw new BookingNotFoundError(id);
+    return fresh;
+  }
+
+  async setSchedule(id: string, change: ScheduleChange): Promise<SetScheduleResult> {
+    const outcome = await this.db.transaction(async (tx) => {
+      // Lock the booking so two editors serialise; the expected-value guard below then decides
+      // the race, instead of the last write silently winning.
+      const [bk] = await tx
+        .select({ status: bookings.status, mode: bookings.mode })
+        .from(bookings)
+        .where(eq(bookings.id, id))
+        .for('update');
+      if (!bk) return 'not_found' as const;
+      if (bk.mode !== 'single' || !scheduleEditable(bk.status, change.actor.type)) {
+        return 'not_editable' as const;
+      }
+      // `is not distinct from` so an expected NULL matches a NULL column. The ::text casts give
+      // Postgres a type for a NULL parameter.
+      const [tr] = await tx
+        .update(transferRequests)
+        .set({ travelDate: change.date, travelTime: change.time })
+        .where(and(
+          eq(transferRequests.bookingId, id),
+          sql`${transferRequests.travelDate} is not distinct from ${change.expected.date}::text`,
+          sql`${transferRequests.travelTime} is not distinct from ${change.expected.time}::text`,
+        ))
+        .returning({ id: transferRequests.id });
+      if (!tr) return 'conflict' as const;
+      // The date's second home (spec §2). A legacy row without legs updates nothing here.
+      await tx
+        .update(bookingLegs)
+        .set({ travelDate: change.date, pickupTime: change.time })
+        .where(and(eq(bookingLegs.bookingId, id), eq(bookingLegs.kind, 'leg')));
+      await tx.insert(bookingScheduleEvents).values({
+        bookingId: id,
+        fromDate: change.expected.date, fromTime: change.expected.time,
+        toDate: change.date, toTime: change.time,
+        actorType: change.actor.type, actorId: change.actor.id,
+        reason: change.reason ?? null, note: change.note ?? null,
+      });
+      return 'ok' as const;
+    });
+    const fresh = await this.get(id);
+    if (outcome === 'not_found' || !fresh) return { ok: false, reason: 'not_found' };
+    if (outcome === 'ok') return { ok: true, booking: fresh };
+    return { ok: false, reason: outcome, booking: fresh };
+  }
+
+  async listScheduleEvents(bookingId: string): Promise<BookingScheduleEvent[]> {
+    const rows = await this.db
+      .select()
+      .from(bookingScheduleEvents)
+      .where(eq(bookingScheduleEvents.bookingId, bookingId))
+      .orderBy(asc(bookingScheduleEvents.createdAt), asc(bookingScheduleEvents.id));
+    return rows.map((r) => ({
+      id: r.id, bookingId: r.bookingId,
+      fromDate: r.fromDate, fromTime: r.fromTime, toDate: r.toDate, toTime: r.toTime,
+      actorType: r.actorType as 'staff' | 'customer', actorId: r.actorId,
+      reason: r.reason as ScheduleReason | null, note: r.note,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
   async setStatus(
     id: string,
     to: BookingStatus,
@@ -770,5 +866,28 @@ export class PostgresBookingRepo implements BookingRepo {
       rows = await this.db.select().from(bookings).where(eq(bookings.status, filter.status));
     }
     return this.assembleMany(rows);
+  }
+
+  async paidSharedSeats(fromDate: string, toDate: string): Promise<SharedSeatCount[]> {
+    // One read; shared_request holds the departure each booking bought, customers who bought it.
+    return this.db
+      .select({
+        corridorId: sharedRequests.corridorId,
+        date: sharedRequests.date,
+        time: sharedRequests.time,
+        seats: sharedRequests.seats,
+        firstName: customers.firstName,
+        country: customers.country,
+      })
+      .from(sharedRequests)
+      .innerJoin(bookings, eq(bookings.id, sharedRequests.bookingId))
+      .innerJoin(customers, eq(customers.id, bookings.customerId))
+      .where(and(
+        eq(bookings.mode, 'shared'),
+        inArray(bookings.status, [...SEAT_SOLD_STATUSES]),
+        gte(sharedRequests.date, fromDate),
+        lte(sharedRequests.date, toDate),
+      ))
+      .orderBy(asc(bookings.createdAt), asc(bookings.id));
   }
 }

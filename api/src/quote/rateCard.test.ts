@@ -11,7 +11,7 @@ describe('RATE_CARD', () => {
     expect(RATE_CARD.chauffeur).toMatchObject({ dayRateCents: 3105, idleMinKm: { car: 50, van: 100, van9: 100, van14: 100, custom: 100 } });
     expect(RATE_CARD.deposit).toEqual({ pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 });
     expect(RATE_CARD.vehicle).toMatchObject({
-      car: { maxPax: 3, maxBags: 3 },
+      car: { maxPax: 3, maxBags: 2 },
       van: { maxPax: 6, maxBags: 6 },
       van9: { maxPax: 9, maxBags: 8 },
       van14: { maxPax: 14, maxBags: 12 },

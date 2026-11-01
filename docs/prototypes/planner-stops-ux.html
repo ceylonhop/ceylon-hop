@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stops UX mockup</title>
+<link rel="stylesheet" href="../../site.css">
+<style>
+</style>
+<style>
+/* copied from plan.html <style> @ origin/main 40f999ca so the prototype renders standalone */
+  /* ---- plan hero ---- */
+  /* The tint has to reach the very top of the page. `margin-top:-74px` slides this section up
+     behind the sticky 74px header — the pattern index.html and tours.html use, where the hero is
+     the first thing after the header. Here the breadcrumb row and the stepper sit in between, so
+     the pull lands ~25px short and left a bare strip of page background under the header, with the
+     tint's hard top edge slicing the breadcrumb row (owner-spotted 2026-08-09).
+     Fixed by extending the fill upward, not by tuning the margin: the shortfall is however tall
+     the breadcrumb + stepper happen to be, which moves with viewport and text size, whereas any
+     overshoot past the page origin is simply never on screen. overflow-x:clip keeps the original
+     no-horizontal-scroll guard while letting the fill bleed up. */
+  .plan-head{position:relative;margin-top:-74px;padding:116px 0 120px;overflow-x:clip}
+  .plan-head::after{content:"";position:absolute;inset:-260px 0 0;z-index:0;background:
+    radial-gradient(120% 90% at 88% -10%, var(--pc-teal), transparent 58%),
+    radial-gradient(90% 80% at -6% 110%, var(--pc-saffron), transparent 54%),
+    linear-gradient(160deg,#e9f5f0,#e7f0e7 55%,#eef4e5)}
+  .plan-head .wrap{position:relative;z-index:1}
+  .plan-head .eyebrow{color:var(--accent-deep)}
+  .plan-head h1{color:var(--ink);font-size:clamp(2rem,4vw,2.9rem);margin:.3rem 0 .5rem;max-width:18ch}
+  .plan-head p{color:var(--ink-soft);max-width:54ch;font-size:1.05rem;margin:0}
+
+  /* ---- board layout ---- */
+  .board-wrap{margin-top:-78px;position:relative;z-index:2;padding-bottom:80px}
+  .board{display:grid;grid-template-columns:1fr 384px;gap:26px;align-items:start}
+  @media(max-width:980px){.board{grid-template-columns:1fr}}
+
+  .panel-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:24px}
+
+  /* ── trip-basics ribbon: two aligned label rows in one slim card ──────── */
+  .setup-bar{display:flex;align-items:center;gap:14px;row-gap:12px;flex-wrap:wrap;padding:13px 16px}
+  .sb-group{display:flex;align-items:center;gap:10px;min-width:0}
+  .sb-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--ink-soft);flex:none;width:76px}
+  .pax-pills{display:flex;gap:5px}
+  .pax-pill{width:33px;height:33px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);
+    font-family:inherit;font-weight:700;font-size:.88rem;color:var(--ink);cursor:pointer;padding:0;
+    transition:transform .22s cubic-bezier(.22,.68,.38,1.12), box-shadow .3s ease, background .22s ease, border-color .22s ease, color .22s ease}
+  .pax-pill:hover{transform:translateY(-1.5px);border-color:var(--accent);box-shadow:0 5px 12px -5px rgba(10,125,111,.4)}
+  .pax-pill.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 6px 14px -6px var(--accent)}
+  .setup-bar .veh-toggle{display:flex;gap:4px;border-radius:999px;padding:4px}
+  .setup-bar .veh-btn{display:flex;align-items:center;gap:6px;padding:.4rem .75rem;border-radius:999px;white-space:nowrap}
+  .setup-bar .veh-btn svg{width:17px;height:17px;flex:none}
+  .setup-bar .veh-btn b{display:inline;font-size:.85rem}
+  .setup-bar .veh-btn small{display:inline;font-size:.7rem}
+  /* selected vehicle: white pill + accent ring on the cream track (same read as the old card) */
+  .setup-bar .veh-btn.on{background:var(--white);box-shadow:0 0 0 1.5px var(--accent) inset, var(--shadow-s);color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
+  .setup-bar .veh-btn.on b{color:inherit}
+  .setup-bar~.veh-note{margin:10px 4px 0}
+  @media(max-width:760px){
+    .setup-bar{gap:12px}
+    .sb-group{width:100%}
+    .sb-veh .veh-toggle{flex:1}
+    .sb-veh .veh-btn{flex:1;flex-direction:column;gap:2px;padding:.45rem .4rem}
+    .sb-veh .veh-btn svg{display:none}
+    .sb-veh .veh-btn small{font-size:.68rem}
+  }
+  @media(max-width:380px){
+    .setup-bar .sb-group{display:grid;grid-template-columns:1fr;width:100%;gap:8px}
+    .setup-bar .sb-lbl{width:auto}
+    .setup-bar .pax-pills{display:grid;grid-template-columns:repeat(6,minmax(32px,1fr));width:100%;gap:5px}
+    .setup-bar .pax-pill{width:100%;height:40px}
+    .setup-bar .veh-toggle{width:100%}
+  }
+
+  /* vehicle toggle (shared by the ribbon) */
+  .veh-toggle{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:var(--cream-deep);border-radius:12px;padding:5px}
+  .veh-btn{border:none;background:none;border-radius:9px;padding:.55rem .4rem;cursor:pointer;text-align:center;font-family:inherit;transition:.15s;color:var(--ink);-webkit-text-fill-color:var(--ink)}
+  .veh-btn b{display:block;font-size:.92rem;color:inherit;-webkit-text-fill-color:currentColor}
+  .veh-btn small{font-size:.72rem;color:var(--ink-soft)}
+  .veh-btn.on{background:var(--white);box-shadow:var(--shadow-s)}
+  .veh-btn.on{color:var(--accent-deep);-webkit-text-fill-color:var(--accent-deep)}
+  .veh-btn.on b{color:inherit}
+
+  .board-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:22px 2px 12px}
+  .board-h[hidden]{display:none}
+  .board-h h2{font-size:1.3rem;margin:0}
+  .board-h span{font-size:.84rem;color:var(--ink-soft)}
+
+  /* itinerary rail */
+  .rail{position:relative}
+  /* Empty state for a fresh planner — shown instead of a pre-filled seed route.
+     The [hidden] companion is required: this rule's `display` would otherwise beat the
+     browser's [hidden]{display:none} and the block could never hide. */
+  .rail-empty{display:flex;align-items:flex-start;gap:12px;margin:2px 0 0;padding:20px 20px;
+    border:1.5px dashed var(--line);border-radius:var(--r);background:var(--white);
+    color:var(--ink-soft);font-size:.92rem;line-height:1.5}
+  .rail-empty[hidden]{display:none}
+  .rail-empty svg{width:22px;height:22px;color:var(--accent);flex:none;margin-top:1px}
+  /* the line-icon family mark (img/icons/line/): one filled waypoint dot per icon */
+  .rail-empty svg .wp{fill:var(--saffron);stroke:none}
+  .rail-empty b{color:var(--ink)}
+  .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
+  .drag:active{cursor:grabbing}
+  .drag svg{width:16px;height:16px}
+
+  /* vehicle requirement note */
+  .veh-note{display:flex;gap:.45rem;align-items:flex-start;margin-top:8px;font-size:.8rem;line-height:1.4;color:var(--ink-soft)}
+  .veh-note svg{width:15px;height:15px;flex:none;margin-top:1px;color:var(--accent-deep)}
+  .veh-btn:disabled{opacity:.45;cursor:not-allowed}
+  .veh-btn .veh-lock{display:none}
+  .veh-btn:disabled .veh-lock{display:inline}
+
+  /* route map (built from each stop's coordinates) */
+  .trip-map{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:18px;
+    background:linear-gradient(170deg,#eaf4f1,#dfeee9)}
+  .trip-map svg{display:block;width:100%;height:auto}
+  .trip-map .tm-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--ink-soft);font-size:.82rem;padding:20px}
+  .tm-pin-label{font-family:var(--body);font-weight:700;font-size:6px;fill:var(--ink)}
+  .tm-pin-num{font-family:var(--body);font-weight:800;fill:#fff}
+
+  /* calm, de-emphasised price estimate (no jumping totals) */
+  .sum-estimate{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:16px 0 4px;
+    padding:13px 15px;background:var(--cream-deep);border-radius:12px}
+  .sum-estimate .se-lbl{font-size:.82rem;color:var(--ink-soft);font-weight:600;line-height:1.3;flex:1 1 auto;min-width:0}
+  .sum-estimate .se-sub{display:block;font-weight:400;font-size:.72rem;color:var(--ink-soft)}
+  .sum-estimate .se-amt{font-family:var(--display);font-weight:700;font-size:1.25rem;color:var(--ink);white-space:nowrap;flex:none}
+
+  /* shown in place of the transfers until the traveller count is picked */
+  .itin-gate{display:flex;align-items:center;gap:12px;margin:8px 0 4px;padding:16px 18px;border:1.5px dashed var(--line);border-radius:var(--r);background:var(--white);color:var(--ink-soft);font-weight:600;font-size:.95rem;line-height:1.4}
+  .itin-gate[hidden]{display:none}
+  .itin-gate svg{width:22px;height:22px;color:var(--accent);flex:none}
+  /* pre-existing bug fixed with the ribbon: display:flex (author) beats the UA [hidden] rule,
+     so the gate note never actually disappeared once travellers were picked */
+  .itin-gate[hidden]{display:none}
+  .add-stop-btn{display:inline-flex;align-items:center;gap:.5rem;margin:14px 0 0 36px;background:var(--white);border:1.5px dashed var(--accent);color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.9rem;padding:.6rem 1rem;border-radius:999px;cursor:pointer;transition:.15s}
+  .add-stop-btn:hover{background:var(--pc-teal)}
+  .add-stop-btn svg{width:16px;height:16px}
+
+  .reorder-hint{font-size:.78rem;color:var(--ink-soft);margin:10px 0 0;display:flex;align-items:center;justify-content:center;gap:.4rem}
+  .reorder-hint[hidden]{display:none}
+  .reorder-hint svg{width:14px;height:14px;opacity:.6}
+
+  /* ---- itinerary rail ---- */
+  #rail{display:grid;gap:0}
+
+  /* ---- leg cards: each card is one private transfer ---- */
+  .leg{position:relative}
+  .leg-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:12px 14px 12px;transition:box-shadow .15s,opacity .15s,border-color .15s}
+  .leg-card.dragging{opacity:.55;box-shadow:var(--shadow)}
+  .leg-card.leg-bad{border-color:var(--tomato);box-shadow:0 0 0 3px rgba(236,58,36,.16)}
+  .leg-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .leg-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.67rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .leg-head .leg-rm{flex:none;width:28px;height:28px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;flex:none}
+  .leg-head .leg-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .leg-head .leg-rm.hide{display:none}
+  .leg-head .leg-rm svg{width:12px;height:12px}
+  .leg-head .drag{cursor:grab;color:var(--ink-soft);opacity:.5;display:grid;place-items:center;touch-action:none}
+  .leg-head .drag:active{cursor:grabbing}
+  .leg-head .drag svg{width:16px;height:16px}
+
+  .loc-row{display:grid;grid-template-columns:16px 1fr;gap:11px;align-items:center;border:1.5px solid var(--line);border-radius:12px;padding:9px 13px;background:var(--white);transition:border .15s,box-shadow .15s}
+  .loc-row + .loc-row{margin-top:8px}
+  .loc-row:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
+  .loc-row .pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
+  .loc-row .pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .loc-row label{display:block;font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:1px}
+  .loc-row input{width:100%;border:none;background:none;font-family:inherit;font-size:.97rem;color:var(--ink);padding:1px 0}
+  .loc-row input:focus{outline:none}
+
+  /* connected route block: pins + dotted rail link pick-up (top) → drop-off (bottom) */
+  .route-block{display:grid;grid-template-columns:16px 1fr;gap:13px;border:1.5px solid var(--line);border-radius:13px;padding:6px 16px;background:var(--white);transition:border .15s,box-shadow .15s}
+  .route-block:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.13)}
+  .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
+  .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
+  .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
+  .rb-wire{flex:1;width:2px;min-height:22px;margin:4px 0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
+  .rb-fields{display:flex;flex-direction:column;min-width:0}
+  .rb-field{padding:9px 0}
+  .rb-field label{display:block;font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:2px}
+  /* leg pick-up/drop-off hybrid place search */
+  .rb-field,.loc-f{position:relative}
+  .rb-field input,.loc-row input{width:100%;border:none;background:none;font-family:inherit;font-size:.98rem;color:var(--ink);padding:1px .3rem 1px 0!important;text-overflow:ellipsis;overflow:hidden;white-space:nowrap}
+  .rb-field input:focus,.loc-row input:focus{outline:none}
+  .place-menu{position:absolute;left:0;right:0;top:calc(100% + 7px);z-index:30;background:var(--white);color:var(--ink);border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px -18px rgba(20,30,28,.28);padding:6px;max-height:260px;overflow:auto}
+  .place-option{width:100%;border:0;background:none;color:var(--ink);display:flex;align-items:center;justify-content:space-between;gap:10px;border-radius:8px;padding:8px 10px;font:inherit;font-size:.92rem;text-align:left;cursor:pointer}
+  .place-option:hover,.place-option.hi{background:var(--pc-teal);color:var(--accent-deep)}
+  .place-option.loading{cursor:default;color:var(--ink-soft)}
+  .place-option.loading:hover{background:none;color:var(--ink-soft)}
+  .place-option small{font-size:.68rem;color:var(--ink-soft);font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+  .place-option em{display:none}
+  .place-option:hover small,.place-option.hi small{color:var(--accent-deep)}
+  .place-option.loading small,.place-option.loading:hover small{color:var(--ink-soft)}
+  .rb-divider{position:relative;height:1px;background:var(--line)}
+  /* z-index: the drop-off .rb-field is position:relative and later in the DOM, so without it
+     the field paints over the arrow's lower half and eats the press. Stays under .place-menu (30). */
+  .rb-swap{position:absolute;z-index:1;right:-4px;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow-s);transition:transform .15s,border-color .15s}
+  .rb-swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
+  .rb-swap:active{transform:translateY(-50%) rotate(180deg)}
+  .rb-swap svg{width:15px;height:15px}
+
+  /* leg meta (distance · time · price) sits in the card header, using the spare space */
+  .leg-head-right{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0;justify-content:flex-end}
+  .leg-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end;font-size:.82rem;color:var(--ink-soft);min-width:0}
+  .leg-meta .lm-dist b{color:var(--ink);font-weight:700}
+  .leg-meta .lm-sep{opacity:.4}
+  .leg-meta .lm-price{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .leg-meta .lm-veh{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--pc-teal);color:var(--teal-deep);flex:none}
+  .leg-meta .lm-veh svg{width:12px;height:12px;display:block}
+  .leg-meta .lm-price b{font-family:var(--display);font-size:1.05rem;color:var(--teal-deep);font-weight:700}
+  .leg-meta .lm-src{font-size:.66rem;color:var(--ink-soft);white-space:nowrap}
+  .leg-meta .lm-hint{font-style:italic;font-size:.78rem;color:var(--ink-soft)}
+  /* route choice: a drive's cheaper-local-road chip (plan.js roadChipHtml). Its own line under the
+     distance, so the price row never reflows. The swatch matches route-choice.js's popup — dashed
+     amber for the local road, solid blue for the expressway. */
+  .leg-meta .lm-road-row{flex:1 0 100%;display:flex;justify-content:flex-end;min-width:0}
+  .leg-meta .lm-road{display:inline-flex;align-items:center;gap:7px;min-height:30px;max-width:100%;padding:4px 12px;border:1.5px solid #f1d9b3;border-radius:999px;background:#fbefdc;color:#8a4f07;font:inherit;font-size:.78rem;font-weight:600;line-height:1.3;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+  .leg-meta .lm-road:hover{border-color:#D9861A}
+  .leg-meta .lm-road:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  .leg-meta .lm-road-sw{flex:none;width:16px;height:0;border-top:3px dashed #D9861A}
+  .leg-meta .lm-road.is-set{background:var(--white,#fff);border-color:var(--line);color:var(--ink)}
+  .leg-meta .lm-road.is-set:hover{border-color:#cfc9b6}
+  .leg-meta .lm-road.is-set:not(.is-local) .lm-road-sw{border-top-style:solid;border-top-color:#2F6DB5;border-radius:2px}
+  @media(prefers-reduced-motion:reduce){.leg-meta .lm-road{transition:none}}
+  @media(max-width:540px){
+    .leg-meta .lm-src,.leg-meta .lm-sep{display:none}
+    .leg-meta .lm-dist{flex:1 0 100%;line-height:1.4;text-align:right}
+    .leg-meta .lm-price{margin-left:auto}
+    .sum-stats .sum-stat:last-child #st-drive{width:100%;white-space:normal;line-height:1.4;text-align:left;margin-top:3px}
+  }
+
+  .leg-foot{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-top:11px}
+  .leg-date label{font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);display:block;margin-bottom:5px}
+  .leg-date .opt{font-weight:500;text-transform:none;letter-spacing:0}
+  /* the branded date button inside a leg card sits flush */
+  .leg-date .dp-btn{padding:.55rem .75rem;font-size:.88rem}
+  .leg-dist{font-size:.84rem;color:var(--ink-soft);text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:2px;min-width:0;flex:1 1 14ch}
+  .leg-dist .ld-km b{color:var(--ink);font-family:var(--display);font-weight:700;font-size:1.08rem}
+  .leg-dist .ld-price{font-weight:700;color:var(--teal-deep);font-size:.82rem}
+  .leg-dist .ld-by{font-size:.66rem;color:var(--ink-soft);display:inline-flex;align-items:center;gap:.3rem}
+  .leg-dist .ld-by svg{width:12px;height:12px;color:#4285F4}
+  .leg-dist .ld-empty{color:var(--ink-soft);font-style:italic;line-height:1.35;max-width:26ch}
+  @media(max-width:380px){.leg-dist{text-align:left;align-items:flex-start;flex-basis:100%}}
+
+  /* "then continue…" connector between legs */
+  .leg-gap{display:flex;align-items:center;gap:.6rem;padding:9px 4px;color:var(--ink-soft)}
+  .leg-gap .lg-line{flex:1;height:0;border-top:2px dashed var(--pc-line)}
+  .leg-gap .lg-tx{font-size:.72rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;opacity:.8}
+  /* a "gap" — the traveller arranges this stretch themselves; flagged, never auto-connected */
+  .leg-gap.is-gap .lg-line{border-top-color:#e6b980}
+  .leg-gap.is-gap .lg-tx.gap-tx{text-transform:none;letter-spacing:0;font-weight:600;font-size:.78rem;white-space:normal;text-align:center;max-width:26rem;color:#9a5b12;opacity:1}
+
+  .leg-badge.stay{color:#a96b04;background:var(--pc-saffron)}
+  /* transfer / stay-put type switch */
+  .leg-type{display:inline-flex;background:var(--cream-deep);border-radius:999px;padding:3px;gap:2px}
+  .leg-type .lt-btn{border:none;background:none;border-radius:999px;padding:.32rem .7rem;font-family:inherit;font-size:.76rem;font-weight:700;color:var(--ink-soft);cursor:pointer;white-space:nowrap;transition:.15s}
+  .leg-type .lt-btn.on{background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep)}
+  .leg-card .pin.stay{border-color:#a96b04;background:#fff;border-radius:50%}
+  .is-stay .leg-card{border-color:color-mix(in srgb,var(--saffron) 32%,var(--line));background:#fffdf6}
+
+  /* stay card: nights stepper + clarifying note */
+  .stay-nights-ctrl{display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+  .stay-nights-ctrl .lbl{font-size:.63rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft)}
+  .stay-nights-ctrl .ctrls{display:flex;align-items:center;gap:7px;background:var(--cream-deep);border-radius:999px;padding:3px}
+  .stay-nights-ctrl .ctrls button{width:28px;height:28px;border-radius:50%;border:none;background:var(--white);box-shadow:var(--shadow-s);color:var(--accent-deep);font-size:1.1rem;font-weight:700;cursor:pointer;display:grid;place-items:center;line-height:1}
+  .stay-nights-ctrl .ctrls button:disabled{opacity:.35;cursor:default}
+  .stay-nights-ctrl .ctrls b{min-width:26px;text-align:center;font-size:.88rem}
+  .stay-note{display:flex;gap:.6rem;align-items:flex-start;margin-top:12px;padding:11px 13px;background:var(--pc-saffron);border:1px solid #efe2c2;border-radius:12px;font-size:.82rem;line-height:1.45;color:#7a5512}
+  .stay-note svg{width:17px;height:17px;flex:none;margin-top:1px;color:#c98a1a}
+  .stay-note b{color:var(--ink)}
+
+  /* add-row: two buttons side by side */
+  .add-row{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:18px 0 0}
+  .add-row[hidden]{display:none}
+  .add-stop-btn.ghost{border-style:solid;border-color:var(--line);color:var(--ink-soft);background:var(--white)}
+  .add-stop-btn.ghost:hover{border-color:var(--saffron);background:var(--pc-saffron);color:#a96b04}
+  .add-stop-btn .as-sub{font-weight:600;opacity:.7}
+  @media(max-width:600px){.add-row{margin-left:0}.add-row .add-stop-btn{flex:1 1 100%;justify-content:center}}
+  .sum-route .rt-n{font-size:.72rem;font-weight:700;color:#a96b04}
+
+  /* ---- journey progress bar (shared 4-step view across planner + booking) ---- */
+  .journey{display:flex;align-items:center;gap:0;max-width:760px;margin:24px auto 4px;padding:0 16px;position:relative;z-index:3}
+  .jstep{display:flex;align-items:center;gap:.5rem;flex:none}
+  .jstep .jdot{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.8rem;background:var(--cream-deep);color:var(--ink-soft);border:2px solid transparent;transition:.18s}
+  .jstep .jlbl{font-size:.82rem;font-weight:600;color:var(--ink-soft);white-space:nowrap;transition:.18s}
+  .jstep.active .jdot{background:var(--accent);color:#fff}
+  .jstep.active .jlbl{color:var(--ink)}
+  .jstep.done .jdot{background:var(--teal-deep);color:#fff}
+  .jstep.done .jlbl{color:var(--ink)}
+  .jstep.jnav{cursor:pointer}
+  .jstep.jnav:hover .jdot{border-color:var(--accent)}
+  .jline{height:2px;flex:1;background:var(--cream-deep);margin:0 8px;min-width:14px}
+  .jline.done{background:var(--teal-deep)}
+  @media(max-width:760px){
+    .journey{align-items:flex-start;margin-top:18px;padding:0 12px}
+    .jstep{flex-direction:column;gap:5px;text-align:center;min-width:46px}
+    .jstep .jlbl{display:block;white-space:normal;max-width:62px;font-size:.68rem;line-height:1.15}
+    .jstep .jdot{width:28px;height:28px}
+    .jline{min-width:8px;margin:14px 2px 0}
+  }
+
+  /* ---- step 2: “When” dates ---- */
+  .dates-wrap{position:relative;z-index:2;padding:40px 0 90px}
+  .dates-wrap[hidden]{display:none}
+  .back-to-route{background:none;border:none;color:var(--ink-soft);font-weight:600;font-size:.9rem;display:inline-flex;align-items:center;gap:.4rem;cursor:pointer;margin-bottom:18px}
+  .back-to-route:hover{color:var(--ink)}
+  .dates-head{max-width:640px;margin:0 0 26px}
+  .dates-head h2{margin:.3rem 0 .4rem}
+  .dates-head p{color:var(--ink-soft);margin:0}
+  /* the know/later fork — the step's first question, above the list it reveals */
+  .dates-fork{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:720px;margin:0 0 14px}
+  .fork-btn{display:flex;align-items:flex-start;gap:11px;text-align:left;cursor:pointer;background:var(--white);border:1.5px solid var(--line);border-radius:var(--r);padding:16px 17px;font-family:inherit;box-shadow:var(--shadow-s);transition:border-color .15s,box-shadow .15s,transform .15s}
+  .fork-btn:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .fork-btn[aria-pressed="true"]{border-color:var(--accent-deep);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.2)}
+  .fork-btn:focus-visible{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(var(--accent-rgb),.3)}
+  .fork-btn svg{width:22px;height:22px;flex:none;color:var(--accent-deep);margin-top:1px}
+  .fork-btn svg .wp{fill:var(--saffron);stroke:none}
+  .fork-btn .fk-t{display:block;font-weight:700;font-size:.98rem;color:var(--ink);line-height:1.25}
+  .fork-btn .fk-d{display:block;font-size:.79rem;color:var(--ink-soft);line-height:1.4;margin-top:3px}
+  .dates-flexnote{display:flex;gap:12px;align-items:flex-start;max-width:720px;margin:0;background:var(--pc-teal);border:1px solid #bfe6df;border-radius:var(--r);padding:17px 19px;font-size:.88rem;line-height:1.5;color:#0c5b57}
+  .dates-flexnote[hidden]{display:none}
+  .dates-flexnote svg{width:21px;height:21px;color:var(--teal-deep);flex:none;margin-top:1px}
+  .dates-flexnote b{color:#08403e;font-weight:700}
+  @media(max-width:560px){.dates-fork{grid-template-columns:1fr}}
+  /* the trip-start anchor that dates the whole itinerary from the planned nights */
+  .trip-start-bar{max-width:720px;margin:0 0 14px;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:17px 19px}
+  .trip-start-bar[hidden]{display:none}
+  .trip-start-bar .ts-q{font-family:var(--display);font-weight:700;font-size:1.15rem;line-height:1.2;margin:0 0 3px;color:var(--ink)}
+  .trip-start-bar .ts-d{font-size:.81rem;color:var(--ink-soft);margin:0 0 13px;line-height:1.45}
+  .ts-field[hidden]{display:none}
+  .ts-field .dp-btn{min-width:230px}
+  .dates-list{display:grid;gap:10px;max-width:720px}
+  .dates-list[hidden]{display:none}
+  .date-row{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap;background:var(--white);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:14px 18px}
+  .date-row.stay{background:#fffdf6;border-color:color-mix(in srgb,var(--saffron) 32%,var(--line))}
+  .date-row{position:relative}
+  .date-row.dr-flagged{background:#fffdf6;border-color:#f3dca8}
+  .dr-info{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 260px}
+  .dr-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:56px;box-sizing:border-box;font-size:.66rem;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--accent-deep);background:var(--pc-teal);border-radius:999px;padding:3px 10px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
+  .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;line-height:1.22;color:var(--ink);min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
+  .dr-date{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+  .dr-date .dp-btn{min-width:190px}
+  /* the way back out of a date a leg already has */
+  .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
+  .dr-clear:hover{color:var(--accent-deep)}
+  /* where a date came from, so a cascaded one is never mistaken for one they typed */
+  .dr-tag{font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
+  .dr-tag.edited{color:#a96b04}
+  /* out-of-order date caution — same amber "note" theme as the hotels/stay notes */
+  .dr-warn{flex:1 1 100%;display:flex;gap:.5rem;align-items:flex-start;margin-top:2px;padding:9px 12px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;font-size:.79rem;line-height:1.4;color:#7a5512}
+  .dr-warn .dr-warn-ic{display:grid;place-items:center;flex:none;margin-top:1px}
+  .dr-warn .dr-warn-ic svg{width:16px;height:16px;color:#c98a1a}
+  .dr-warn b{color:var(--ink)}
+  .dates-actions .btn.cta-disabled{opacity:.5;filter:saturate(.7);cursor:not-allowed}
+  #dates-drive-hint.is-blocking{background:#fff0ec;border-color:#f1b7aa;color:#873323}
+  #dates-drive-hint.is-blocking svg{color:#e43d2c}
+  .date-row.dr-nudge{box-shadow:0 0 0 3px rgba(201,138,26,.4)!important;transition:box-shadow .18s ease}
+  .dates-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;max-width:720px;margin-top:26px}
+  @media(max-width:560px){.date-row{align-items:stretch}.dr-date,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
+
+  /* ---- summary ---- */
+  /* No nested scrollbar. The column scrolls with the page like everything else; only the summary
+     card pins, and it is kept short enough to fit the viewport (fluid map height) so its price and
+     CTA can never be sliced off by a clipped scroll box.
+     Two rules carry this. align-self:stretch — .board is align-items:start, so the column would
+     otherwise be only as tall as its two cards and the pinned card would unpin and scroll away a
+     few hundred px into a long itinerary. And .side-pin, the flex-grown wrapper that is the sticky
+     card's containing block: it ends exactly where .summary-more begins, so the card's travel stops
+     there instead of sliding over the fine print (the collision the old inner-scroll box existed to
+     dodge). The fine-print card just scrolls, parked at the foot of the column. */
+  .plan-side{position:static;overflow:visible;max-height:none;display:flex;flex-direction:column;align-self:stretch}
+  .side-pin{flex:1 1 auto;min-height:0}
+  .summary{position:sticky;top:86px}
+  .sum-head{display:flex;align-items:center;gap:.5rem;font-family:var(--display);font-weight:700;font-size:1.2rem;margin:0 0 4px}
+  .sum-head svg{width:20px;height:20px;color:var(--accent-deep)}
+  .sum-dates{font-size:.86rem;color:var(--ink-soft);margin:0 0 16px}
+  .sum-stat{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:.92rem}
+  .sum-stat span{color:var(--ink-soft);flex:1 1 auto;min-width:0}
+  .sum-stat b{font-weight:700;flex:none;text-align:right;white-space:nowrap}
+  .sum-route{margin:14px 0;padding:13px 14px;background:var(--cream-deep);border-radius:12px;font-size:.85rem;line-height:1.5;color:var(--ink)}
+  .sum-route .hop{color:var(--ink-soft)}
+  .sum-route[hidden]{display:none} /* author rules beat the UA [hidden] rule — keep the companion */
+  .sum-total{display:flex;align-items:flex-end;justify-content:space-between;margin:16px 0 4px}
+  .sum-total .lbl{font-size:.82rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
+  .sum-total .amt{font-family:var(--display);font-weight:700;font-size:2rem;color:var(--ink);line-height:1}
+  .sum-total .amt small{font-size:.8rem;font-weight:600;color:var(--ink-soft)}
+  .sum-fine{font-size:.76rem;color:var(--ink-soft);margin:2px 0 0}
+
+  .hotels-note{display:flex;gap:.7rem;align-items:flex-start;margin:16px 0;padding:13px 14px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px}
+  .hotels-note svg{width:20px;height:20px;color:#c98a1a;flex:none;margin-top:1px}
+  .hotels-note b{display:block;font-size:.88rem;margin-bottom:2px}
+  .hotels-note p{margin:0;font-size:.8rem;color:var(--ink-soft);line-height:1.45}
+
+  .sum-cta{width:100%;justify-content:center;margin-top:4px}
+  .sum-cta.cta-disabled{opacity:.5;filter:saturate(.7)}
+  .route-incomplete-hint{display:flex;align-items:flex-start;gap:.45rem;margin:10px 2px 0;font-size:.82rem;line-height:1.4;color:var(--tomato);font-weight:600}
+  .route-incomplete-hint[hidden]{display:none}
+  .route-incomplete-hint svg{width:15px;height:15px;flex:none;margin-top:2px}
+  .sum-wa{display:flex;align-items:center;gap:.7rem;margin-top:12px;padding:12px 14px;border:1.5px solid #25d36633;background:#25d3660d;border-radius:12px;text-decoration:none;color:var(--ink)}
+  .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#0B7A44;color:#fff;display:grid;place-items:center;flex:none}
+  .sum-wa .ic svg{width:18px;height:18px}
+  .sum-wa b{display:block;font-size:.85rem}
+  .sum-wa span{font-size:.76rem;color:var(--ink-soft)}
+
+  /* The summary is sticky, so it must stay shorter than the viewport — a top-anchored
+     sticky box taller than the screen can never show its own bottom (the CTA). Hence the
+     viewport-fluid map, the 2-up stats and the split-off .summary-more card. */
+  .sum-stats{display:grid;grid-template-columns:1fr 1fr;column-gap:16px}
+  /* Half-width cells can't always hold label + value on one line ("Driving 403 km · 9h 36m").
+     The label's min-width:0 lets its box squash under its own text, so it used to overrun the
+     nowrap value and the two collided. Wrap instead: the label keeps its min-content width and
+     the value drops to its own line, still right-aligned. Grid stretch keeps the dashed rules
+     level across the pair even when one cell runs to two lines. */
+  .sum-stats .sum-stat{padding:8px 0;flex-wrap:wrap}
+  .sum-stats .sum-stat span{min-width:auto}
+  .sum-stats .sum-stat b{margin-left:auto}
+  /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
+     stopping mid-panel. Let it span the pair instead. */
+  .sum-stats .sum-stat:last-child{grid-column:1/-1}
+  /* The map is a landscape box framing a north-south island, so a short card spends most of
+     itself on sea. Measured budget (1280x720, the tightest window that still gets this branch,
+     7-stop trip): the card sticks at top:86 and its non-map parts total 439px, so the map can
+     reach ~195px before the CTA drops under the fold — 22vh leaves 37px of that spare. The
+     cap keeps a tall monitor from turning the summary into a map with captions.
+     Guarded by web-tests/e2e/plan-summary-fold.spec.js. */
+  .summary{--map-h:clamp(104px,22vh,200px)}
+  /* short laptop windows: shave the map and the pin offset so the whole card — CTA included —
+     still clears the fold rather than hanging 20-odd px under it */
+  @media(min-width:981px) and (max-height:700px){
+    .summary{--map-h:clamp(76px,13vh,110px);top:76px}
+  }
+  .summary .trip-map{max-height:var(--map-h);margin-bottom:14px}
+  .summary .trip-map>*{height:var(--map-h)!important;width:100%}
+  .summary-more{margin-top:14px}
+  .summary-more .sum-fine{margin:0}
+  .summary-more .hotels-note{margin:14px 0 0}
+  @media(max-width:980px){
+    .summary .trip-map{max-height:none}
+    .summary .trip-map>*{height:auto!important}
+  }
+  .incl{margin-top:18px}
+  .incl h4{font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft);margin:0 0 9px}
+  .incl .row{display:flex;align-items:flex-start;gap:.55rem;font-size:.84rem;margin-bottom:7px}
+  .incl .row svg{width:15px;height:15px;flex:none;margin-top:2px}
+  .incl .yes svg{color:var(--teal-deep)}
+  .incl .no svg{color:#c0392b;opacity:.7}
+  .incl .no span{color:var(--ink-soft)}
+
+  @media(max-width:980px){
+    .plan-side{position:static;max-height:none;overflow:visible;display:block}
+    .summary{position:static;margin-top:24px;margin-bottom:0}
+    .plan-head{padding-bottom:104px}
+  }
+  @media(max-width:600px){
+    .add-stop-btn,.reorder-hint{margin-left:0}
+  }
+
+  /* ready-made route templates (tours → planner) */
+  .tpl-strip{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:0 2px 16px}
+  .tpl-strip[hidden]{display:none}
+  .tpl-lbl{font-size:.78rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);white-space:nowrap}
+  .tpl-chips{display:flex;flex-wrap:wrap;gap:8px}
+  .tpl-chip{display:inline-flex;align-items:baseline;gap:.45rem;background:var(--white);border:1.5px solid var(--line);border-radius:999px;padding:.5rem .95rem;font-family:inherit;font-size:.86rem;font-weight:700;color:var(--ink);cursor:pointer;transition:border-color .15s, background .15s}
+  .tpl-chip small{font-weight:600;font-size:.72rem;color:var(--ink-soft)}
+  .tpl-chip:hover{border-color:var(--accent);background:var(--pc-teal)}
+
+  /* request modal */
+  .confirm-tick{width:58px;height:58px;border-radius:50%;background:var(--teal-deep);color:#fff;display:grid;place-items:center}
+  .confirm-tick svg{width:30px;height:30px}
+  #modal-summary{background:var(--cream-deep);border-radius:12px;padding:14px 16px;font-size:.86rem;line-height:1.6}
+  #modal-summary .mr{display:flex;justify-content:space-between;gap:10px}
+  #modal-summary .mr b{font-weight:700}
+
+</style>
+<style>
+  body{background:var(--paper,#faf7f1)}
+  .mock{max-width:520px;margin:0 auto;padding:28px 16px 80px}
+  .mock h1{font-size:1.4rem;margin:0 0 4px}
+  .mock .lede{color:var(--ink-soft);font-size:.9rem;margin:0 0 26px}
+  .mock h3{font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin:34px 0 10px;font-weight:800}
+  .mock h3 small{display:block;text-transform:none;letter-spacing:0;font-weight:500;font-size:.82rem;margin-top:3px;color:var(--ink-soft)}
+
+  /* ---- NEW: a stop inside a leg (the only new CSS) ---- */
+  .rb-pin.via{width:10px;height:10px;border:none;background:var(--teal-deep);margin:1px}
+  .rb-field.via label{color:var(--teal-deep)}
+  .rb-field.via,.rb-field.via-ctl{display:flex;align-items:center;gap:8px}
+  .rb-field.via > div,.rb-field.via-ctl > div{flex:1;min-width:0}
+  .stop-rm{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer}
+  .stop-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .stop-rm svg{width:10px;height:10px}
+  .rb-divider.plain .rb-swap{display:none}
+  .stop-ctl{flex:none;display:inline-flex;gap:6px;opacity:0;transition:opacity .15s}
+  .rb-field:hover .stop-ctl,.rb-field:focus-within .stop-ctl{opacity:1}
+  @media(hover:none){.stop-ctl{opacity:1}}
+  .stop-swap{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);color:var(--accent-deep);display:grid;place-items:center;cursor:pointer}
+  .stop-swap:hover{border-color:var(--accent)}
+  .stop-swap svg{width:12px;height:12px}
+
+  .leg-foot.stops{justify-content:flex-end;margin-top:8px}
+  .add-via{display:inline-flex;align-items:center;gap:.4rem;background:none;border:none;color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.82rem;padding:4px 2px;cursor:pointer;border-radius:6px}
+  .add-via:hover{text-decoration:underline}
+  .add-via svg{width:14px;height:14px}
+  .add-via[disabled]{color:var(--ink-soft);opacity:.6;cursor:default;text-decoration:none}
+
+  /* warning with acknowledgement */
+  .dr-warn.ack{flex-direction:column;gap:8px;margin-top:12px}
+  .dr-warn .dw-row{display:flex;gap:.5rem;align-items:flex-start}
+  .dr-warn .dw-actions{display:flex;gap:8px;flex-wrap:wrap;padding-left:24px}
+  .dw-btn{font-family:inherit;font-size:.78rem;font-weight:700;padding:.42rem .8rem;border-radius:999px;cursor:pointer;border:1.5px solid #e6b980;background:var(--white);color:#8a4f07}
+  .dw-btn.primary{background:#8a4f07;border-color:#8a4f07;color:#fff}
+  .dw-btn:hover{filter:brightness(.97)}
+
+  /* hard stop */
+  .dr-warn.stop{background:#fdecea;border-color:#f3b6ad;color:#8a2217}
+  .dr-warn.stop .dr-warn-ic svg{color:var(--tomato)}
+
+  /* next button for context */
+  .next-btn{display:block;width:100%;margin-top:16px;padding:.9rem;border-radius:999px;border:none;font-family:inherit;font-weight:700;font-size:1rem;background:var(--teal-deep);color:#fff}
+  .next-btn[disabled]{opacity:.45}
+  .next-note{font-size:.78rem;color:var(--ink-soft);text-align:center;margin:8px 0 0}
+</style>
+</head>
+<body>
+<div class="mock">
+  <h1>Stops within a leg — UX</h1>
+  <p class="lede">Four states of the same Leg 1 card. Everything except the stop row and the acknowledge buttons already exists on plan.html.</p>
+
+  <!-- ========== A ========== -->
+  <h3>A · Today<small>A plain leg. Hover either place to swap them (no × — a leg needs two places). The only other change: a quiet “Add a stop on the way” link in the foot.</small></h3>
+  <div class="rail">
+    <div class="leg"><div class="leg-card">
+      <div class="leg-head">
+        <span class="drag"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+        <span class="leg-badge">Leg 1</span>
+        <div class="leg-head-right">
+          <div class="leg-meta on"><span class="lm-dist">Approx. <b>90 km</b> · 2h 30m</span><span class="lm-src">Reviewed route</span><span class="lm-sep">·</span><span class="lm-price">from <span class="lm-veh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4"/></svg></span><b>$39</b></span></div>
+          <button class="leg-rm" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="route-block">
+        <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+        <div class="rb-fields">
+          <div class="rb-field via-ctl"><div><label>Pick-up</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via-ctl"><div><label>Drop-off</label><input value="Sigiriya"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></span></div>
+        </div>
+      </div>
+      <div class="leg-foot stops"><button class="add-via"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add a stop on the way</button></div>
+    </div></div>
+  </div>
+
+  <!-- ========== B ========== -->
+  <h3>B · One stop added<small>The stop sits on the same rail, solid dot like the ops rail. Hover any row to reveal swap + remove together; ⇅ swaps that place with the one below (on the last row, the one above). Header distance and price cover the whole chain; the toll-road chip is gone.</small></h3>
+  <div class="rail">
+    <div class="leg"><div class="leg-card">
+      <div class="leg-head">
+        <span class="drag"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+        <span class="leg-badge">Leg 1</span>
+        <div class="leg-head-right">
+          <div class="leg-meta on"><span class="lm-dist">Approx. <b>115 km</b> · 3h 10m</span><span class="lm-src">Google route</span><span class="lm-sep">·</span><span class="lm-price">from <span class="lm-veh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4"/></svg></span><b>$52</b></span></div>
+          <button class="leg-rm" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="route-block">
+        <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin via"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+        <div class="rb-fields">
+          <div class="rb-field via-ctl"><div><label>Pick-up</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via"><div><label>Stop on the way</label><input value="Pinnawala Elephant Orphanage"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via-ctl"><div><label>Drop-off</label><input value="Sigiriya"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+        </div>
+      </div>
+      <div class="leg-foot stops"><button class="add-via"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add another stop</button></div>
+    </div></div>
+  </div>
+
+  <!-- ========== E ========== -->
+  <h3>E · Round trip — allowed<small>Same place at both ends is fine when there’s a stop between. Priced as two segments; the map shows one marker for Kandy.</small></h3>
+  <div class="rail">
+    <div class="leg"><div class="leg-card">
+      <div class="leg-head">
+        <span class="drag"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+        <span class="leg-badge">Leg 1</span>
+        <div class="leg-head-right">
+          <div class="leg-meta on"><span class="lm-dist">Approx. <b>80 km</b> · 2h 20m</span><span class="lm-src">Google route</span><span class="lm-sep">·</span><span class="lm-price">from <span class="lm-veh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4"/></svg></span><b>$36</b></span></div>
+          <button class="leg-rm" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="route-block">
+        <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin via"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+        <div class="rb-fields">
+          <div class="rb-field via-ctl"><div><label>Pick-up</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via"><div><label>Stop on the way</label><input value="Pinnawala Elephant Orphanage"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via-ctl"><div><label>Drop-off</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+        </div>
+      </div>
+      <div class="leg-foot stops"><button class="add-via"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add another stop</button></div>
+    </div></div>
+  </div>
+
+  
+  <!-- ========== C ========== -->
+  <h3>C · Soft warning — must be answered<small>Two stops push the day over 6 h. The card asks; “Next” waits until they choose. “Keep it” is remembered and sent to ops with the booking.</small></h3>
+  <div class="rail">
+    <div class="leg"><div class="leg-card">
+      <div class="leg-head">
+        <span class="drag"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+        <span class="leg-badge">Leg 1</span>
+        <div class="leg-head-right">
+          <div class="leg-meta on"><span class="lm-dist">Approx. <b>265 km</b> · 7h 05m</span><span class="lm-src">Google route</span><span class="lm-sep">·</span><span class="lm-price">from <span class="lm-veh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 13l1.5-4.5A2 2 0 0 1 8.4 7h7.2a2 2 0 0 1 1.9 1.5L19 13M5 13h14m-14 0v4m14-4v4"/></svg></span><b>$118</b></span></div>
+          <button class="leg-rm" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="route-block">
+        <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin via"></span><span class="rb-wire"></span><span class="rb-pin via"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+        <div class="rb-fields">
+          <div class="rb-field via-ctl"><div><label>Pick-up</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via"><div><label>Stop on the way</label><input value="Pinnawala Elephant Orphanage"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via"><div><label>Stop on the way</label><input value="Sigiriya"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via-ctl"><div><label>Drop-off</label><input value="Ella"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+        </div>
+      </div>
+      <div class="dr-warn ack" role="status">
+        <div class="dw-row"><span class="dr-warn-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+        <span><b>Long day on the road.</b> Kandy → Pinnawala → Sigiriya → Ella is about 7 hours of driving, before any time at the stops. Most travellers split this with a night in Sigiriya.</span></div>
+        <div class="dw-actions"><button class="dw-btn primary">Split it — end this leg at Sigiriya</button><button class="dw-btn">Keep it as one day</button></div>
+      </div>
+      <div class="leg-foot stops"><button class="add-via" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add another stop</button></div>
+    </div></div>
+  </div>
+  <button class="next-btn" disabled>Next: add your dates</button>
+  <p class="next-note">Answer the note on Leg 1 to continue</p>
+
+  <!-- ========== D ========== -->
+  <h3>D · Hard stop<small>Two places <b>in a row</b> are the same. Red border, no price, no way past until it’s fixed — same as ops. Only consecutive repeats block; see E.</small></h3>
+  <div class="rail">
+    <div class="leg"><div class="leg-card leg-bad">
+      <div class="leg-head">
+        <span class="drag"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
+        <span class="leg-badge">Leg 1</span>
+        <div class="leg-head-right">
+          <div class="leg-meta"><span class="lm-hint">Fix the route to see distance &amp; price</span></div>
+          <button class="leg-rm" aria-label="Remove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+        </div>
+      </div>
+      <div class="route-block">
+        <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin via"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+        <div class="rb-fields">
+          <div class="rb-field via-ctl"><div><label>Pick-up</label><input value="Kandy"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via"><div><label>Stop on the way</label><input value="Sigiriya"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove stop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+          <div class="rb-divider plain"></div>
+          <div class="rb-field via-ctl"><div><label>Drop-off</label><input value="Sigiriya"></div><span class="stop-ctl"><button class="stop-swap" aria-label="Swap with the next place" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button><button class="stop-rm" aria-label="Remove this place"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button></span></div>
+        </div>
+      </div>
+      <div class="dr-warn stop" role="alert"><span class="dr-warn-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> The stop and the drop-off are both Sigiriya — remove one, or change it.</span></div>
+      <div class="leg-foot stops"><button class="add-via" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add another stop</button></div>
+    </div></div>
+  </div>
+  <button class="next-btn" disabled>Next: add your dates</button>
+  <p class="next-note">Fix Leg 1 to continue</p>
+</div>
+</body>
+</html>

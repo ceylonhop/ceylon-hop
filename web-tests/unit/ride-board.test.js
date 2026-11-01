@@ -14,6 +14,8 @@ const ROOT = path.join(__dirname, '..', '..');
 let RB;
 beforeAll(() => {
   loadTransfers();                 // sets window.TRANSFERS (enriches name→id lookup)
+  // eslint-disable-next-line no-new-func
+  new Function(readFileSync(path.join(ROOT, 'ride-fomo.js'), 'utf8'))(); // one clock: fmtCountdown delegates to CHRideFomo.countdown
   const src = readFileSync(path.join(ROOT, 'board.js'), 'utf8');
   // eslint-disable-next-line no-new-func
   new Function(src)();             // runs against the ambient jsdom window/document
@@ -80,11 +82,21 @@ describe('flagOf(country)', () => {
     expect(RB.flagOf('fr')).toBe('🇫🇷');
     expect(RB.flagOf('GB')).toBe('🇬🇧');
   });
-  it('passes through empties, emoji and non 2-letter codes', () => {
+  it('passes through empties and an existing emoji', () => {
     expect(RB.flagOf('')).toBe('');
     expect(RB.flagOf(null)).toBe('');
     expect(RB.flagOf('🇬🇧')).toBe('🇬🇧');
-    expect(RB.flagOf('USA')).toBe('USA');
+  });
+  // The sign-in field used to accept up to 4 letters, so some stored members carry "IND" or
+  // "JAPA". Rendered as text in the 28px avatar's flag slot that spills past the circle
+  // (owner screenshot 2026-10-23) — a free-text country gets no badge, never raw letters.
+  it('gives no badge for a 3–4 letter country (text in the flag slot overflows the avatar)', () => {
+    expect(RB.flagOf('USA')).toBe('');
+    expect(RB.flagOf('IND')).toBe('');
+    expect(RB.flagOf('JAPA')).toBe('');
+    expect(RB.flagOf('F1')).toBe('');
+    expect(RB.flagOf('New Zealand')).toBe('');
+    expect(RB.flagOf('XX')).toBe('🇽🇽'); // the server's "no country given" placeholder stays as it was
   });
 });
 

@@ -16,6 +16,7 @@ const toPayment = (r: Row): Payment => ({
   purpose: r.purpose as PaymentPurpose,
   attemptCount: r.attemptCount,
   lastAttemptAt: r.lastAttemptAt,
+  settledAt: r.settledAt,
 });
 
 export class PostgresPaymentRepo implements PaymentRepo {
@@ -149,6 +150,21 @@ export class PostgresPaymentRepo implements PaymentRepo {
       )
       .limit(1);
     return Boolean(row);
+  }
+
+  async manualSettlementAmong(bookingIds: string[]): Promise<Set<string>> {
+    if (bookingIds.length === 0) return new Set();
+    const rows = await this.db
+      .selectDistinct({ bookingId: payments.bookingId })
+      .from(payments)
+      .where(
+        and(
+          inArray(payments.bookingId, bookingIds),
+          eq(payments.status, 'succeeded'),
+          eq(payments.settlementSource, 'manual'),
+        ),
+      );
+    return new Set(rows.map((r) => r.bookingId));
   }
 
   // Bookkeeping only: status, settlement and updated_at are untouched, so nothing that reads

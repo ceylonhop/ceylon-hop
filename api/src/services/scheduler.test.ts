@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runScheduledNotifications, sweepStaleSharedHolds } from './scheduler';
+import { runScheduledNotifications, sweepStaleSharedHolds, STALE_HOLD_BY, STALE_HOLD_REASON } from './scheduler';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
@@ -7,7 +7,7 @@ import { FakeEmailAdapter } from '../adapters/email';
 import { SendBudget } from './sendBudget';
 
 const customer = { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' };
-const NOW = new Date('2026-07-01T08:00:00'); // local — matches how travelAt builds dates
+const NOW = new Date('2026-07-01T08:00:00+05:30'); // Sri Lanka time — matches how tripWindow reads dates
 
 async function paidSingle(bookings: InMemoryBookingRepo, date: string, time = '09:00') {
   const b = await bookings.create({
@@ -64,6 +64,16 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
     const r2 = await runScheduledNotifications(NOW, d); // tick again → idempotent
     expect(r2.reminders).toBe(0);
     expect(d.email.sent.filter((m) => /coming up/i.test(m.subject))).toHaveLength(1);
+  });
+
+  // A pickup time is Sri Lanka wall-clock time, so 14:00 on 3 Jul is 08:30Z whatever zone the
+  // server runs in. Parsed as server-local, a UTC host read it as 14:00Z and sent the
+  // reminder 5½ h late.
+  it('reads the pickup as Sri Lanka time, whatever the server clock zone', async () => {
+    const d = deps();
+    await paidSingle(d.bookings, '2026-07-03', '14:00');
+    expect((await runScheduledNotifications(new Date('2026-07-01T08:29:00Z'), d)).reminders).toBe(0); // 48h01m out
+    expect((await runScheduledNotifications(new Date('2026-07-01T08:31:00Z'), d)).reminders).toBe(1); // 47h59m out
   });
 
   it('does not remind a booking departing far in the future', async () => {
@@ -203,6 +213,21 @@ describe('sweepStaleSharedHolds', () => {
         requestId: 'req-job', runId: 'run-job',
       }),
     ]);
+  });
+
+  // Owner 2026-10-29: CH-NQ66B showed cancelled in ops with no reason and no "by" — the
+  // sweep was the only canceller that saved neither, so nobody could tell why it closed.
+  it('saves why and by whom on the booking itself', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const departures = new InMemoryDepartureRepo();
+    const b = await heldShared(bookings, departures, 1);
+    const now = hoursFromNow(25);
+
+    await sweepStaleSharedHolds({ bookings, departures, now });
+    const after = (await bookings.get(b.id))!;
+    expect(after.cancellationReason).toBe(STALE_HOLD_REASON);
+    expect(after.cancelledBy).toBe(STALE_HOLD_BY);
+    expect(after.cancelledAt).toBe(now.toISOString());
   });
 
   it('sweeps a stale payment_pending hold too (checkout started, never paid)', async () => {
@@ -447,5 +472,107 @@ describe('runScheduledNotifications — dry run', () => {
 
     expect(r.plan).toHaveLength(2);
     expect(r.reminders).toBe(2);
+  });
+});
+
+describe('details reminders (dateless capture Phase 2)', () => {
+  const EPOCH = new Date('2026-06-01T00:00:00Z');
+  const at = (days: number) => new Date(NOW.getTime() - days * 24 * 3600_000);
+
+  async function undatedPaid(bookings: InMemoryBookingRepo) {
+    const b = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, customer },
+      total: 5000, amountDueNow: 5000, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setStatus(b.id, 'paid');
+    return b;
+  }
+
+  function deps(bookings: InMemoryBookingRepo, log: InMemoryNotificationLogRepo, email: FakeEmailAdapter, paidDaysAgo: number, paused = false) {
+    return {
+      bookings, log, email, baseUrl: 'https://ceylonhop.com', linkSecret: 's',
+      payments: { findByBookingId: async () => [{ status: 'succeeded', amount: 5000, purpose: 'full', settledAt: at(paidDaysAgo) }] },
+      rideOps: { get: async () => ({ customerUpdated: paused }) },
+      detailsReminderEpoch: EPOCH,
+    };
+  }
+
+  it('sends reminder 1 at two days, once, and nothing to a booking with full details', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const b = await undatedPaid(bookings);
+    await paidSingle(bookings, '2026-07-10', '09:00'); // complete details: never reminded
+    const r1 = await runScheduledNotifications(NOW, deps(bookings, log, email, 2));
+    expect(r1.detailsReminders).toBe(1);
+    expect(email.sent.map((m) => m.tracking?.kind)).toEqual(['details_reminder_1']);
+    expect(await log.wasSent(b.id, 'details_reminder_1')).toBe(true);
+    const r2 = await runScheduledNotifications(NOW, deps(bookings, log, email, 2));
+    expect(r2.detailsReminders).toBe(0);
+  });
+
+  it('stays quiet while ops has marked the customer contacted', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, deps(bookings, log, email, 3, true));
+    expect(r.detailsReminders).toBe(0);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('plans but does not send on a dry run', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    const b = await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, { ...deps(bookings, log, email, 3), dryRun: true });
+    expect(r.plan).toEqual([{ reference: b.reference, kind: 'details_reminder_1' }]);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('does nothing without the payments dep (callers that have not opted in)', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const email = new FakeEmailAdapter();
+    await undatedPaid(bookings);
+    const r = await runScheduledNotifications(NOW, { bookings, log, email, baseUrl: 'x', linkSecret: 's' });
+    expect(r.detailsReminders).toBe(0);
+  });
+});
+
+describe('runScheduledNotifications — pay-on-the-day trip reminder', () => {
+  async function onTheDay(bookings: InMemoryBookingRepo) {
+    const b = await bookings.create({
+      mode: 'single',
+      input: { from: 'Colombo Airport', to: 'Ella', vehicleType: 'car', adults: 1, children: 0, bags: 0, date: '2026-07-02', time: '09:00', customer },
+      total: 34200, amountDueNow: 0, currency: 'USD',
+    });
+    await bookings.setStatus(b.id, 'payment_pending');
+    await bookings.setPaymentArrangement(b.id, 'on_the_day');
+    await bookings.setStatus(b.id, 'confirmed');
+    return b;
+  }
+  const cash = (amount: number) => ({ status: 'succeeded', amount, purpose: 'full', settledAt: NOW });
+
+  it('with no cash recorded: Confirmed reminder with the cash line, never Paid', async () => {
+    const d = { ...deps(), payments: { findByBookingId: async () => [] } };
+    await onTheDay(d.bookings);
+    await runScheduledNotifications(NOW, d);
+    const m = d.email.sent.find((e) => e.tracking?.kind === 'trip_reminder')!;
+    expect(m.html).toContain('$342.00');
+    expect(m.html).toContain('US dollars');
+    expect(m.html).not.toContain('>Paid<');
+  });
+
+  it('once the cash is recorded: the usual Paid reminder, no cash line', async () => {
+    const d = { ...deps(), payments: { findByBookingId: async () => [cash(34200)] } };
+    await onTheDay(d.bookings);
+    await runScheduledNotifications(NOW, d);
+    const m = d.email.sent.find((e) => e.tracking?.kind === 'trip_reminder')!;
+    expect(m.html).toContain('>Paid<');
+    expect(m.html).not.toContain('US dollars');
   });
 });

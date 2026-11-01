@@ -8,7 +8,8 @@
 /**
  * `leg` — a journey between two overnight stops (single transfer, or a private trip's pair).
  * `day` — one chauffeur TRAVEL DAY, which may pass through several stops.
- * `gap`  — a connector chainStops() inserted between two chauffeur days (quoteToBooking.ts:46).
+ * `gap`  — a connector chainStops() inserted between two chauffeur days (quoteToBooking.ts:46),
+ *          or a private trip's self-arranged wire (trip_request.gaps).
  *          Recorded so the route stays complete; never a journey we drive as one.
  */
 export type BookingLegKind = 'leg' | 'day' | 'gap';
@@ -104,35 +105,52 @@ export function deriveSingleLegs(input: {
 export function deriveTripLegs(input: {
   stops: string[];
   dates?: string[] | null;
+  gaps?: number[] | null;
+  through?: number[] | null;
   serviceType: 'private' | 'chauffeur';
 }): DerivedLeg[] {
   const { stops, serviceType } = input;
   const dates = input.dates ?? [];
+  const through = new Set(input.through ?? []);
   if (stops.length < 2) return [];
   const rows =
-    serviceType === 'chauffeur' ? chauffeurDays(stops, dates) : privateLegs(stops, dates);
+    serviceType === 'chauffeur'
+      ? chauffeurDays(stops, dates, through)
+      : privateLegs(stops, dates, new Set(input.gaps ?? []), through);
   return rows.map((row, i) => ({ ...row, seq: i + 1 }));
 }
 
 type Unsequenced = Omit<DerivedLeg, 'seq'>;
 
 // For a private trip, a blank date means "flexible", not "gap" — the heuristic chauffeurDays()
-// uses (blank = chainStops()'s connector) is NOT available here. chainStops() also inserts a
-// connector for a hop the customer makes themselves (the Ella→Galle train case — see
-// docs/known-bugs.md, 2026-07-30), and that connector is indistinguishable from a driven leg at
-// this layer: it comes through as an ordinary consecutive pair with no marker of its own. So this
-// always emits `kind: 'leg'`, even for a connector. A later phase that wants to tell "we drive
-// this" apart from "the customer arranges this themselves" needs a signal this function does not
-// have — this is a note for whoever designs that phase, not a bug to fix here.
-function privateLegs(stops: string[], dates: string[]): Unsequenced[] {
-  return stops.slice(0, -1).map((from, i) => ({
-    kind: 'leg' as const,
-    fromPlace: from,
-    toPlace: stops[i + 1],
-    viaStops: [],
-    travelDate: dates[i] || null,
-    pickupTime: null,
-  }));
+// uses (blank = chainStops()'s connector) is NOT available here. A hop the customer makes
+// themselves (the Ella→Galle train, or the leg a partial pay link left out — docs/known-bugs.md
+// 2026-07-30 / 2026-08-04) is named explicitly instead, in `gaps` (0076_trip_request_gaps).
+// A through wire (0078_trip_request_through) continues the leg onto the next wire: stops[i+1] is
+// a stop on the way. The run's date is its first wire's (the route handler refuses differing dates).
+function privateLegs(stops: string[], dates: string[], gaps: Set<number>, through: Set<number>): Unsequenced[] {
+  const out: Unsequenced[] = [];
+  const lastWire = stops.length - 2;
+  let i = 0;
+  while (i <= lastWire) {
+    if (gaps.has(i)) {
+      out.push({ kind: 'gap', fromPlace: stops[i], toPlace: stops[i + 1], viaStops: [], travelDate: dates[i] || null, pickupTime: null });
+      i += 1;
+      continue;
+    }
+    let end = i;
+    while (end < lastWire && through.has(end) && !gaps.has(end + 1)) end += 1;
+    out.push({
+      kind: 'leg',
+      fromPlace: stops[i],
+      toPlace: stops[end + 1],
+      viaStops: stops.slice(i + 1, end + 1),
+      travelDate: dates[i] || null,
+      pickupTime: null,
+    });
+    i = end + 1;
+  }
+  return out;
 }
 
 // A chauffeur booking stores one date per SEGMENT (quoteToBooking.ts:170), so consecutive segments
@@ -145,7 +163,7 @@ function privateLegs(stops: string[], dates: string[]): Unsequenced[] {
 // precondition a trip with genuinely no dates would read as ALL gaps — see the no-dates-at-all
 // fallback below, which exists precisely because a fully-undated chauffeur trip must still
 // produce askable journeys, not zero of them.
-function chauffeurDays(stops: string[], dates: string[]): Unsequenced[] {
+function chauffeurDays(stops: string[], dates: string[], through: Set<number>): Unsequenced[] {
   // A blank date is only meaningful as "chainStops() connector" when the trip has dates
   // elsewhere. A chauffeur trip with NO dates at all (e.g. still being drafted, or a producer
   // that hasn't supplied dates yet) is not "all gaps" — every segment is still a journey we will
@@ -156,14 +174,16 @@ function chauffeurDays(stops: string[], dates: string[]): Unsequenced[] {
   // this function) must not make an otherwise-undated trip look dated, or every real segment
   // reads as a gap instead of falling back to askable days.
   if (!dates.slice(0, stops.length - 1).some((d) => !!d)) {
-    return stops.slice(0, -1).map((from, i) => ({
-      kind: 'day' as const,
-      fromPlace: from,
-      toPlace: stops[i + 1],
-      viaStops: [],
-      travelDate: null,
-      pickupTime: null,
-    }));
+    const out: Unsequenced[] = [];
+    const lastWire = stops.length - 2;
+    let i = 0;
+    while (i <= lastWire) {
+      let end = i;
+      while (end < lastWire && through.has(end)) end += 1;
+      out.push({ kind: 'day' as const, fromPlace: stops[i], toPlace: stops[end + 1], viaStops: stops.slice(i + 1, end + 1), travelDate: null, pickupTime: null });
+      i = end + 1;
+    }
+    return out;
   }
   const out: Unsequenced[] = [];
   const lastSegment = stops.length - 2;
@@ -183,7 +203,7 @@ function chauffeurDays(stops: string[], dates: string[]): Unsequenced[] {
       continue;
     }
     let end = i;
-    while (end < lastSegment && (dates[end + 1] || '') === date) end += 1;
+    while (end < lastSegment && (through.has(end) || (dates[end + 1] || '') === date)) end += 1;
     out.push({
       kind: 'day',
       fromPlace: stops[i],

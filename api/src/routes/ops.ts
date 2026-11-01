@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
 import { z } from 'zod';
-import type { BookingRepo } from '../db/bookingRepo';
+import type { BookingRepo, WebsitePricingSnapshot } from '../db/bookingRepo';
 import type { QuoteRepo } from '../db/quoteRepo';
-import { legSelectionOf } from '../quote/paySelection';
+import { legSelectionOf, refundLinesFor, type PayLine } from '../quote/paySelection';
 import { isChauffeurBooking } from '../quote/quoteAlternative';
+import { pricedVehicle } from '../quote/vehicle';
+import type { QuoteRequest } from '../quote/types';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
@@ -14,7 +16,7 @@ import type { RefundRepo } from '../db/refundRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
-  opsIdentity, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
+  opsIdentity, opsCsrf, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
   type OpsAuthConfig,
 } from '../lib/opsMiddleware';
 import { verifyGoogleIdToken, type JwtVerifier } from '../lib/googleAuth';
@@ -23,10 +25,11 @@ import type { RideStatus } from '../domain/rideStatus';
 import { toOpsRow, type OpsBookingRow } from '../services/opsView';
 import { boardRowsForOps } from '../services/opsBoardView';
 import type { RideListRepo } from '../db/rideListRepo';
-import type { EmailAdapter } from '../adapters/email';
+import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
-import { sendNoShowNotice, manageUrl } from '../services/notifications';
-import { isBalanceOpen } from '../domain/balance';
+import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
+import { scheduleProblem, SCHEDULE_REASONS } from '../domain/bookingSchedule';
+import { isBalanceOpen, paidCents } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
 import { loadBookingInterests } from '../experiences/bookingInterests';
@@ -71,6 +74,8 @@ export interface OpsDeps {
   experienceInterests?: ExperienceInterestRepo;
   // Phase A's append-only booking-email evidence. Optional deployments name it as unavailable.
   customerCommunications?: CustomerCommunicationRepo;
+  // CSRF allow-list for mutation routes that need it (spec 2026-10-17 §6) — same list as /admin/rates.
+  allowedOrigins?: string[];
 }
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
@@ -117,7 +122,7 @@ async function mirrorToBooking(
   try {
     const booking = await deps.bookings.get(bookingId);
     if (!booking || booking.status === target) return;
-    if (!canTransition(booking.status, target)) return;
+    if (!canTransition(booking.status, target, { paymentArrangement: booking.paymentArrangement })) return;
     await deps.bookings.setStatus(bookingId, target, undefined, {
       source: 'ops',
       actorType: 'staff',
@@ -140,7 +145,7 @@ async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string):
     if (log && (await log.wasSent(bookingId, kind))) return; // already emailed for this milestone
     const booking = await deps.bookings.get(bookingId);
     if (!booking) return;
-    await sendNoShowNotice(booking, deps.email);
+    await sendNoShowNotice(booking, deps.email, { paidCents: paidCents(await deps.payments.findByBookingId(bookingId)) });
     await log?.markSent(bookingId, kind);
   } catch (err) {
     console.error(`ops ${kind} email failed for ${bookingId}:`, err);
@@ -149,6 +154,9 @@ async function maybeEmailForStage(deps: OpsDeps, bookingId: string, to: string):
 
 export function opsRoutes(deps: OpsDeps) {
   const r = new Hono();
+
+  // Same CSRF rule as /admin/rates and /admin/quote: the ch_ops cookie is ambient browser state.
+  const csrf = opsCsrf;
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
 
@@ -202,6 +210,8 @@ export function opsRoutes(deps: OpsDeps) {
 
   // Identity + guards for everything below.
   r.use('*', opsIdentity(auth));
+  // CSRF on every write below, not route by route (status and flags had none — review 2026-10-25).
+  r.use('*', (c, next) => (c.req.method === 'GET' || c.req.method === 'HEAD' ? next() : csrf(c, next)));
 
   // Backfill seam: sessions live for 7 days, so login alone would leave the picker showing
   // email local parts for up to a week after this ships — for people who are signed in and
@@ -246,7 +256,12 @@ export function opsRoutes(deps: OpsDeps) {
     // queue booking, closed ones included. A payments query per booking, awaited in sequence,
     // was a ~100 ms round-trip per row from Render to the database (2026-09-22) — the whole
     // reason the page took many seconds to paint its first row.
-    const [ops, allPayments] = await Promise.all([deps.rideOps.listByBookingIds(ids), deps.payments.findByBookingIds(ids)]);
+    const [ops, allPayments, waiting] = await Promise.all([
+      deps.rideOps.listByBookingIds(ids),
+      deps.payments.findByBookingIds(ids),
+      // Batched with the two above for the same reason: one read for the whole queue.
+      deps.refunds ? deps.refunds.pendingCentsByBookingIds(ids) : Promise.resolve(new Map<string, number>()),
+    ]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
     const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const paymentsById = new Map<string, typeof allPayments>();
@@ -255,7 +270,7 @@ export function opsRoutes(deps: OpsDeps) {
     for (const b of all) {
       const row = toOpsRow(b, {
         rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
-        payments: paymentsById.get(b.id) ?? [],
+        payments: paymentsById.get(b.id) ?? [], refundWaitingCents: waiting.get(b.id) ?? 0,
       });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
@@ -329,6 +344,41 @@ export function opsRoutes(deps: OpsDeps) {
     const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
+    // A website booking's own pricing snapshot, when it did not come from a quote. Best-effort,
+    // like the checkout log below: a row that cannot be read costs the refund picker and the
+    // vehicle tier only.
+    let web: WebsitePricingSnapshot | null = null;
+    if (!srcQuote && b.mode !== 'shared') {
+      try {
+        web = await deps.bookings.websitePricingSnapshot(b.id);
+      } catch (err) {
+        console.error(`[ops] pricing snapshot unavailable for ${b.id}:`, err);
+      }
+    }
+    // The vehicle ops assign: the tier the trip was priced on. The booking itself keeps only
+    // car|van, so a 9-seat van quote reads "van" and a party the engine sized up out of a car can
+    // read "car"; the priced request says which. None for a shared seat.
+    const pricedEngine = (srcQuote?.request as { engine?: QuoteRequest } | null)?.engine ?? web?.engine;
+    const vehicle = b.mode === 'shared'
+      ? null
+      : pricedEngine && pricedEngine.product !== 'shared' ? pricedVehicle(pricedEngine) : b.input.vehicleType;
+    // The refund picker's lines (refund approvals phase 2): legs and extras, each worth its share of
+    // what the booking was charged — from the quote it came from, else a website booking's own
+    // snapshot. Only a convenience that fills the amount box; a founder approves every request.
+    let refundLines: { currency: string; lines: PayLine[] } | null = null;
+    if (!isChauffeurBooking(b)) {
+      try {
+        const source = srcQuote
+          ? { quote: srcQuote, currency: srcQuote.currency }
+          : web ? { quote: { request: { engine: web.engine }, result: { lineItems: web.lineItems } }, currency: web.currency } : null;
+        const lines = source && source.currency === b.currency
+          ? refundLinesFor(source.quote, { selection: sel, chargedCents: b.total })
+          : null;
+        refundLines = lines ? { currency: b.currency, lines } : null;
+      } catch (err) {
+        console.error(`[ops] refund lines unavailable for ${b.id}:`, err);
+      }
+    }
     // Payment attempts (2026-09-24): debugging a failed payment took SQL against
     // booking_checkout_event. Latest 50, oldest first. `ua` stays server-side — it is
     // diagnostic only. Best-effort: a log that cannot be read must not fail the drawer.
@@ -360,7 +410,13 @@ export function opsRoutes(deps: OpsDeps) {
       scheduledDate: i.scheduledDate, scheduledTime: i.scheduledTime, meetingPoint: i.meetingPoint, confirmationSentAt: i.confirmationSentAt,
       confirmationChannel: i.confirmationChannel,
     }));
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, checkoutEvents, experienceInterests });
+    const scheduleEvents = await deps.bookings.listScheduleEvents(b.id);
+    // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
+    const reminders = deps.notificationLog
+      ? (await deps.notificationLog.listByBookingId(b.id).catch(() => []))
+          .filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2')
+      : [];
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
@@ -408,6 +464,59 @@ export function opsRoutes(deps: OpsDeps) {
     }).safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     return c.json(await deps.rideOps.setFlags(c.req.param('id'), body.data));
+  });
+
+  // Set or change a single transfer's pickup date/time after booking (spec 2026-10-17 §4).
+  // `expected` is what the operator was looking at: if it changed meanwhile (another operator,
+  // later the customer) the write is refused with the current value instead of silently winning.
+  r.post('/bookings/:id/schedule', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const Value = z.string().nullable();
+    const raw = await c.req.json().catch(() => null);
+    const body = z.object({
+      date: z.string(),
+      time: z.string().nullable(),
+      expected: z.object({ date: Value, time: Value }),
+      notifyCustomer: z.boolean(),
+      // Free text from ops, shown back in the activity feed: trimmed, bounded, blank = none.
+      note: z.string().trim().max(500).nullish().transform((s) => s || null),
+    }).safeParse(raw);
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    // Every ops change says why (requirements R1/R6) — named apart from a malformed body so the
+    // sheet can say what's missing.
+    const reason = z.enum(SCHEDULE_REASONS).safeParse((raw as { reason?: unknown }).reason);
+    if (!reason.success) return c.json({ error: 'reason_required' }, 400);
+    const { date, time, expected, notifyCustomer, note } = body.data;
+    const problem = scheduleProblem(date, time, new Date(), { allowShortNotice: true });
+    if (problem) return c.json({ error: problem }, 400);
+
+    const result = await deps.bookings.setSchedule(id, {
+      date, time, expected, actor: { type: 'staff', id: c.get('identity').email }, reason: reason.data, note,
+    });
+    if (!result.ok) {
+      if (result.reason === 'not_found') return c.json({ error: 'not_found' }, 404);
+      const b = result.booking;
+      const current = b.mode === 'single' ? { date: b.input.date ?? null, time: b.input.time ?? null } : null;
+      return c.json({ error: result.reason, current }, 409);
+    }
+
+    // A driver who already has the job is holding the OLD time — the sheet tells the operator.
+    const ride = await deps.rideOps.get(id);
+    const driverNotified = !!ride && ride.fulfilmentStatus !== 'paid';
+    // Best-effort, like the stage emails: a mail failure must not undo a change ops just made.
+    // `emailed` means DELIVERED — the sheet tells the operator to WhatsApp the customer when it
+    // isn't, and a guard can hold an email back without throwing.
+    let emailed = false;
+    if (notifyCustomer && deps.email) {
+      try {
+        const links = deps.baseUrl && deps.linkSecret ? { manage: manageUrl(result.booking, deps.baseUrl, deps.linkSecret) } : {};
+        emailed = wasDelivered(await sendScheduleSet(result.booking, deps.email, links));
+      } catch (err) {
+        console.error(`[ops] schedule_set email failed for ${result.booking.reference}:`, err);
+      }
+    }
+    return c.json({ date, time, emailed, driverNotified });
   });
 
   return r;

@@ -3,13 +3,43 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
+<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
+<script>
+// The ?t= link token authorises viewing this booking AND minting a checkout token for it, so it
+// must leave the address bar BEFORE the tag snippet below: GTM loads async and can run while the
+// parser waits on the synchronous scripts after it, and GA4 page_location, Clarity and the pixels
+// all read location.href (security review 2026-10-25 — pay.html does the same). `rt` and `c`, the
+// PayHere return leg, go too. The page script reads all three from window.CH_MANAGE_LINK.
+// checkout-handoff.js loads just above so the key name stays the shared one.
+(function(){
+  var link = { t: null, rt: null, c: false };
+  try {
+    var u = new URL(location.href), q = u.searchParams;
+    link.t = q.get('t'); link.rt = q.get('rt'); link.c = q.get('c') === '1';
+    var strip = [];
+    if (link.rt !== null) strip.push('rt');
+    if (q.has('c')) strip.push('c');
+    // If storage throws, `t` stays in the URL: a customer who cannot reload their own booking is
+    // a broken page. Function first, privacy wherever it is free.
+    if (link.t) {
+      try { sessionStorage.setItem(window.CH_MANAGE_TOKEN_KEY, link.t); strip.push('t'); } catch (e) {}
+    }
+    if (strip.length) {
+      strip.forEach(function(k){ q.delete(k); });
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  } catch (e) {}
+  window.CH_MANAGE_LINK = link;
+})();
+</script>
 <title>Your booking · Ceylon Hop</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#63BFD6">
 <link rel="icon" href="favicon.svg">
 <link rel="apple-touch-icon" href="img/ceylon-hop-touch-icon.png">
-<link rel="stylesheet" href="site.css?v=33723b0702">
-<link rel="stylesheet" href="ticket.css?v=ca4d228a2f">
+<link rel="stylesheet" href="site.css?v=0afd32962e">
+<link rel="stylesheet" href="ticket.css?v=740bbaf5bb">
 <style>
   /* What to DO about a decline — pay.html's panel, verbatim. Rendered only after a real attempt
      at the gateway (the return leg), never on the first paint. */
@@ -19,6 +49,8 @@
      the decline help. .btn sets a display, so [hidden] needs saying. */
   .pp-tellus{text-decoration:none}
   .pp-tellus[hidden]{display:none}
+  /* A booking awaiting a hand price: what happens next, in place of the placeholder total. */
+  .pp-tbc{margin:0 0 12px;font-size:.88rem;line-height:1.5;color:var(--ink)}
   .pp-help h3{margin:0 0 8px;font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--accent-deep)}
   .pp-help ol{margin:0;padding-left:18px;font-size:.82rem;line-height:1.55;color:var(--ink)}
   .pp-help li+li{margin-top:6px}
@@ -33,6 +65,39 @@
   .tot.tot-sub .v{font-size:1.05rem;font-weight:600;color:var(--ink-faint)}
   .tot.tot-disc .v{color:var(--accent-deep)}
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
+  /* A blank pickup date/time on the card — something still to do (Phase 4). */
+  .fact .v .pt-map{color:inherit;text-decoration:underline;text-decoration-color:var(--line,#e7e3d6);text-underline-offset:3px}
+  .fact .v .pt-map:hover{color:var(--teal-deep,#1f6f78);text-decoration-color:currentColor}
+  .fact .v .need{color:#96631a;background:#fbf0d8;border-radius:99px;padding:2px 9px;font-size:.74rem;font-weight:800}
+  /* The pickup card (dateless capture Phase 4): one thing left to do, above the ticket. */
+  .pk{background:var(--paper);border:1px solid var(--warn-line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:16px 18px;margin:0 0 14px;scroll-margin-top:16px}
+  .pk-top{display:flex;gap:12px;align-items:flex-start}
+  .pk-ic{width:36px;height:36px;border-radius:50%;background:var(--warn-bg);color:#c98a1a;display:grid;place-items:center;flex:none}
+  .pk-ic svg{width:20px;height:20px}
+  .pk h2{font-family:var(--display);font-weight:700;font-size:1.2rem;line-height:1.15;margin:2px 0 4px}
+  .pk p{font-size:.84rem;line-height:1.5;color:var(--ink-soft);margin:0}
+  .pk .btn{width:100%;margin-top:16px}
+  .pk .btn:disabled{background:var(--cream-deep);color:var(--ink-soft);box-shadow:none;cursor:default;transform:none}
+  .pk-fine{font-size:.74rem;color:var(--ink-soft);text-align:center;margin-top:9px}
+  .pk-fine a,.pk p a,.pk-err a{color:var(--accent-deep);font-weight:700;text-decoration:none}
+  .pk-row{display:flex;justify-content:space-between;align-items:center;margin:16px 0 6px}
+  .pk-lbl{font-size:.64rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)}
+  .pk-lbl i{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600}
+  .pk-chk{display:flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;color:var(--ink-soft);cursor:pointer}
+  .pk-chk input{width:16px;height:16px;accent-color:var(--btn-accent)}
+  .pk-fixed{font-weight:700;font-size:.95rem;padding:.72rem .8rem;border:1.5px dashed var(--line);border-radius:10px;background:var(--cream)}
+  .pk-fixed small{font-weight:600;color:var(--ink-soft);font-size:.74rem;margin-left:6px}
+  .pk select{width:100%;padding:.72rem .8rem;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;font-size:.95rem;background:var(--white);color:var(--ink)}
+  .pk-pill{display:flex;align-items:center;gap:.5rem;background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:10px;padding:.72rem .8rem;font-size:.84rem;color:var(--warn)}
+  /* .pk-pill and .pk select set a display, so [hidden] has to be said. */
+  .pk-pill[hidden],.pk select[hidden],.pk-err[hidden]{display:none}
+  .pk-err{margin-top:12px;padding:10px 13px;border-radius:12px;background:#fdecea;border:1px solid #f4c7c0;color:#b23214;font-size:.82rem;font-weight:600;line-height:1.45}
+  .pk-later{display:block;width:100%;background:none;border:0;margin-top:4px;font:700 .82rem var(--body);color:var(--ink-soft);cursor:pointer;padding:6px}
+  .pk.ok{border-color:var(--ok-line);background:var(--ok-bg)}
+  .pk.ok .pk-ic{background:#fff;color:var(--ok)}
+  .pk.ok h2{color:var(--ok)}
+  .pk.info{border-color:var(--pc-line);background:var(--pc-sky)}
+  .pk.info .pk-ic{background:#fff;color:var(--accent-deep)}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -55,8 +120,8 @@ window.addEventListener('error',function(e){r(e.message,e.error&&e.error.stack)}
 window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.message||String(x),x.stack)});})();
 </script>
 <script src="decline-help.js?v=c0dbcda42b"></script>
-<!-- The PayHere hand-off (form POST, WhatsApp text, manage-token key), shared with booking.html. -->
-<script src="checkout-handoff.js?v=13d6bf1c9f"></script>
+<script src="datepicker.js?v=dffb97f9e8"></script>
+<script src="ch-shortplace.js?v=1eb1db0211"></script>
 <!-- PayHere's JS SDK is deliberately NOT loaded (2026-09-24, docs/checkout-redirect-spec.md §1.4).
      It ran the card form and the 3-D Secure challenge inside a cross-origin iframe; two website
      payments that day were declined "3ds Authentication Failed" with no notify ever reaching us.
@@ -91,44 +156,23 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // a customer following either link should not be able to tell they landed on a different
   // system. Everything here is derived from the booking; nothing is typed on this page.
   var app = document.getElementById('app');
-  // The ?t= link token authorises viewing this booking AND minting a checkout token for it.
-  // Left in the address bar it flows into GA4's page_location, Clarity's recording and this
-  // page's own error beacon (which posts location.href), so anyone with analytics access could
-  // open a customer's booking and start its payment flow. Read it once, hand it to
-  // sessionStorage, and take it out of the URL.
-  //
-  // sessionStorage is what keeps reload working after the strip — and it can throw (private
-  // mode, storage disabled). If it does, we DON'T strip: a token in the URL is a privacy
-  // problem, but a customer who cannot reload their own booking is a broken page. Function
-  // first, privacy wherever it is free.
+  // The ?t= link token authorises viewing this booking AND minting a checkout token for it. The
+  // first script in <head> read it (with `rt` and `c`), stashed it in sessionStorage and took it
+  // out of the URL before any tag could see it; on a reload it comes back from storage.
   // The key's name is shared with booking.html, which hands a website customer's token over here.
   var TOKEN_KEY = window.CH_MANAGE_TOKEN_KEY;
-  var q = new URLSearchParams(location.search);
-  var t = q.get('t');
+  var link = window.CH_MANAGE_LINK || {};
+  var t = link.t;
   // Set only on the leg BACK from PayHere (the server builds that address — see returnTo below).
   // `rt` is a status-only token for /bookings/pay-return; `c=1` means the gateway used cancel_url,
   // a display hint and NEVER an outcome. Both are read once and taken out of the address bar with
   // `t`, so a reload after the return simply shows the booking as it now stands. That address
   // carries NO `t`: this page (or booking.html, for a website checkout) stashes it right before
   // the hand-off, and it is read back below like any reload.
-  var rt = q.get('rt');
-  var cameFromCancel = q.get('c') === '1';
-  var strip = [];
-  if (rt !== null) strip.push('rt');
-  if (q.has('c')) strip.push('c');
-  if (t) {
-    var stashed = false;
-    try { sessionStorage.setItem(TOKEN_KEY, t); stashed = true; } catch (e) {}
-    if (stashed) strip.push('t');
-  } else {
+  var rt = link.rt;
+  var cameFromCancel = link.c === true;
+  if (!t) {
     try { t = sessionStorage.getItem(TOKEN_KEY); } catch (e) {}
-  }
-  if (strip.length) {
-    try {
-      var url = new URL(location.href);
-      strip.forEach(function(k){ url.searchParams.delete(k); });
-      history.replaceState(null, '', url.pathname + url.search + url.hash);
-    } catch (e) {}
   }
   var A = (window.CEYLON_HOP_API || '').replace(/\/$/, '');
 
@@ -225,9 +269,178 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     if (/car/i.test(v)) return 'Private car';
     return String(v).charAt(0).toUpperCase() + String(v).slice(1);
   }
+  // ---- Pickup date/time, set once by the customer (dateless capture Phase 4) ----
+  // An airport pickup is asked for its LANDING time (owner, 2026-10-21) — same test as payPageCopy.ts.
+  function isAirport(v){
+    return /airport|cmb|katunayake/i.test(String((v && v.from) || ''));
+  }
+  // booking.js:1010 — the booking page's own format, so a customer sees the same "9:00 am" twice.
+  function fmtTime(t){
+    var h = +t.slice(0, 2);
+    return ((h + 11) % 12 + 1) + ':' + t.slice(3, 5) + ' ' + (h < 12 ? 'am' : 'pm');
+  }
+  // booking.js:1017 — the booking page's slot labels, verbatim.
+  function slotLabel(h){
+    return h < 5 ? 'Night pickup' : (h < 8 ? 'Early start' : (h < 12 ? 'Morning pickup' : (h < 17 ? 'Afternoon pickup' : (h < 20 ? 'Evening pickup' : 'Night pickup'))));
+  }
+  // What the card asks for; null = no card. Only a paid single transfer with a blank is editable here
+  // (the server's SCHEDULE_EDITABLE_STATUSES + mode check, mirrored).
+  function pickupNeeds(v){
+    if (!v || v.mode !== 'single' || (v.status !== 'paid' && v.status !== 'confirmed')) return null;
+    var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
+    return noDate && noTime ? 'both' : noDate ? 'date' : noTime ? 'time' : null;
+  }
+  // Hotel pickups: the booking page's hourly list (site.js hourlyTimes). Airports: every 15 minutes,
+  // because a flight lands at 8:40, not on the hour (owner, 2026-10-21).
+  function timeChoices(v){
+    var air = isAirport(v), step = air ? 15 : 60, out = [];
+    for (var m = 0; m < 24 * 60; m += step) {
+      var h = Math.floor(m / 60), t = (h < 10 ? '0' : '') + h + ':' + (m % 60 < 10 ? '0' : '') + (m % 60);
+      out.push({ value: t, label: fmtTime(t) + (air ? '' : ' · ' + slotLabel(h)) });
+    }
+    return out;
+  }
+  // 'Wed 4 Nov' — built from UTC parts, like longDate().
+  function shortDate(iso){
+    var p = isoParts(iso);
+    if (!p) return '';
+    var d = new Date(Date.UTC(p.y, p.mo - 1, p.d));
+    return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getUTCDay()] + ' ' + p.d + ' ' + MON3[p.mo - 1];
+  }
+  // The button says exactly what it will save — the set-once confirmation lives in its label —
+  // or, while it can't save, what is missing.
+  function saveLabel(v, date, time, noTime, soon){
+    var air = isAirport(v);
+    if (!date) return { text: 'Choose a date', ready: false };
+    if (soon) return { text: 'Too soon to set here', ready: false };
+    if (!time && !noTime) return { text: air ? 'Choose a landing time' : 'Choose a pick-up time', ready: false };
+    return { text: 'Save ' + (air ? 'landing ' : '') + shortDate(date) + ' · ' + (noTime ? 'time later' : fmtTime(time)), ready: true };
+  }
+  var IC_CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke-dasharray="3.3 3.3"/><path d="M12 12V7.6M12 12l3.5 2.1"/></svg>';
+  var IC_PLANE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17h18M5.5 13.5l3.2-.9L6 7.5l1.6-.5 5 4.3 4.6-1.3a1.6 1.6 0 0 1 .9 3.1L6.6 16"/></svg>';
+  var IC_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8.5 12.5l2.4 2.4 4.8-5"/><circle cx="12" cy="12" r="9"/></svg>';
+  var IC_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>';
+  var WA_LINK = '<a href="https://wa.me/94779669662" target="_blank" rel="noopener">WhatsApp us</a>';
+  var cardMode = null; // null | 'open' | 'saved' | 'conflict'
+  var cardFail = false;
+  // 12 h notice in Sri Lanka time (UTC+5:30), as booking.js and the server's isTooSoonPrivate do.
+  // The server re-checks; this only stops the button offering what will be refused.
+  function tooSoon(iso, time){
+    var p = isoParts(iso); if (!p) return false;
+    var q = (time || '23:59').split(':').map(Number);
+    return Date.UTC(p.y, p.mo - 1, p.d, q[0], q[1]) - 330 * 60000 - Date.now() < 12 * 3600000;
+  }
+  function pickupCard(v){
+    var air = isAirport(v), icon = air ? IC_PLANE : IC_CLOCK;
+    if (cardMode === 'saved') return '<div class="pk ok" id="pickup"><div class="pk-top"><span class="pk-ic">' + IC_OK + '</span><div>'
+      + '<h2>Pick-up set</h2><p><b>' + esc(shortDate(v.date)) + (v.time && v.time !== 'to confirm' ? ' · ' + esc(fmtTime(v.time)) + '</b> Sri Lanka time' : '</b>, time to follow')
+      + '. We’ve emailed you a copy.</p><p style="margin-top:6px">Need to change it? ' + WA_LINK + '.</p></div></div></div>';
+    if (cardMode === 'conflict') return '<div class="pk info" id="pickup"><div class="pk-top"><span class="pk-ic">' + IC_INFO + '</span><div>'
+      + '<h2>Our team has already set your pick-up</h2><p><b>' + esc(shortDate(v.date))
+      + (v.time && v.time !== 'to confirm' ? ' · ' + esc(fmtTime(v.time)) : '') + '</b> Sri Lanka time, so we didn’t save yours.</p>'
+      + '<p style="margin-top:6px">Not right? ' + WA_LINK + ' and we’ll fix it.</p></div></div></div>';
+    var needs = pickupNeeds(v);
+    if (!needs) return '';
+    if (needs !== 'time' && cardMode !== 'open') return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
+      + '<h2>' + (air ? 'Add your landing date' : 'Add your pick-up date') + (needs === 'date' ? '' : ' &amp; time') + '</h2>'
+      + '<p>You booked with “Decide later”. Add it here once you know, and we’ll book your driver.</p></div></div>'
+      + '<button class="btn btn-primary" id="pkopen">Add date' + (needs === 'date' ? '' : ' &amp; time') + '</button>'
+      + '<div class="pk-fine">You can set this once. To change it afterwards, ' + WA_LINK + '.</div></div>';
+    var timeOnly = needs === 'time', dateOnly = needs === 'date';
+    var opts = '<option value="" selected disabled>' + (air ? 'Choose a landing time…' : 'Choose a pick-up time…') + '</option>'
+      + timeChoices(v).map(function(c){ return '<option value="' + c.value + '">' + esc(c.label) + '</option>'; }).join('');
+    return '<div class="pk" id="pickup"><div class="pk-top"><span class="pk-ic">' + icon + '</span><div>'
+      + '<h2>' + (timeOnly ? (air ? 'Add your landing time' : 'Add your pick-up time') : dateOnly ? (air ? 'Add your landing date' : 'Add your pick-up date')
+          : (air ? 'When does your flight land?' : 'When should we pick you up?')) + '</h2>'
+      + '<p>' + (air ? 'Your driver will be waiting at arrivals in ' + esc(v.from) + '.' : 'From ' + esc(v.from) + ', any time of day.') + '</p></div></div>'
+      + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing date' : 'Pick-up date') + '</span></div>'
+      + (timeOnly
+          ? '<div class="pk-fixed">' + esc(shortDate(v.date)) + (v.scheduleSetBy === 'staff' ? '<small>set by our team</small>' : '') + '</div>'
+          : '<input type="date" id="pkdate" data-placeholder="Choose a date" aria-label="' + (air ? 'Landing date' : 'Pick-up date') + '">')
+      + '<div class="pk-row"><span class="pk-lbl">' + (air ? 'Landing time' : 'Pick-up time') + ' <i>· Sri Lanka time</i></span>'
+      + (timeOnly || dateOnly ? '' : '<label class="pk-chk"><input type="checkbox" id="pkdk"> Don’t know yet</label>') + '</div>'
+      + (dateOnly
+          ? '<div class="pk-fixed">' + esc(fmtTime(v.time)) + (v.scheduleSetBy === 'staff' ? '<small>set by our team</small>' : '') + '</div>'
+          : '<select id="pktime" aria-label="' + (air ? 'Landing time' : 'Pick-up time') + '">' + opts + '</select>'
+            + '<div class="pk-pill" id="pkpill" hidden>No time yet. You can add it here later.</div>')
+      + '<div class="pk-err" id="pkerr" role="alert" hidden>That’s less than 12 hours away, too soon to set here. ' + WA_LINK + ' and we’ll do our best to fit you in.</div>'
+      + '<div class="pk-err" id="pkfail" role="alert"' + (cardFail ? '' : ' hidden') + '>We couldn’t save that, so nothing has changed. Try again, or ' + WA_LINK + '.</div>'
+      + '<button class="btn btn-primary" id="pksave" disabled>Choose a date</button>'
+      + '<div class="pk-fine">Once saved, changes go through ' + WA_LINK + '.</div>'
+      + (timeOnly ? '' : '<button class="pk-later" id="pklater">Not now</button>') + '</div>';
+  }
+  function wirePickup(v){
+    var open = document.getElementById('pkopen');
+    if (open) open.addEventListener('click', function(){ cardMode = 'open'; render(v); focusCard(); });
+    var later = document.getElementById('pklater');
+    if (later) later.addEventListener('click', function(){ cardMode = null; render(v); });
+    var dIn = document.getElementById('pkdate'), tIn = document.getElementById('pktime');
+    if (!dIn && !tIn) return;
+    if (dIn && window.enhanceDate) window.enhanceDate(dIn);
+    var dk = document.getElementById('pkdk'), pill = document.getElementById('pkpill');
+    var err = document.getElementById('pkerr'), fail = document.getElementById('pkfail'), save = document.getElementById('pksave');
+    function state(){ return { date: dIn ? dIn.value : v.date, time: tIn ? tIn.value : v.time, noTime: !!(dk && dk.checked) }; }
+    var busy = false; // a save is in flight: no input change may re-enable Save
+    function upd(){
+      var s = state();
+      if (tIn) { tIn.hidden = s.noTime; pill.hidden = !s.noTime; }
+      var soon = !!s.date && tooSoon(s.date, s.noTime ? '' : s.time);
+      err.hidden = !soon;
+      var label = saveLabel(v, s.date, s.time, s.noTime, soon);
+      save.textContent = label.text; save.disabled = busy || !label.ready;
+    }
+    [dIn, tIn, dk].forEach(function(el){ if (el) el.addEventListener('change', function(){ fail.hidden = true; upd(); }); });
+    upd();
+    // A reply that never arrived, or an answer that doesn't say what's stored, proves nothing:
+    // ask the server what it holds. 'saved' | 'conflict' | null (nothing changed on the server).
+    function outcome(fresh, sentDate, sentTime){
+      var before = pickupNeeds(v), now = pickupNeeds(fresh);
+      if (fresh.date === sentDate && (sentTime === null || fresh.time === sentTime)) return 'saved';
+      if (now === before) return null;
+      return fresh.scheduleSetBy === 'customer' ? 'saved' : fresh.scheduleSetBy === 'staff' ? 'conflict' : null;
+    }
+    save.addEventListener('click', function(){
+      var s = state();
+      var sentDate = dIn ? s.date : v.date, sentTime = s.noTime ? null : s.time;
+      busy = true; save.disabled = true;
+      function failed(cause){
+        report('bookings/view/schedule failed', cause);
+        busy = false; fail.hidden = false; upd();
+      }
+      function recover(cause){
+        return loadView().then(function(fresh){
+          var how = outcome(fresh, sentDate, sentTime);
+          if (!how) return failed(cause);
+          cardMode = how; cardFail = false; render(fresh);
+          if (how === 'saved') focusCard();
+        }, function(){ failed(cause); });
+      }
+      fetch(A + '/bookings/view/schedule', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + t },
+        // Send only what this card fills: a date ops already set goes back unchanged (set-once).
+        body: JSON.stringify({ date: sentDate, time: sentTime }),
+      }).then(function(res){
+        return res.json().catch(function(){ return {}; }).then(function(b){ return { status: res.status, body: b }; });
+      }).then(function(r){
+        if (r.status === 200 && r.body.view) { cardMode = 'saved'; cardFail = false; render(r.body.view); focusCard(); return; }
+        // The server's clock wins over the page's: show the 12 h message even if upd() thought it fine.
+        if (r.status === 400 && (r.body.error === 'too_soon' || r.body.error === 'past')) {
+          busy = false; upd(); err.hidden = false;
+          save.textContent = saveLabel(v, s.date, s.time, s.noTime, true).text; save.disabled = true;
+          return;
+        }
+        return recover(new Error('schedule ' + r.status + (r.body.error ? ' ' + r.body.error : '')));
+      }, function(e){ return recover(e); }).catch(function(e){ failed(e); });
+    });
+  }
+  // After a re-render, keep the card where the customer is looking.
+  function focusCard(){ var el = document.getElementById('pickup'); if (el) el.scrollIntoView({ block: 'start' }); }
   // The booking's status is a DATABASE enum. A traveller gets told what it means for them —
   // never "payment_pending", which is what this page used to print at them.
-  function statusChip(status){
+  function statusChip(status, needsPricing){
+    // An open booking the server couldn't price isn't awaiting payment yet — nothing can be paid.
+    if (needsPricing && (status === 'draft' || status === 'payment_pending')) return '<span class="t-stat wait">Price to confirm</span>';
     var s = {
       draft:            ['wait', 'Awaiting payment'],
       payment_pending:  ['wait', 'Awaiting payment'],
@@ -258,47 +471,71 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // A booking can only be charged while it is genuinely open and something is owed. Offering
   // payment on a settled booking is how somebody pays twice; the backend refuses it too.
-  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0; }
+  // An unpriced booking (needsPricing) carries a placeholder total checkout refuses: never payable.
+  function payable(v){ return (v.status === 'draft' || v.status === 'payment_pending') && v.amountDueNowCents > 0 && !v.needsPricing; }
 
   // The title has to survive a four-stop tour. "first → last" reads exactly like a direct
   // transfer and hides the middle, so a real trip leads with what it IS — how many journeys, over
   // which dates — and the rail underneath names every hop.
+  // A direct transfer names each end the way the booking page does (CH-9QH34: two full Google
+  // addresses made a six-line heading on a phone); the full address is on the ticket's From / To rows.
+  // Without ch-shortplace.js the full address stands — a long heading, never a broken page.
+  function shortEnd(p){ return window.CH && window.CH.shortPlace ? window.CH.shortPlace(p) : p; }
   function titleOf(v){
     var legs = legsOf(v);
-    if (legs.length <= 1) return v.from + ' → ' + v.to;
+    if (legs.length <= 1) return shortEnd(v.from) + ' → ' + shortEnd(v.to);
     var range = rangeLabel(v.date, v.endDate);
     var word = countWord(legs.length);
     return word.charAt(0).toUpperCase() + word.slice(1) + ' journeys' + (range ? ', ' + range : '');
   }
   function subtitleOf(v){
     var legs = legsOf(v);
-    if (legs.length <= 1) return longDate(v.date) || 'Date to be confirmed';
-    return v.from + ' → ' + v.to;
+    if (legs.length <= 1) return isoParts(v.date) ? longDate(v.date) : 'Pick-up date not set yet';
+    // Short, like the heading: the rail underneath carries every full address.
+    return shortEnd(v.from) + ' → ' + shortEnd(v.to);
   }
   function factsOf(v){
     var legs = legsOf(v);
     var stopCount = legs.length + 1;
     // A one-day trip genuinely starts and ends on the same date; say so rather than printing
     // the same line twice with no explanation.
-    var sameDay = v.date && v.endDate && v.date === v.endDate;
-    var rows = [
-      { k: 'Trip start', v: longDate(v.date) || 'To be confirmed' },
-      { k: 'Trip end', v: longDate(v.endDate) || 'To be confirmed', sub: sameDay ? 'same day' : '' },
-      { k: 'Pick-up time', v: (v.time && v.time !== 'to confirm') ? v.time : 'To be confirmed' },
+    var sameDay = isoParts(v.date) && v.date === v.endDate;
+    // The API sends 'to confirm' for a blank date/time. Only where the customer can fill the blank
+    // (pickupNeeds non-null) does it read as a to-do chip; elsewhere it stays plain "To be confirmed".
+    var needs = pickupNeeds(v);
+    var noDate = !v.date || v.date === 'to confirm', noTime = !v.time || v.time === 'to confirm';
+    var rows = [];
+    // Only when the heading shortened an end — otherwise the row would repeat the title word for word.
+    if (legs.length <= 1 && (shortEnd(v.from) !== v.from || shortEnd(v.to) !== v.to)) {
+      rows.push({ k: 'From', v: v.from }, { k: 'To', v: v.to });
+    }
+    rows.push(
+      { k: 'Trip start', v: noDate ? 'To be confirmed' : longDate(v.date), blank: noDate, sub: v.scheduleSetBy === 'staff' ? 'set by our team' : '' },
+      { k: 'Trip end', v: isoParts(v.endDate) ? longDate(v.endDate) : 'To be confirmed', sub: sameDay ? 'same day' : '' },
+      { k: v.mode === 'single' && isAirport(v) ? 'Landing time' : 'Pick-up time',
+        v: noTime ? 'To be confirmed' : fmtTime(v.time), blank: noTime,
+        sub: noTime ? '' : 'Sri Lanka time' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
-      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' },
-    ];
+      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' }
+    );
     // The local road the customer chose (the view carries it only then), in the emails' words.
     if (v.road) rows.push({ k: 'Road', v: v.road });
     rows.push(
       { k: 'Travellers', v: String(v.travellers) },
       { k: 'Vehicle', v: vehicleLabel(v.vehicleType) }
     );
+    // A shared leg's published meeting points, each linking to Google Maps: customers could not
+    // tell where to stand or where they would be set down from the towns (owner, 2026-10-29).
+    if (v.pickupPoint) rows.push({ k: 'Pick-up point', v: v.pickupPoint, map: true });
+    if (v.dropoffPoint) rows.push({ k: 'Drop-off point', v: v.dropoffPoint, map: true });
     // The add-ons the customer chose, as the quote named them. Only when there are some.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
       var val = r.lines ? r.lines.map(function(l){ return esc(l); }).join('<br>') : esc(r.v);
+      if (r.map) val = '<a class="pt-map" href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(r.v + ', Sri Lanka') + '" target="_blank" rel="noopener">' + val + '</a>';
+      // A blank the customer can fill is something to do, not a fact: say so plainly.
+      if (r.blank && needs) val = '<span class="need">Not set yet</span>';
       return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + val
         + (r.sub ? '<small>' + esc(r.sub) + '</small>' : '') + '</span></div>';
     }).join('');
@@ -332,6 +569,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '" target="_blank" rel="noopener">Tell us what happened on WhatsApp</a>';
   }
 
+  // What is still owed. A zero balance is not news — it earns a row only when something is left to
+  // pay. A pay-on-the-day booking owes USD cash to the team at the first pickup, so it says so.
+  function dueRows(v, due){
+    if (!(due > 0)) return '';
+    var arranged = !!v.paymentArrangement;
+    return '<div class="tot due"><span class="l">' + (arranged ? 'To pay on the day (cash, USD)' : 'Balance due')
+      + '</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>'
+      + (arranged ? '<div class="paysub">Please pay the Ceylon Hop team in cash at your first pickup.</div>' : '');
+  }
+
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
     var promo = !!v.promoCode && Number(v.discountCents || 0) > 0;
@@ -339,9 +586,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
       + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
+      + pickupCard(v)
       + '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
-      + statusChip(v.status) + '</div>'
+      + statusChip(v.status, v.needsPricing) + '</div>'
       // A trip with stops in the middle shows every journey; a direct transfer has nothing to
       // add beyond its title, so it skips the rail rather than drawing a rail of one.
       + (legsOf(v).length > 1 ? '<div class="hops">' + legsOf(v).map(function(l, i, all){
@@ -352,13 +600,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             + '<div class="hop-d">' + (l.date ? esc(stamp(l.date)) : 'date to be confirmed') + '</div></div></div>';
         }).join('') + '</div>' : '')
       + factsOf(v)
-      + '</div><div class="perf"></div><div class="t-stub">'
+      + '</div><div class="perf"></div><div class="t-stub">';
+    // The total on an unpriced booking is a placeholder, not a price: say what happens instead.
+    if (v.needsPricing) {
+      html += '<p class="pp-tbc">We’re confirming the price for this trip by hand — we’ll message you on WhatsApp with a payment link.</p>'
+        + '<a class="btn btn-ghost pp-cta pp-tellus" id="pricewa" href="' + esc(window.chTellUsHref(v.reference, 'contact'))
+        + '" target="_blank" rel="noopener">Message us on WhatsApp</a>';
+    } else {
       // The promo code the booking was made with, and what it took off — only on such a booking.
-      + (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
+      html += (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
           + esc(money(v.discountCents, v.currency)) + '</span></div>' : '')
-      + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
-      // A zero balance is not news — it earns a row only when something is left to pay.
-      + (due > 0 ? '<div class="tot due"><span class="l">Balance due</span><span class="v">' + esc(money(due, v.currency)) + '</span></div>' : '');
+        + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
+        + dueRows(v, due);
+    }
 
     if (payable(v)) {
       html += '<button class="btn btn-cta pp-cta" id="paybtn">Pay with PayHere</button>'
@@ -373,6 +627,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }
     html += '</div></div>' + waLine();
     paint(html);
+    wirePickup(v);
+    if (location.hash === '#pickup' && cardMode === 'open') focusCard();
     var btn = document.getElementById('paybtn');
     if (btn) btn.addEventListener('click', function(){
       track('begin_checkout', {
@@ -438,6 +694,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     fetchWithDeadline(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
       .then(function(r){
         return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
+          // Still open, but the server couldn't price it — not "paid or closed". The catch below
+          // repaints the card in its awaiting-a-price state.
+          if (x.error === 'not_chargeable' && x.reason === 'awaiting_price') {
+            var e = new Error('awaiting_price'); e.awaitingPrice = true; throw e;
+          }
           throw new Error(x.error === 'not_chargeable'
             ? 'This booking has already been paid or closed.'
             : 'We couldn’t start your payment just now.');
@@ -472,6 +733,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         window.chSubmitToGateway(checkout);
       })
       .catch(function(e){
+        if (e && e.awaitingPrice) return render(Object.assign({}, v, { needsPricing: true }));
         track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
         report('checkout start failed', e);
         fail(e.message);
@@ -622,6 +884,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   if (rt) { renderReturn(); return; }
 
   if (!t) { track('manage_link_invalid', { reason: 'no_token' }); errView('This link isn’t valid.'); return; }
+  // The reminder email's main button links here with #pickup: land with the form already open.
+  if (location.hash === '#pickup') cardMode = 'open';
   fetch(A + '/bookings/view?t=' + encodeURIComponent(t)).then(function(res){
     if (res.status === 401) { track('manage_link_invalid', { reason: 'unauthorised' }); throw new Error('This link isn’t valid or has changed.'); }
     if (res.status === 404) { track('manage_link_invalid', { reason: 'not_found' }); throw new Error('We couldn’t find this booking.'); }

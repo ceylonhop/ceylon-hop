@@ -50,7 +50,7 @@ export const RATE_CARD = {
   },
   deposit: { pct: 10, minCents: 5000, eligibleMinTotalCents: 15000 },
   vehicle: {
-    car:    { maxPax: 3,  maxBags: 3  },
+    car:    { maxPax: 3,  maxBags: 2  },
     van:    { maxPax: 6,  maxBags: 6  },
     van9:   { maxPax: 9,  maxBags: 8  },
     van14:  { maxPax: 14, maxBags: 12 },
@@ -62,7 +62,10 @@ export const RATE_CARD = {
   priceFinishing: { maxReductionBps: 250, roundToCents: 50 },
   fxUsdToLkr: 330, // ⚠️ manual rate — ops updates occasionally (issue I3). Display only; engine stays USD.
   // Extras are FINAL prices with NO markup (owner 2026-07-11).
-  extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000 },
+  // 'hotel-pickup' / 'hotel-dropoff' are for SHARED seats only — each once per booking, hotel within
+  // 5 km of the meeting point (owner 2026-10-16; split into $5 each and 5 km on 2026-10-29). They
+  // are not in EXTRA_CODES, so a private quote can't buy them.
+  extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000, 'hotel-pickup': 500, 'hotel-dropoff': 500 },
   shared: { extraBagCents: 1000 },
 } as const;
 

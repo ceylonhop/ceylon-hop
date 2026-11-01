@@ -255,8 +255,9 @@ describe('the price-change notice with a code applied', () => {
     applyWith(w, 'SAVE10', OK); // FULL 9000 (=$90), OK totalCents 8100 (=$81)
     // A bags change doesn't count as the customer driving the raise (customerDroveTheRaise only
     // looks at product/vehicle/extras), so a higher engine total is parked rather than adopted.
+    // It drops a bag rather than adding one: a third bag would outgrow the car.
     w.eval(`
-      state.bags = state.bags + 1;
+      state.bags = state.bags - 1; // 2 → 1: still a car (a car takes 2 since 2026-10-27)
       handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
     `);
     const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
@@ -281,7 +282,7 @@ describe('the price-change notice with a code applied', () => {
     `);
     expect(ev(w, 'promoUiState()')).toBe('off');
     w.eval(`
-      state.bags = state.bags + 1;
+      state.bags = state.bags - 1; // 2 → 1: still a car (a car takes 2 since 2026-10-27)
       handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
     `);
     const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
@@ -294,7 +295,7 @@ describe('the price-change notice with a code applied', () => {
     const w = loadBooking(SINGLE);
     w.eval(`adoptEngineEstimate(${JSON.stringify(FULL)}, currentIntentSig())`);
     w.eval(`
-      state.bags = state.bags + 1;
+      state.bags = state.bags - 1; // 2 → 1: still a car (a car takes 2 since 2026-10-27)
       handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000 })}, currentIntentSig());
     `);
     const note = ev(w, "document.getElementById('engine-reprice-note').textContent");
@@ -307,7 +308,7 @@ describe('the price-change notice with a code applied', () => {
     const w = loadBooking(SINGLE);
     applyWith(w, 'SAVE10', OK);
     w.eval(`
-      state.bags = state.bags + 1;
+      state.bags = state.bags - 1; // 2 → 1: still a car (a car takes 2 since 2026-10-27)
       handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: RAISED_OK })}, currentIntentSig());
     `);
     w.eval(`
@@ -328,7 +329,7 @@ describe('heldPromo() holds through a parked raise or an in-flight re-price', ()
     const w = loadBooking(SINGLE);
     applyWith(w, 'SAVE10', OK); // payable $81
     w.eval(`
-      state.bags = state.bags + 1;
+      state.bags = state.bags - 1; // 2 → 1: still a car (a car takes 2 since 2026-10-27)
       handleEngineEstimate(${JSON.stringify({ ...FULL, totalCents: 12000, promoCode: { code: 'SAVE10', discountCents: 1200, totalBeforeDiscountCents: 12000, totalCents: 10800 } })}, currentIntentSig());
     `);
     expect(ev(w, 'state.pendingReprice && state.pendingReprice.engineRaise')).toBe(true);
