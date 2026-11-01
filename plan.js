@@ -1096,12 +1096,20 @@ function render(){
       });
       // a stop row still blank when focus leaves the card is dropped (the Next gate stays the backstop).
       // The place menu lives inside the card and keeps focus on its input (mousedown preventDefault).
-      card.addEventListener('focusout',()=>setTimeout(()=>{
-        if(!card.isConnected || card.contains(document.activeElement)) return; // re-rendered, or still in the card
-        const v=state.legs[i] && state.legs[i].via; if(!v) return;
+      // Mid-press (railPress) nothing is touched: in Safari / Firefox-on-macOS a button doesn't take
+      // focus on mousedown, so this runs between mousedown and click, and a same-card ⇅ / ✕ / split
+      // would act on the chain indices it was rendered with. The whole check re-runs once the press
+      // lands, against whichever card now shows this leg.
+      const leg=state.legs[i];
+      const dropBlank=()=>{
+        if(railPress){ window.addEventListener('mouseup',()=>setTimeout(()=>{
+          const li=state.legs.indexOf(leg), now=li<0 ? null : document.querySelector(`#rail .leg-card[data-i="${li}"]`);
+          if(now && !now.contains(document.activeElement)) dropBlank();
+        },0),{ once:true }); return; }
+        const li=state.legs.indexOf(leg); if(li<0) return;
+        const v=leg.via; if(!v) return;
         const b=v.findIndex(p=>!String(p||'').trim()); if(b<0) return;
-        state.legs[i].via=v.slice(0,b).concat(v.slice(b+1));
-        if(railPress){ renderHeld=true; return; } // a button press elsewhere: hold the render until it lands (see railPress)
+        leg.via=v.slice(0,b).concat(v.slice(b+1));
         // focus moved to a place field in another card: keep it there across the re-render
         const a=document.activeElement, ac=a && a.matches && a.matches('.place-input') ? a.closest('#rail .leg-card') : null;
         const sel=ac ? (a.classList.contains('leg-via') ? `.leg-via[data-k="${a.dataset.k}"]` : (a.classList.contains('leg-from') ? '.leg-from' : '.leg-to')) : null;
@@ -1109,6 +1117,10 @@ function render(){
         render();
         const back=sel ? document.querySelector(`#rail .leg-card[data-i="${ai}"] ${sel}`) : null;
         if(back) back.focus({ preventScroll:true });
+      };
+      card.addEventListener('focusout',()=>setTimeout(()=>{
+        if(!card.isConnected || card.contains(document.activeElement)) return; // re-rendered, or still in the card
+        dropBlank();
       },0));
       const keep=wrap.querySelector('.dw-keep');
       if(keep) keep.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].ack='long_day'; render(); });

@@ -288,6 +288,48 @@ for (const vp of VIEWPORTS) {
       await expect(cards.nth(1).locator('.leg-to')).toBeFocused();
     });
 
+    // Safari / Firefox-on-macOS: a <button> does not take focus on mousedown, so the blank row's
+    // input blurs to <body> and the focusout check runs between mousedown and click. Chromium
+    // can't produce that order on its own, so it is simulated here.
+    test('insert: × on a blank row, pressed without the button taking focus, removes only that row', async ({ page }) => {
+      await page.goto(twoPlace);
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.add-via').click();
+      await expect(card.locator('.leg-via')).toBeFocused();
+      await pick(page, card, 'Sigiriya');
+      await page.waitForTimeout(200);
+      await card.locator('.add-via').click();
+      await expect(card.locator('.leg-via[data-k="2"]')).toBeFocused();
+      await page.evaluate(async () => {
+        const rm = () => document.querySelector('#rail .leg-card .stop-rm[data-k="2"]');
+        rm().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        document.activeElement.blur();
+        await new Promise((r) => setTimeout(r, 50));
+        rm().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+        rm().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      });
+      await expect(card.locator('.leg-from')).toHaveValue('Kandy');
+      await expect(card.locator('.leg-via')).toHaveCount(1);
+      await expect(card.locator('.leg-via')).toHaveValue('Sigiriya / Dambulla');
+      await expect(card.locator('.leg-to')).toHaveValue('Ella');
+    });
+
+    test('insert: a blank row keeps a pick made from its own place menu', async ({ page }) => {
+      await page.goto(twoPlace);
+      const card = page.locator('#rail .leg-card').first();
+      await card.locator('.ins-btn[data-at="1"]').click();
+      const via = card.locator('.leg-via');
+      await expect(via).toBeFocused();
+      await via.fill('K');
+      await via.fill('');
+      const opt = page.locator('.place-option').first();
+      await expect(opt).toBeVisible();
+      const place = await opt.getAttribute('data-place');
+      await opt.click();
+      await expect(card.locator('.leg-via')).toHaveCount(1);
+      await expect(card.locator('.leg-via')).toHaveValue(place);
+    });
+
     test('insert: no + at 4 stops, at 12 places, or on a leg with the same place twice', async ({ page }) => {
       await page.goto('/plan.html?stops=' + encodeURIComponent('Kandy|Sigiriya / Dambulla|Anuradhapura|Trincomalee|Ella|Galle') + '&nights=0,0,0,0,0,0&through=0,1,2,3&pax=2&vehicle=car');
       await expect(page.locator('#rail .leg-via')).toHaveCount(4);
@@ -326,6 +368,7 @@ test('kill switch off: the same URL loads as two plain legs and offers no add-st
   await page.goto(url());
   await expect(page.locator('#rail .leg-card')).toHaveCount(2);
   await expect(page.locator('.add-via')).toHaveCount(0);
+  await expect(page.locator('.ins-btn')).toHaveCount(0);
 });
 
 test('kill switch off: a 7 h plain leg does not ask and the hand-off carries no ack', async ({ page }) => {
