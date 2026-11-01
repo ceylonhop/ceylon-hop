@@ -6,6 +6,9 @@
      • a distance Google calculates & fills in automatically
    Hotels are the traveller's own. Quote = sum of private legs.
    ============================================================ */
+// Stops on the way inside one leg (spec 2026-10-30-planner-stops-within-a-leg-design.md). One
+// constant turns the feature off: no add-stop link, and a `through` URL loads as separate legs.
+const PLANNER_STOPS = !window.__CH_PLANNER_STOPS_OFF;
 initChrome({ active:'plan.html', footerCta:false, navCta:false, breadcrumbs:[['Home','index.html'],['Trip planner']] });
 mountWA();
 
@@ -68,6 +71,11 @@ const liveRouteCache = new Map();
 const liveRoutePending = new Set();
 const liveRouteWaiters = new Map();
 function liveRouteKey(a,b){ return norm(a)+'|'+norm(b); }
+// The ordered places a transfer drives through: pick-up, each stop on the way, drop-off.
+function legChain(leg){ return [leg.from||''].concat(leg.via||[], [leg.to||'']); }
+// A blank stop row is not a stop: measuring, pricing and road keys skip it (as routeSeqDetailed does).
+function legVia(leg){ return (leg.via||[]).filter(v=>(v||'').trim()); }
+function legRouteChain(leg){ return [leg.from||''].concat(legVia(leg), [leg.to||'']); }
 function localRouteEstimate(a,b){
   const g1=resolve(a), g2=resolve(b);
   if(!g1 || !g2) return null;
@@ -121,6 +129,35 @@ function dayDrivingMinutes(a,b){
   if(!opt || roadChoice.get(key)!=='no_tolls') return minutes;
   const extra=Number.isFinite(opt.noTolls.min) && Number.isFinite(opt.fastest.min) ? Math.max(0, opt.noTolls.min-opt.fastest.min) : 0;
   return minutes+extra;
+}
+// A leg with stops is measured per consecutive pair and summed — or null while ANY pair is still
+// unknown, so a partial route is never priced as the whole leg (ops legKm, ops-ui.html:5790).
+// A chain never carries a road (ops GC-10), so only a plain leg reads legRouteEstimate's road.
+function legRoute(leg){
+  const chain=legRouteChain(leg);
+  if(chain.length===2) return legRouteEstimate(chain[0],chain[1]);
+  let km=0, min=0, state='browse', source='reviewed', durationComplete=true;
+  for(let k=0;k<chain.length-1;k++){
+    const r=baseRouteEstimate(chain[k],chain[k+1]);
+    if(!r || r.distanceKm==null) return null;
+    km+=r.distanceKm;
+    if(r.durationMin>0) min+=r.durationMin; else durationComplete=false;
+    if(r.state==='estimated') state='estimated';
+    if(r.source==='google') source='google'; else if(r.source==='estimated' && source!=='google') source='estimated';
+  }
+  return { distanceKm:km, durationMin:durationComplete?min:null, state, source };
+}
+function legDrivingMinutes(leg){
+  const chain=legRouteChain(leg); let total=0;
+  for(let k=0;k<chain.length-1;k++){ const m=dayDrivingMinutes(chain[k],chain[k+1]); if(m==null) return null; total+=m; }
+  return total;
+}
+function requestLiveChain(leg, cb){
+  const chain=legRouteChain(leg);
+  for(let k=0;k<chain.length-1;k++){
+    const r=baseRouteEstimate(chain[k],chain[k+1]);
+    if((!r || r.state==='estimated') && chain[k] && chain[k+1]) requestLiveRoute(chain[k],chain[k+1],cb);
+  }
 }
 function requestLiveRoute(a,b,cb){
   if(!a || !b || !window.CH_MAP || !window.CH_MAP.routeStats) return;
@@ -205,27 +242,54 @@ const nightsParam = (params.get('nights')||'').split(',').map(n=>parseInt(n,10)|
 // Wire indices the traveller arranges themselves (a leg's drop-off ≠ the next leg's pick-up).
 // Restored from the URL so returning from booking doesn't re-invent a connector leg for the gap.
 const gapsParam = (params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n));
+// Wires that continue the same leg (stops[i+1] is a stop on the way), and the head wire of each
+// run the traveller kept as one long day — both in the same wire index space as `gaps`.
+const throughParam = PLANNER_STOPS ? (params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
+const ackParam = PLANNER_STOPS ? (params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)) : [];
+// Restore the travel dates the customer already chose: the booking step passes them back
+// as `dates`, one per WIRE (every wire of a run carries its leg's date), so buildLegs reads
+// each transfer leg's date at its HEAD wire. We deliberately do NOT auto-fill from `start` —
+// a tour hand-off carries a default start the customer never picked, so legs stay blank and
+// the WHEN step's question is genuinely open (fixes tour auto-dates). The trip-start anchor
+// below is the customer answering it, never a default.
+const datesParam = (params.get('dates')||'').split(',');
 // The local roads chosen on an earlier pass (booking's Back, a reload): `roads` is index-aligned
 // with the stop wires, 'no_tolls' or empty. It takes effect only once the batch confirms the
 // drive still has a cheaper local road; one that comes back without it is dropped.
 (params.get('roads')||'').split(',').forEach((r,i)=>{
   if(r==='no_tolls' && i<startStops.length-1 && !gapsParam.includes(i)) roadChoice.set(liveRouteKey(startStops[i],startStops[i+1]),'no_tolls');
 });
-function buildLegs(stops, nights, gaps){
+function buildLegs(stops, nights, gaps, through, acks, dates){
   const hasNights = nights && nights.some(n=>n>0);
+  // dateAuto:false — a restored date was chosen by the customer on an earlier pass, so a later
+  // cascade anchors to it rather than overwriting it (see cascadeFrom).
+  const withDate = (leg, w) => {
+    const ds = ((dates||[])[w]||'').trim();
+    if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())){ leg.date=d; leg.dateAuto=false; } }
+    return leg;
+  };
   if(!stops.length) return [];  // fresh planner — the empty state invites the first leg
-  if(stops.length<2) return [{ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1 }];
+  if(stops.length<2) return [withDate({ type:'transfer', from:stops[0]||'', to:'', date:null, nights:1, via:[], ack:null }, 0)];
   const isGap = new Set(gaps||[]); // wire i (stops[i]→stops[i+1]) the traveller arranges themselves
+  const isThrough = new Set(through||[]);
+  const isAck = new Set(acks||[]);
   const N = i => (nights && nights[i]>0) ? nights[i] : 0;
   const legs=[];
   // a night at the origin becomes a leading stay so the reviewed day-count is preserved
   if(hasNights && N(0)>0) legs.push({ type:'stay', from:stops[0], to:stops[0], date:null, nights:N(0) });
-  for(let i=0;i<stops.length-1;i++){
+  let i=0;
+  while(i<stops.length-1){
     // a gap wire is NOT a transfer we run — the traveller connects it themselves, so we never
     // re-invent (and never later price) a leg they didn't create.
-    if(!isGap.has(i)) legs.push({ type:'transfer', from:stops[i], to:stops[i+1], date:null, nights:1 });
-    // stay at each intermediate destination (skip the final stop — you depart from there)
-    if(hasNights && i+1<stops.length-1 && N(i+1)>0) legs.push({ type:'stay', from:stops[i+1], to:stops[i+1], date:null, nights:N(i+1) });
+    let end=i;
+    if(!isGap.has(i)){
+      // a through wire continues this leg onto the next wire: stops[i+1] is a stop on the way
+      while(end<stops.length-2 && isThrough.has(end) && !isGap.has(end+1)) end++;
+      legs.push(withDate({ type:'transfer', from:stops[i], to:stops[end+1], via:stops.slice(i+1,end+1), date:null, nights:1, ack:isAck.has(i)?'long_day':null }, i));
+    }
+    // stay at the drop-off (skip the final stop — you depart from there)
+    if(hasNights && end+1<stops.length-1 && N(end+1)>0) legs.push({ type:'stay', from:stops[end+1], to:stops[end+1], date:null, nights:N(end+1) });
+    i=end+1;
   }
   return legs;
 }
@@ -234,26 +298,12 @@ const state = {
   // customer must choose it before the itinerary unlocks (mirrors the ops tool).
   pax: (function(){ const p=parseInt(params.get('pax'),10); return (p>=1 && p<=6) ? p : null; })(),
   vehicle: params.get('vehicle')==='van' ? 'van' : 'car',
-  legs: buildLegs(startStops, nightsParam, gapsParam),
+  legs: buildLegs(startStops, nightsParam, gapsParam, throughParam, ackParam, datesParam),
   hideTemplates: params.has('stops') || params.has('nights') || params.has('dates'),
   // The WHEN step's first question: null = not answered yet (show the fork alone),
   // 'known' = show the per-leg list, 'later' = every leg flexible. See renderDatesStep.
   datesMode: null
 };
-// Restore the travel dates the customer already chose: the booking step passes them back
-// as `dates`, where dates[k] is the k-th transfer leg (in order). We deliberately do NOT
-// auto-fill from `start` — a tour hand-off carries a default start the customer never
-// picked, so legs stay blank and the WHEN step's question is genuinely open (fixes tour
-// auto-dates). The trip-start anchor below is the customer answering it, never a default.
-const datesParam = (params.get('dates')||'').split(',');
-let _tIdx = 0;
-state.legs.forEach(l=>{
-  if(l.type!=='transfer') return;
-  const ds = (datesParam[_tIdx++]||'').trim();
-  // dateAuto:false — a restored date was chosen by the customer on an earlier pass, so a later
-  // cascade anchors to it rather than overwriting it (see cascadeFrom).
-  if(ds){ const d=new Date(ds+'T00:00:00'); if(!isNaN(d.getTime())){ l.date=d; l.dateAuto=false; } }
-});
 if(state.pax>3) state.vehicle='van';
 
 // ---- hybrid place search: known Ceylon Hop places first, popular extras second ----
@@ -432,7 +482,7 @@ document.getElementById('add-stop').addEventListener('click',()=>{
   if(state.legs.length>=10) return;
   markRouteCustomized();
   const prevTo = state.legs.length ? state.legs[state.legs.length-1].to : '';
-  state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1 });
+  state.legs.push({ type:'transfer', from:prevTo, to:'', date:null, nights:1, via:[], ack:null });
   render();
   // render() rebuilds the whole rail, so the card we just added is the last one. Grow it in
   // rather than letting it appear at full size — a leg used to arrive between one frame and
@@ -487,7 +537,7 @@ function routeSeq(){
   };
   state.legs.forEach(l=>{
     if(l.type==='stay'){ addPlace(l.from||'', l.nights||0); }
-    else { addPlace(l.from||'',0); addPlace(l.to||'',0); }
+    else { legChain(l).forEach(p=>addPlace(p,0)); }
   });
   return seq;
 }
@@ -495,7 +545,7 @@ function routeSeq(){
 // Each transfer leg's date lands on the wire it creates, so dates set in the
 // “When” step flow through to the booking itinerary in the right place.
 function routeSeqDetailed(){
-  const seq=[]; const wires=[]; const wireKm=[]; const wireRoad=[]; const wireChosen=[]; const claimed=new Set();
+  const seq=[]; const wires=[]; const wireKm=[]; const wireRoad=[]; const wireChosen=[]; const claimed=new Set(); const throughSet=new Set(); const acks=[];
   const addPlace=(place,nights)=>{
     if(!place) return false;
     if(seq.length && norm(seq[seq.length-1].place)===norm(place)){ seq[seq.length-1].nights+=nights; return false; }
@@ -504,22 +554,42 @@ function routeSeqDetailed(){
   state.legs.forEach(l=>{
     if(l.type==='stay'){ addPlace(l.from||'', l.nights||0); }
     else {
-      addPlace(l.from||'',0);
-      addPlace(l.to||'',0);
-      // Date AND measured distance both land on the wire this transfer creates, keyed by the
-      // same seq position, so the two arrays stay index-aligned with `seq` even when the route
-      // is discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous
-      // drop-off inserts an extra "phantom" wire that correctly gets no date and no km).
-      if(seq.length>=2){
-        const w=seq.length-2;
+      // Date AND measured distance both land on each wire this transfer creates, keyed by the
+      // same seq position, so the arrays stay index-aligned with `seq` even when the route is
+      // discontinuous (an edited/swapped/reordered leg whose pick-up isn't the previous drop-off
+      // inserts an extra "phantom" wire that correctly gets no date and no km). A leg with stops
+      // on the way creates one wire per pair of its chain; all but the last are `through`.
+      // A blank stop on the way is not part of the chain for wire purposes — dropping it here
+      // means [A,'',C] claims A→C (measured A→C) as a plain leg, and [A,'',B,C] acts as [A,B,C].
+      // A blank pick-up/drop-off stays, so a plain two-place leg keeps its formula below.
+      const chain=legChain(l).filter((p,k,a)=>p || k===0 || k===a.length-1);
+      // the seq index each chain place lands on: a blank pick-up/drop-off adds nothing (null), and
+      // a place equal to the previous entry merges into it (still seq.length-1), so neither shifts wires
+      const idx=chain.map(p=>{ addPlace(p,0); return p ? seq.length-1 : null; });
+      const wiresHere=[];
+      for(let k=0;k<chain.length-1;k++){
+        let w;
+        if(chain.length===2){
+          // a plain leg: the wire it just created, seq.length-2 (unchanged for an incomplete leg)
+          w=seq.length-2;
+          if(w<0) continue;
+        } else {
+          // a chain pair is a wire only when both ends landed on adjacent seq entries; a pair
+          // with a blank or merged end creates no wire and is skipped
+          if(idx[k]==null || idx[k+1]==null || idx[k+1]!==idx[k]+1) continue;
+          w=idx[k];
+        }
         claimed.add(w); // this transfer's own wire; any UNclaimed wire is a "gap" the traveller arranges
         wires[w] = l.date ? fmtISO(l.date) : '';
-        const route=legRouteEstimate(l.from,l.to);
+        const route=legRouteEstimate(chain[k],chain[k+1]);
         const km=route ? route.distanceKm : null;
         wireKm[w] = km!=null ? String(km) : '';
         wireRoad[w] = route && route.road==='no_tolls' ? 'no_tolls' : '';
-        wireChosen[w] = roadChoice.get(liveRouteKey(l.from,l.to))==='no_tolls' ? 'no_tolls' : '';
+        wireChosen[w] = roadChoice.get(liveRouteKey(chain[k],chain[k+1]))==='no_tolls' ? 'no_tolls' : '';
+        wiresHere.push(w);
       }
+      wiresHere.slice(0,-1).forEach(w=>throughSet.add(w)); // every wire but the last continues the leg
+      if(PLANNER_STOPS && l.ack==='long_day' && wiresHere.length) acks.push(wiresHere[0]); // ack = the run's head wire
     }
   });
   // roads: per wire, 'no_tolls' where the drive is priced and drawn on the local road, else empty —
@@ -531,10 +601,10 @@ function routeSeqDetailed(){
     dates.push(wires[i]||''); kms.push(wireKm[i]||''); roads.push(wireRoad[i]||''); chosenRoads.push(wireChosen[i]||'');
     if(!claimed.has(i)) gaps.push(i);
   }
-  return { seq, dates, kms, gaps, roads, chosenRoads };
+  return { seq, dates, kms, gaps, roads, chosenRoads, through:[...throughSet].sort((a,b)=>a-b), acks };
 }
 function syncPlanUrl(){
-  const { seq, dates, gaps, chosenRoads } = routeSeqDetailed();
+  const { seq, dates, gaps, chosenRoads, through, acks } = routeSeqDetailed();
   if(seq.length){
     const p=new URLSearchParams(location.search);
     p.set('stops', seq.map(s=>s.place).join('|'));
@@ -542,6 +612,8 @@ function syncPlanUrl(){
     p.set('dates', dates.join(','));
     if(gaps.length) p.set('gaps', gaps.join(',')); else p.delete('gaps');
     if(chosenRoads.some(Boolean)) p.set('roads', chosenRoads.join(',')); else p.delete('roads');
+    if(through.length) p.set('through', through.join(',')); else p.delete('through');
+    if(acks.length) p.set('ack', acks.join(',')); else p.delete('ack');
     // pax stays out of the URL until it's actually picked — String(null) wrote the literal
     // "null", which booking.js would later parse as 1 traveller.
     if(state.pax!=null) p.set('pax', String(state.pax)); else p.delete('pax');
@@ -655,7 +727,7 @@ function maybeOfferRoad(){
   const RC=window.CH_ROUTE_CHOICE; if(!RC) return;
   const cands=[];
   state.legs.forEach(l=>{
-    if(l.type==='stay') return;
+    if(l.type==='stay' || legVia(l).length) return;   // a leg with stops carries no road
     const key=liveRouteKey(l.from,l.to);
     if(cands.includes(key)) return;
     const o=roadOffer(key);
@@ -701,7 +773,7 @@ function sendRoadBatch(){
   const editing=ae && ae.closest && ae.closest('#rail .leg') && ae.matches('.place-input') ? +ae.closest('#rail .leg').dataset.i : -1;
   const drives=[];
   state.legs.forEach((l,i)=>{
-    if(l.type==='stay') return;
+    if(l.type==='stay' || legVia(l).length) return;   // a leg with stops carries no road
     if(i===editing){ roadSkipped=true; return; }
     const from=(l.from||'').trim(), to=(l.to||'').trim();
     if(!from || !to || norm(from)===norm(to) || !isCatalogueTown(from) || !isCatalogueTown(to)) return;
@@ -744,15 +816,19 @@ function refreshRoads(){
     const leg=state.legs[+el.dataset.i];
     const distEl=el.querySelector('[data-dist]');
     if(!leg || leg.type==='stay' || !distEl) return;
-    const route=legRouteEstimate(leg.from,leg.to);
+    const route=legRoute(leg);
     const km=route?route.distanceKm:null;
-    distEl.innerHTML=distHtml(route, km!=null?legPrice(km,state.vehicle):null, liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=legHeaderHtml(leg, route, km!=null?legPrice(km,state.vehicle):null);
     distEl.classList.toggle('on', km!=null);
   });
   updateSummary();
   syncPlanUrl();
 }
 
+// A leg with the same place twice in a row has no honest distance, so its header asks for the fix.
+function legHeaderHtml(leg, route, price){
+  return legChainDuplicate(leg) ? '<span class="lm-hint">Fix the route to see distance &amp; price</span>' : distHtml(route, price, legVia(leg).length?null:liveRouteKey(leg.from,leg.to));
+}
 function distHtml(route, price, key){
   if(!route || route.distanceKm==null){
     return `<span class="lm-hint">Pick both points — Google fills in distance &amp; price</span>`;
@@ -770,7 +846,7 @@ function distHtml(route, price, key){
          `<span class="lm-src" title="${sourceTitle}">${source}</span>`+
          `<span class="lm-sep">·</span>`+
          `<span class="lm-price">from ${vehiclePriceIcon()} <b data-live-price>${money(T.finishPrice(price, minLegPrice(state.vehicle)))}</b></span>`+
-         roadChipHtml(key);
+         (key ? roadChipHtml(key) : '');
 }
 
 // remove any portaled date popovers left over from the previous render
@@ -861,29 +937,60 @@ function render(){
   const n=state.legs.length;
   const badges=legBadges();
 
+  const atPlaceCap = routeSeq().length>=12; // the server's MAX_TRIP_STOPS = 12 places per trip
   state.legs.forEach((leg,i)=>{
     const isStay = leg.type==='stay';
-    const route=!isStay?legRouteEstimate(leg.from,leg.to):null;
+    const route=!isStay?legRoute(leg):null;
     const km=route?route.distanceKm:null;
-    if(!isStay && (!route || route.state==='estimated') && leg.from && leg.to) requestLiveRoute(leg.from, leg.to, ()=>render());
+    if(!isStay) requestLiveChain(leg, ()=>render());
     const price=km!=null?legPrice(km,state.vehicle):null;
     const badge = badges[i];
+    const dup = legChainDuplicate(leg);
+    const ask = !dup ? legLongDay(leg) : null;
+    const askHtml = ask ? (()=>{
+      // the figure must match the card header (reviewed route table); the ≥ 6 h threshold stays on the modelled clock
+      const r=legRoute(leg); const shownMin = (r && r.durationMin>0) ? r.durationMin : ask.minutes; const hrs=Math.round(shownMin/60);
+      const chain=legRouteChain(leg);
+      const at = ask.splitAt!=null ? chain[ask.splitAt] : null;
+      return `<div class="leg-warn long-day" role="status"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span><span><b>Long day on the road.</b> ${escAttr(chain.join(' → '))} is about ${hrs} hours of driving${chain.length>2?', before any time at the stops':''}.${at?` Most travellers split this with a night in ${escAttr(at)}.`:''}</span></div><div class="lw-actions">${at?`<button type="button" class="dw-btn dw-split" data-k="${ask.splitAt}">Split it — end this leg at ${escAttr(at)}</button>`:''}<button type="button" class="dw-btn dw-keep">Keep it as one day</button></div></div>`;
+    })() : '';
 
     // body differs by type: a transfer has pick-up→drop-off + distance;
     // a stay has one place and a nights count (no intercity travel). Dates
     // are collected in a later step, so cards carry no date field here.
 
+    const SWAP_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg>';
+    const X_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>';
+    const via = PLANNER_STOPS ? (leg.via||[]) : [];
+    const chainLen = via.length+2;
+    // every row gets ⇅; × only when the leg has more than two places (a leg needs two)
+    const ctl = (k) => `<span class="stop-ctl"><button type="button" class="stop-swap" data-k="${k}" aria-label="${k===chainLen-1?'Swap with the place above':'Swap with the place below'}" title="Swap">${SWAP_ICO}</button>${chainLen>2?`<button type="button" class="stop-rm" data-k="${k}" aria-label="Remove this place" title="Remove">${X_ICO}</button>`:''}</span>`;
+    // insert a stop at gap k (between chain[k-1] and chain[k]): the same gate that hides/disables .add-via
+    const canIns = PLANNER_STOPS && !(via.length>=4 || atPlaceCap || dup);
+    const PLUS_ICO='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+    const chainAt = (k) => { const c=[leg.from||''].concat(via,[leg.to||'']); return String(c[k]||'').trim() || (k===0?'pick-up':(k===chainLen-1?'drop-off':'stop')); };
+    const wire = (k) => canIns ? `<span class="rb-wire" data-at="${k}"><button type="button" class="ins-btn" data-at="${k}" aria-label="${escAttr(`Add a stop between ${chainAt(k-1)} and ${chainAt(k)}`)}">${PLUS_ICO}</button></span>` : '<span class="rb-wire"></span>';
+    const divider = (k) => canIns ? `<div class="rb-divider ins" data-at="${k}"><span class="ins-tip">Stop here</span></div>` : '<div class="rb-divider plain"></div>';
+    const rails = ['<span class="rb-pin from"></span>'].concat(via.map((_,k)=>`${wire(k+1)}<span class="rb-pin via"></span>`), [`${wire(chainLen-1)}<span class="rb-pin to"></span>`]).join('');
+    const viaRows = via.map((v,k)=>`
+            ${divider(k+1)}
+            <div class="rb-field via" data-k="${k+1}"><div class="rb-f"><label>Stop on the way</label>
+              <input class="leg-via place-input" required placeholder="Where do you want to stop?" data-k="${k+1}" value="${escAttr(v)}"></div>${ctl(k+1)}</div>`).join('');
     const transferBody = `
         <div class="route-block">
-          <div class="rb-rail"><span class="rb-pin from"></span><span class="rb-wire"></span><span class="rb-pin to"></span></div>
+          <div class="rb-rail">${rails}</div>
           <div class="rb-fields">
-            <div class="rb-field"><label>Pick-up</label>
-              <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>
-            <div class="rb-divider"><button type="button" class="rb-swap" aria-label="Swap pick-up and drop-off" title="Swap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3"/></svg></button></div>
-            <div class="rb-field"><label>Drop-off</label>
-              <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>
+            <div class="rb-field" data-k="0"><div class="rb-f"><label>Pick-up</label>
+              <input class="leg-from place-input" required placeholder="Choose a place…" value="${escAttr(leg.from)}"></div>${ctl(0)}</div>
+            ${viaRows}
+            ${divider(chainLen-1)}
+            <div class="rb-field" data-k="${chainLen-1}"><div class="rb-f"><label>Drop-off</label>
+              <input class="leg-to place-input" required placeholder="Where to next…" value="${escAttr(leg.to)}"></div>${ctl(chainLen-1)}</div>
           </div>
-        </div>`;
+        </div>
+        ${PLANNER_STOPS ? `<div class="leg-foot stops"><button type="button" class="add-via" ${via.length>=4||atPlaceCap?'hidden':''} ${dup?'disabled':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>${via.length?'Add another stop':'Add a stop on the way'}</button></div>` : ''}
+        ${dup?`<div class="leg-warn stop" role="alert"><div class="lw-row"><span class="lw-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>Same place twice in a row.</b> ${escAttr(dupPairText(leg))} — remove one, or change it.</span></div></div>`:''}
+        ${askHtml}`;
 
     const stayBody = `
         <div class="loc-row stay">
@@ -906,12 +1013,12 @@ function render(){
     wrap.className='leg'+(isStay?' is-stay':'');
     wrap.dataset.i=i;
     wrap.innerHTML=`
-      <div class="leg-card" draggable="false" data-i="${i}">
+      <div class="leg-card${dup?' leg-bad':''}" draggable="false" data-i="${i}">
         <div class="leg-head">
           <span class="drag" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></span>
           <span class="leg-badge ${isStay?'stay':''}">${badge}</span>
           <div class="leg-head-right">
-            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${distHtml(route,price,liveRouteKey(leg.from,leg.to))}</div>`}
+            ${isStay?'':`<div class="leg-meta ${km!=null?'on':''}" data-dist>${legHeaderHtml(leg,route,price)}</div>`}
           <button class="leg-rm ${n<=1?'hide':''}" title="Remove this card" aria-label="Remove this card"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           </div>
         </div>
@@ -921,7 +1028,7 @@ function render(){
 
     const card=wrap.querySelector('.leg-card');
     const fromI=wrap.querySelector('.leg-from'), toI=wrap.querySelector('.leg-to');
-    [fromI,toI].forEach(input=>{ if(input) wirePlaceSearch(input); });
+    wrap.querySelectorAll('.place-input').forEach(wirePlaceSearch);
 
     if(!isStay){
       // transfer wiring — live distance recompute without re-render (keeps focus)
@@ -929,10 +1036,10 @@ function render(){
       function recompute(){
         markRouteCustomized();
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
-        const route=legRouteEstimate(fromI.value,toI.value);
+        const route=legRoute(state.legs[i]);
         const k=route?route.distanceKm:null;
         const pr=k!=null?legPrice(k,state.vehicle):null;
-        distEl.innerHTML=distHtml(route,pr,liveRouteKey(fromI.value,toI.value));
+        distEl.innerHTML=legHeaderHtml(state.legs[i],route,pr);
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
         // (a dropdown pick or a blur onto a real place) via render()'s per-leg resolve —
@@ -942,10 +1049,90 @@ function render(){
       }
       fromI.addEventListener('input',recompute);
       toI.addEventListener('input',recompute);
-      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; renderAfterPress(); });
-      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; renderAfterPress(); });
-      const swap=wrap.querySelector('.rb-swap');
-      if(swap) swap.addEventListener('click',()=>{ markRouteCustomized(); const t=state.legs[i].from; state.legs[i].from=state.legs[i].to; state.legs[i].to=t; render(); });
+      fromI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].ack=null; renderAfterPress(); });
+      toI.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].to=toI.value; state.legs[i].ack=null; renderAfterPress(); });
+      // chain helpers: k indexes [from, ...via, to]
+      const getChain=()=>legChain(state.legs[i]);
+      const setChain=(c)=>{ state.legs[i].from=c[0]; state.legs[i].to=c[c.length-1]; state.legs[i].via=c.slice(1,-1); state.legs[i].ack=null; };
+      wrap.querySelectorAll('.leg-via').forEach(inp=>{
+        const k=+inp.dataset.k;
+        inp.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].via[k-1]=inp.value; recompute(); });
+        inp.addEventListener('change',()=>{ markRouteCustomized(); state.legs[i].via[k-1]=inp.value; state.legs[i].ack=null; renderAfterPress(); });
+      });
+      wrap.querySelectorAll('.stop-swap').forEach(btn=>btn.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=getChain(), k=+btn.dataset.k, j=(k===c.length-1)?k-1:k+1;
+        [c[k],c[j]]=[c[j],c[k]]; setChain(c); render();
+      }));
+      wrap.querySelectorAll('.stop-rm').forEach(btn=>btn.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=getChain(); if(c.length<=2) return;
+        c.splice(+btn.dataset.k,1); setChain(c); render();
+      }));
+      const addVia=wrap.querySelector('.add-via');
+      if(addVia) addVia.addEventListener('click',()=>{
+        if((state.legs[i].via||[]).length>=4 || routeSeq().length>=12) return; // MAX_TRIP_STOPS = 12 (server cap)
+        markRouteCustomized();
+        state.legs[i].via=(state.legs[i].via||[]).concat(['']); state.legs[i].ack=null; render();
+        const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
+        const inputs=c?c.querySelectorAll('.leg-via'):[]; const last=inputs[inputs.length-1];
+        if(last){ last.dataset.suppressMenu='1'; last.focus({ preventScroll:true }); }
+      });
+      // + at a gap: an empty stop row at chain index k, focused without popping the menu
+      wrap.querySelectorAll('.ins-btn').forEach(btn=>btn.addEventListener('click',()=>{
+        if((state.legs[i].via||[]).length>=4 || routeSeq().length>=12) return; // MAX_TRIP_STOPS = 12 (server cap)
+        markRouteCustomized();
+        const k=+btn.dataset.at;
+        state.legs[i].via=(state.legs[i].via||[]).slice(); state.legs[i].via.splice(k-1,0,''); state.legs[i].ack=null; render();
+        const c=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
+        const f=c?c.querySelector(`.leg-via[data-k="${k}"]`):null;
+        if(f){ f.dataset.suppressMenu='1'; f.focus({ preventScroll:true }); }
+      }));
+      // the divider line and the wire of a gap are one hover pair
+      wrap.querySelectorAll('.rb-divider.ins[data-at],.rb-wire[data-at]').forEach(el=>{
+        const pair=()=>wrap.querySelectorAll(`.rb-divider.ins[data-at="${el.dataset.at}"],.rb-wire[data-at="${el.dataset.at}"]`);
+        el.addEventListener('mouseenter',()=>pair().forEach(x=>x.classList.add('is-hot')));
+        el.addEventListener('mouseleave',()=>pair().forEach(x=>x.classList.remove('is-hot')));
+      });
+      // a stop row still blank when focus leaves the card is dropped (the Next gate stays the backstop).
+      // The place menu lives inside the card and keeps focus on its input (mousedown preventDefault).
+      // Mid-press (railPress) nothing is touched: in Safari / Firefox-on-macOS a button doesn't take
+      // focus on mousedown, so this runs between mousedown and click, and a same-card ⇅ / ✕ / split
+      // would act on the chain indices it was rendered with. The whole check re-runs once the press
+      // lands, against whichever card now shows this leg.
+      const leg=state.legs[i];
+      const dropBlank=()=>{
+        if(railPress){ window.addEventListener('mouseup',()=>setTimeout(()=>{
+          const li=state.legs.indexOf(leg), now=li<0 ? null : document.querySelector(`#rail .leg-card[data-i="${li}"]`);
+          if(now && !now.contains(document.activeElement)) dropBlank();
+        },0),{ once:true }); return; }
+        const li=state.legs.indexOf(leg); if(li<0) return;
+        const v=leg.via; if(!v) return;
+        const b=v.findIndex(p=>!String(p||'').trim()); if(b<0) return;
+        leg.via=v.slice(0,b).concat(v.slice(b+1));
+        // focus moved to a place field in another card: keep it there across the re-render
+        const a=document.activeElement, ac=a && a.matches && a.matches('.place-input') ? a.closest('#rail .leg-card') : null;
+        const sel=ac ? (a.classList.contains('leg-via') ? `.leg-via[data-k="${a.dataset.k}"]` : (a.classList.contains('leg-from') ? '.leg-from' : '.leg-to')) : null;
+        const ai=ac ? ac.dataset.i : null;
+        render();
+        const back=sel ? document.querySelector(`#rail .leg-card[data-i="${ai}"] ${sel}`) : null;
+        if(back) back.focus({ preventScroll:true });
+      };
+      card.addEventListener('focusout',()=>setTimeout(()=>{
+        if(!card.isConnected || card.contains(document.activeElement)) return; // re-rendered, or still in the card
+        dropBlank();
+      },0));
+      const keep=wrap.querySelector('.dw-keep');
+      if(keep) keep.addEventListener('click',()=>{ markRouteCustomized(); state.legs[i].ack='long_day'; render(); });
+      const split=wrap.querySelector('.dw-split');
+      if(split) split.addEventListener('click',()=>{
+        markRouteCustomized();
+        const c=legRouteChain(state.legs[i]), k=+split.dataset.k;
+        const first=c.slice(0,k+1), second=c.slice(k);
+        state.legs[i]={ ...state.legs[i], from:first[0], to:first[first.length-1], via:first.slice(1,-1), ack:null };
+        state.legs.splice(i+1,0,{ type:'transfer', from:second[0], to:second[second.length-1], via:second.slice(1,-1), date:null, nights:1, ack:null });
+        render();
+      });
     } else {
       // stay wiring — one place (mirrors to drop-off so chaining continues)
       fromI.addEventListener('input',()=>{ markRouteCustomized(); state.legs[i].from=fromI.value; state.legs[i].to=fromI.value; updateSummary(); });
@@ -1027,7 +1214,7 @@ function render(){
   syncTemplateStrip();
   // A drive the traveller edited away loses its road: its key is gone from the legs. Pruned
   // before the URL is written, so `roads` never names a drive the plan no longer has.
-  const driveKeys=new Set(state.legs.filter(l=>l.type!=='stay').map(l=>liveRouteKey(l.from,l.to)));
+  const driveKeys=new Set(state.legs.filter(l=>l.type!=='stay' && !legVia(l).length).map(l=>liveRouteKey(l.from,l.to)));
   [...roadChoice.keys()].forEach(k=>{ if(!driveKeys.has(k)) roadChoice.delete(k); });
   syncPlanUrl();
   checkRoads();
@@ -1056,10 +1243,10 @@ function refreshVehiclePricing(){
     if(!leg || leg.type==='stay') return;
     const distEl=el.querySelector('[data-dist]');
     if(!distEl) return;
-    const route=legRouteEstimate(leg.from,leg.to);
+    const route=legRoute(leg);
     const km=route?route.distanceKm:null;
     const price=km!=null?legPrice(km,state.vehicle):null;
-    distEl.innerHTML=distHtml(route,price,liveRouteKey(leg.from,leg.to));
+    distEl.innerHTML=legHeaderHtml(leg,route,price);
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
     const from=before.get(el.dataset.i);
@@ -1084,17 +1271,60 @@ function firstIncompleteLeg(){
   for(let i=0;i<state.legs.length;i++){
     const l=state.legs[i];
     if(l.type==='stay'){ if(!(l.from||'').trim()) return i; }
-    else if(!(l.from||'').trim() || !(l.to||'').trim()) return i;
+    else if(!(l.from||'').trim() || !(l.to||'').trim() || (l.via||[]).some(v=>!(v||'').trim())) return i;
   }
   return -1;
+}
+// Consecutive repeats only (ops legChainDuplicate; engine validateRide): Kandy → Pinnawala →
+// Kandy is a round trip and fine; Kandy → Kandy, or a stop equal to the drop-off, is an error.
+function legChainDuplicate(leg){
+  if(!PLANNER_STOPS) return false; // kill switch: today's planner had no same-place check
+  if(leg.type==='stay') return false;
+  const c=legChain(leg).map(norm);
+  for(let k=0;k<c.length-1;k++) if(c[k] && c[k+1] && c[k]===c[k+1]) return true;
+  return false;
+}
+function dupPairText(leg){ const c=legChain(leg), n=c.map(norm); for(let k=0;k<c.length-1;k++) if(n[k]&&n[k]===n[k+1]){ const names=['The pick-up','A stop on the way','The drop-off']; const who=(x)=>x===0?names[0]:(x===c.length-1?names[2]:names[1]); return `${who(k)} and ${who(k+1).toLowerCase()} are both ${c[k]}`; } return ''; }
+// Everything that blocks "Next" on the route step, by leg, first problem first.
+function legBlockers(){
+  const out=[]; let n=0;
+  state.legs.forEach((l,i)=>{ if(l.type!=='stay') n++; if(legChainDuplicate(l)) out.push({ i, legNo:n, reason:'duplicate' }); });
+  return out;
+}
+const LONG_DAY_MIN = 360; // ops "Long drive warning": legDriveHours(leg) >= 6 (ops-ui.html:10793)
+// A leg that would be a long day on the road. splitAt is the chain index of the stop that leaves
+// the two halves closest to equal time — the place "Split it" turns into this leg's drop-off.
+// It indexes legRouteChain (blank stop rows dropped), so a blank row is never a split point.
+function legLongDay(leg){
+  if(!PLANNER_STOPS) return null; // kill switch: no ask, no Next gate
+  if(leg.type==='stay' || leg.ack==='long_day') return null;
+  const minutes=legDrivingMinutes(leg);
+  if(minutes==null || minutes<LONG_DAY_MIN) return null;
+  const chain=legRouteChain(leg); let splitAt=null;
+  if(chain.length>2){
+    let best=Infinity, acc=0;
+    for(let k=0;k<chain.length-2;k++){ acc+=dayDrivingMinutes(chain[k],chain[k+1])||0; const d=Math.abs(acc-(minutes-acc)); if(d<best){ best=d; splitAt=k+1; } }
+  }
+  return { minutes, splitAt };
+}
+function pendingAsks(){
+  const out=[]; let n=0;
+  state.legs.forEach((l,i)=>{ if(l.type!=='stay'){ n++; if(legLongDay(l)) out.push({ i, legNo:n }); } });
+  return out;
 }
 // highlight an incomplete leg card, scroll it into view and focus the empty field
 function flagIncompleteLeg(i){
   const card=document.querySelector(`#rail .leg-card[data-i="${i}"]`);
   if(!card) return;
-  card.classList.add('leg-bad');
   const y=card.getBoundingClientRect().top+window.scrollY-90;
+  // a leg with a pending long-day ask has every field filled: focusing one would only open its
+  // place list over the Split/Keep buttons. The ask is amber, not an error, so no leg-bad either.
+  if(legLongDay(state.legs[i])){ window.scrollTo({top:y,behavior:'smooth'}); return; }
+  card.classList.add('leg-bad');
   window.scrollTo({top:y,behavior:'smooth'});
+  // a same-place-twice leg has every field filled: focusing one would only open its place list
+  // over the stop row. It also owns leg-bad until its chain changes (the next render re-evaluates it).
+  if(legChainDuplicate(state.legs[i])) return;
   const f=card.querySelector('.leg-from'), t=card.querySelector('.leg-to');
   const target=(f&&!f.value.trim())?f:(t&&!t.value.trim()?t:f);
   if(target) target.focus({preventScroll:true});
@@ -1130,7 +1360,7 @@ function updateSummary(opts={}){
   state.legs.forEach(l=>{
     if(l.type==='stay'){ return; }
     transferLegs++;
-    const route=legRouteEstimate(l.from,l.to);
+    const route=legRoute(l);
     const km=route?route.distanceKm:null;
     if(km!=null){
       totalKm+=km;
@@ -1209,11 +1439,20 @@ function updateSummary(opts={}){
   }
 
   // gate the “Next” CTA until every leg has a pick-up AND drop-off (we can't price a blank leg)
+  const blockers=legBlockers();
   const incompleteLeg = firstIncompleteLeg()>=0;
+  const blocked = incompleteLeg || blockers.length>0 || pendingAsks().length>0;
   const reqBtn=document.getElementById('request-btn');
-  if(reqBtn){ reqBtn.classList.toggle('cta-disabled', incompleteLeg); reqBtn.setAttribute('aria-disabled', incompleteLeg?'true':'false'); }
+  if(reqBtn){ reqBtn.classList.toggle('cta-disabled', blocked); reqBtn.setAttribute('aria-disabled', blocked?'true':'false'); }
   const reqHint=document.getElementById('route-incomplete-hint');
-  if(reqHint) reqHint.hidden=!incompleteLeg;
+  if(reqHint){
+    reqHint.hidden=!blocked;
+    let t=reqHint.lastChild; // the text node after the svg
+    if(!t || t.nodeType!==3){ t=document.createTextNode(''); reqHint.appendChild(t); }
+    if(blockers.length) t.textContent=` Fix Leg ${blockers[0].legNo} to continue`;
+    else if(pendingAsks().length) t.textContent=` Answer the note on Leg ${pendingAsks()[0].legNo} to continue`;
+    else t.textContent=' Add a pick-up and drop-off to every leg to continue.';
+  }
 }
 
 // ---- route map: pins plotted from each point's coordinates ----
@@ -1550,7 +1789,7 @@ function sameDayDrivingIssue(){
   const byDate=new Map();
   state.legs.forEach(leg=>{
     if(leg.type==='stay' || !leg.date) return;
-    const minutes=dayDrivingMinutes(leg.from, leg.to);
+    const minutes=legDrivingMinutes(leg);
     if(minutes==null) return;
     const key=fmtISO(leg.date);
     const day=byDate.get(key) || { minutes:0, count:0 };
@@ -1606,6 +1845,9 @@ function showRouteHint(msg){
 // books as 1 traveller in a 3-seat car.
 const PAX_HINT='Pick how many are travelling — choose your travellers above to continue.';
 function showDatesStep(){
+  // blockers first, matching the Next hint in updateSummary
+  const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
+  const asks=pendingAsks(); if(asks.length){ flagIncompleteLeg(asks[0].i); return; }
   const bad=firstIncompleteLeg();
   if(bad>=0){ flagIncompleteLeg(bad); return; }
   const seq=routeSeq();
@@ -1645,7 +1887,7 @@ function goToBooking(){
   if(ooo.size){ nudgeOutOfOrder([...ooo][0]); return; }
   const driveIssue=sameDayDrivingIssue();
   if(driveIssue && driveIssue.level==='block') return;
-  const { seq, dates, kms, gaps, roads } = routeSeqDetailed();
+  const { seq, dates, kms, gaps, roads, through, acks } = routeSeqDetailed();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   // Backstop for the showDatesStep gate (?step=dates deep-links land here too): never hand
   // booking pax=null — it parses "null" as 1 traveller and there is no later step to fix it.
@@ -1668,6 +1910,8 @@ function goToBooking(){
   });
   // the local roads chosen, index-aligned with the wires like kms (whose km they already carry)
   if(roads.some(Boolean)) p.set('roads', roads.join(','));
+  if(through.length) p.set('through', through.join(','));
+  if(acks.length) p.set('ack', acks.join(','));
   window.location.href='booking.html?'+p.toString();
 }
 document.getElementById('request-btn').addEventListener('click',showDatesStep);

@@ -210,7 +210,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rb-rail{display:flex;flex-direction:column;align-items:center;padding:17px 0}
   .rb-pin{width:12px;height:12px;border-radius:50%;border:3px solid var(--teal-deep);background:#fff;flex:none}
   .rb-pin.to{border-color:var(--tomato);border-radius:50% 50% 50% 0;transform:rotate(45deg)}
-  .rb-wire{flex:1;width:2px;min-height:22px;margin:4px 0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
+  /* the dotted line is ::before so its .4 opacity does not dim the + inside the wire (Task 24) */
+  .rb-wire{position:relative;flex:1;width:2px;min-height:22px;margin:4px 0;background:none;opacity:1}
+  .rb-wire::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(var(--ink-soft) 0 3px,transparent 3px 7px);opacity:.4}
   .rb-fields{display:flex;flex-direction:column;min-width:0}
   .rb-field{padding:9px 0}
   .rb-field label{display:block;font-size:.62rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:var(--ink-soft);margin-bottom:2px}
@@ -234,6 +236,43 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .rb-swap:hover{border-color:var(--accent);transform:translateY(-50%) scale(1.08)}
   .rb-swap:active{transform:translateY(-50%) rotate(180deg)}
   .rb-swap svg{width:15px;height:15px}
+  /* stops on the way (spec 2026-10-30): a stop is a row on the same rail */
+  .rb-pin.via{width:10px;height:10px;border:none;background:var(--teal-deep);margin:1px}
+  .rb-field{display:flex;align-items:center;gap:8px}
+  .rb-field>.rb-f{flex:1;min-width:0}
+  .rb-field.via label{color:var(--teal-deep)}
+  .stop-ctl{flex:none;display:inline-flex;gap:6px;opacity:0;transition:opacity .15s}
+  .rb-field:hover .stop-ctl,.rb-field:focus-within .stop-ctl{opacity:1}
+  @media(hover:none){.stop-ctl{opacity:1}}
+  @media(prefers-reduced-motion:reduce){.stop-ctl{transition:none}}
+  .stop-swap,.stop-rm{flex:none;width:24px;height:24px;border-radius:50%;border:1.5px solid var(--line);background:var(--white);display:grid;place-items:center;cursor:pointer;color:var(--ink-soft)}
+  .stop-swap{color:var(--accent-deep)}
+  .stop-swap:hover{border-color:var(--accent)}
+  .stop-rm:hover{border-color:var(--tomato);color:var(--tomato)}
+  .stop-swap svg,.stop-rm svg{width:11px;height:11px}
+  .leg-foot.stops{justify-content:flex-end;margin-top:8px}
+  .add-via{display:inline-flex;align-items:center;gap:.4rem;background:none;border:none;color:var(--accent-deep);font-family:inherit;font-weight:700;font-size:.82rem;padding:4px 2px;cursor:pointer;border-radius:6px}
+  .add-via[hidden]{display:none} /* the display above beats the UA [hidden] rule */
+  .add-via:hover{text-decoration:underline}
+  .add-via:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  .add-via svg{width:14px;height:14px}
+  .add-via[disabled]{color:var(--ink-soft);opacity:.6;cursor:default;text-decoration:none}
+  .rb-divider.plain .rb-swap{display:none}
+  /* insert a stop at a chosen gap: the + lives INSIDE the rail's wire, so it is centred on the
+     dotted line at every width; the divider line and the wire are one hover pair (JS .is-hot).
+     z-index:3 + the 22px ::before hit zone: without them the later .rb-field rows win the pointer. */
+  .rb-divider.ins{position:relative;z-index:3;height:1px;background:var(--line);transition:background .15s}
+  .rb-divider.ins::before{content:"";position:absolute;left:0;right:0;top:-11px;height:22px}
+  .rb-wire .ins-btn{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.85);z-index:2;width:22px;height:22px;border-radius:50%;border:1.5px solid var(--teal-deep);background:var(--white);color:var(--teal-deep);display:grid;place-items:center;cursor:pointer;padding:0;opacity:0;transition:opacity .15s,transform .15s}
+  .ins-btn svg{width:12px;height:12px}
+  .ins-tip{position:absolute;left:-2px;top:50%;transform:translateY(-50%);z-index:2;font-size:.68rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--teal-deep);background:var(--white);padding:0 6px 0 0;opacity:0;transition:opacity .15s;pointer-events:none;white-space:nowrap}
+  .leg-card:hover .rb-wire .ins-btn{opacity:.38}
+  .rb-divider.ins.is-hot{background:var(--teal-deep)}
+  .rb-divider.ins.is-hot .ins-tip{opacity:1}
+  .leg-card .rb-wire.is-hot .ins-btn,.leg-card .rb-wire:focus-within .ins-btn{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .ins-btn:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  @media(hover:none){.rb-wire .ins-btn,.leg-card:hover .rb-wire .ins-btn,.leg-card .rb-wire.is-hot .ins-btn{opacity:1;transform:translate(-50%,-50%) scale(.85)}.ins-tip{display:none}.rb-divider.ins.is-hot{background:var(--line)}}
+  @media(prefers-reduced-motion:reduce){.ins-btn,.ins-tip,.rb-divider.ins{transition:none}}
 
   /* leg meta (distance · time · price) sits in the card header, using the spare space */
   .leg-head-right{margin-left:auto;display:flex;align-items:center;gap:12px;min-width:0;justify-content:flex-end}
@@ -389,6 +428,21 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-warn .dr-warn-ic{display:grid;place-items:center;flex:none;margin-top:1px}
   .dr-warn .dr-warn-ic svg{width:16px;height:16px;color:#c98a1a}
   .dr-warn b{color:var(--ink)}
+  /* per-leg notes under the rail: a hard stop (red) or an ask (amber, see .long-day) */
+  .leg-warn{display:flex;flex-direction:column;gap:8px;margin-top:12px;padding:9px 12px;border-radius:12px;font-size:.79rem;line-height:1.4;background:#fff6e8;border:1px solid #f3dca8;color:#7a5512}
+  .leg-warn .lw-row{display:flex;gap:.5rem;align-items:flex-start}
+  .leg-warn .lw-ic{display:grid;place-items:center;flex:none;margin-top:1px}
+  .leg-warn .lw-ic svg{width:16px;height:16px;color:#c98a1a}
+  .leg-warn b{color:var(--ink)}
+  .leg-warn.stop{background:#fdecea;border-color:#f3b6ad;color:#8a2217}
+  .leg-warn.stop .lw-ic svg{color:var(--tomato)}
+  .leg-warn.stop b{color:#8a2217}
+  .leg-warn.long-day .lw-actions{display:flex;gap:8px;flex-wrap:wrap;padding-left:24px}
+  .dw-btn{font-family:inherit;font-size:.78rem;font-weight:700;padding:.42rem .8rem;border-radius:999px;cursor:pointer;border:1.5px solid #e6b980;background:var(--white);color:#8a4f07;min-height:34px}
+  .dw-btn.dw-split{background:#8a4f07;border-color:#8a4f07;color:#fff}
+  .dw-btn:hover{filter:brightness(.97)}
+  .dw-btn:focus-visible{outline:2px solid var(--btn-accent,#24758A);outline-offset:2px}
+  @media(max-width:420px){.leg-warn.long-day .lw-actions{padding-left:0}.dw-btn{flex:1 1 100%}}
   .dates-actions .btn.cta-disabled{opacity:.5;filter:saturate(.7);cursor:not-allowed}
   #dates-drive-hint.is-blocking{background:#fff0ec;border-color:#f1b7aa;color:#873323}
   #dates-drive-hint.is-blocking svg{color:#e43d2c}
@@ -457,6 +511,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   /* Odd count (3): the last stat would sit alone in a half-width cell with a dashed rule
      stopping mid-panel. Let it span the pair instead. */
   .sum-stats .sum-stat:last-child{grid-column:1/-1}
+  /* An estimated drive reads as a sentence ("Estimated journey — approx. 405 km · 9h 30m. Final
+     route confirmed before payment."), and `.sum-stat b` is nowrap + flex:none, so at desktop
+     width it ran ~250px out of the card. Let this one value shrink and wrap: a short figure still
+     sits beside "Driving"; a sentence drops to its own row, left-aligned like the phone layout. */
+  .sum-stats .sum-stat:last-child #st-drive{flex:0 1 auto;min-width:0;white-space:normal;text-align:left;line-height:1.4}
   /* The map is a landscape box framing a north-south island, so a short card spends most of
      itself on sea. Measured budget (1280x720, the tightest window that still gets this branch,
      7-stop trip): the card sticks at top:86 and its non-map parts total 439px, so the map can
@@ -737,6 +796,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=f72fea305c"></script>
+<script src="plan.js?v=57e2c0a5f0"></script>
 </body>
 </html>

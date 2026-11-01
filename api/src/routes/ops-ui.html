@@ -5595,6 +5595,7 @@ function applyDiscountFromForm() {
   if (!reason) { toast('A reason is required'); return; }
   state.discount = { method: method, value: wire, reason: reason };
   _discountTouched = true;
+  _discountEdits++;
   markDirty();
   refreshEstimate();
 }
@@ -5602,6 +5603,7 @@ function applyDiscountFromForm() {
 function removeDiscount() {
   state.discount = null;
   _discountTouched = true;
+  _discountEdits++;
   markDirty();
   refreshEstimate();
 }
@@ -6919,8 +6921,11 @@ function currentQuoteQueuePatch(saved) {
 }
 
 /* Set only by the founder acting on the control. Reset once a save has carried the intent, so a
-   later autosave falls back to "preserve" rather than re-sending it. */
+   later autosave falls back to "preserve" rather than re-sending it. _discountEdits counts the
+   founder's Apply/Remove presses, so a save only clears the flag if no press landed while it was
+   in flight (that newer intent still has to reach the server). */
 let _discountTouched = false;
+let _discountEdits = 0;
 
 /* A leg's identity ON THE WIRE — everything that decides which distances belong to it, and
    deliberately NOT the distances themselves (those are what we're adopting). */
@@ -6997,6 +7002,7 @@ async function saveQuote(opts) {
     return false;
   }
   var sent = savePayload();
+  var discountEditsSent = _discountEdits;
   var res = await apiSave(sent);
   // Superseded while in flight (autosave for quote A, operator already on quote B). The save DID
   // succeed server-side for A, but applying res here would rebind savedId/reference/unpriced —
@@ -7017,6 +7023,18 @@ async function saveQuote(opts) {
     // A fresh save auto-assigns the quote to its creator (server); reflect it so the header picker
     // shows the maker immediately instead of "Unassigned" until reload. Re-saves omit assignedTo.
     if (res.assignedTo !== undefined) state.assignedTo = res.assignedTo;
+    // The founder's Apply/Remove is now stored; later saves mean "preserve" (see _discountEdits).
+    if (_discountEdits === discountEditsSent) _discountTouched = false;
+    // The priced service changed, so the server dropped the founder's discount (it belongs to the
+    // service it was given on). Clear it here too, or the pane keeps previewing the old saving.
+    // Shown even on a silent autosave: the price just went up and the operator must know why.
+    if (res.discountRemoved) {
+      state.discount = null;
+      _discountTouched = false;
+      refreshEstimate();
+      // 'error' styling on purpose: red and held longer — the price just went UP (owner, 2026-11-01).
+      showToast('Discount removed — the service changed. Re-apply it if you still want one.', 'error');
+    }
     // Take on the distances the server had to resolve to price this. Without it the builder
     // kept showing its PARTIAL total ("Covers the ready legs") while the stored quote — the
     // queue row, the locked estimate, what the customer would be told — was priced on the FULL
