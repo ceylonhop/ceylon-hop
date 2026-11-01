@@ -376,13 +376,16 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .dr-badge.stay{color:#a96b04;background:var(--pc-saffron)}
   .dr-route{font-family:var(--display);font-weight:700;font-size:1.08rem;line-height:1.22;color:var(--ink);min-width:0;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   .dr-route .dr-ar{color:var(--accent);font-family:var(--body);font-weight:600}
-  .dr-date{flex:none;display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+  /* grid: clear-link | date pill on one line, the origin tag under the pill — so a dated leg's
+     row is no taller than an undated one (the clear link used to stack under the pill) */
+  .dr-date{flex:none;display:grid;grid-template-columns:auto auto;align-items:center;column-gap:10px;row-gap:4px}
+  .dr-date .dp{grid-column:2;grid-row:1}
   .dr-date .dp-btn{min-width:190px}
-  /* the way back out of a date a leg already has */
-  .dr-clear{display:inline-flex;align-items:center;gap:.3rem;background:none;border:none;padding:2px 0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:600;color:var(--ink-soft);text-decoration:underline;text-underline-offset:2px}
-  .dr-clear:hover{color:var(--accent-deep)}
+  /* the way back out of a date a leg already has — quiet on purpose, it's a rare escape hatch */
+  .dr-clear{grid-column:1;grid-row:1;background:none;border:none;padding:0;cursor:pointer;font-family:inherit;font-size:.72rem;font-weight:500;color:#a3a39b;white-space:nowrap}
+  .dr-clear:hover{color:var(--accent-deep);text-decoration:underline;text-underline-offset:2px}
   /* where a date came from, so a cascaded one is never mistaken for one they typed */
-  .dr-tag{font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
+  .dr-tag{grid-column:2;grid-row:2;font-size:.71rem;font-weight:600;color:var(--ink-soft);padding-left:2px}
   .dr-tag.edited{color:#a96b04}
   /* out-of-order date caution — same amber "note" theme as the hotels/stay notes */
   .dr-warn{flex:1 1 100%;display:flex;gap:.5rem;align-items:flex-start;margin-top:2px;padding:9px 12px;background:#fff6e8;border:1px solid #f3dca8;border-radius:12px;font-size:.79rem;line-height:1.4;color:#7a5512}
@@ -394,7 +397,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   #dates-drive-hint.is-blocking svg{color:#e43d2c}
   .date-row.dr-nudge{box-shadow:0 0 0 3px rgba(201,138,26,.4)!important;transition:box-shadow .18s ease}
   .dates-actions{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;max-width:720px;margin-top:26px}
-  @media(max-width:560px){.date-row{align-items:stretch}.dr-date,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
+  @media(max-width:560px){.date-row{align-items:stretch}.dr-date{width:100%;grid-template-columns:auto 1fr}.dr-date .dp,.dr-date .dp-btn{width:100%}.dates-actions .btn{flex:1 1 100%;justify-content:center}}
 
   /* ---- summary ---- */
   /* No nested scrollbar. The column scrolls with the page like everything else; only the summary
@@ -733,6 +736,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=dccc3eb26f"></script>
+<script src="plan.js?v=3f33edb506"></script>
 </body>
 </html>
