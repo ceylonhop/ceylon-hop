@@ -494,6 +494,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .route-incomplete-hint{display:flex;align-items:flex-start;gap:.45rem;margin:10px 2px 0;font-size:.82rem;line-height:1.4;color:var(--tomato);font-weight:600}
   .route-incomplete-hint[hidden]{display:none}
   .route-incomplete-hint svg{width:15px;height:15px;flex:none;margin-top:2px}
+  /* informational, not a warning — a blank date is allowed, the note just counts them */
+  .route-incomplete-hint.is-info{color:var(--ink-soft);font-weight:500}
   .sum-wa{display:flex;align-items:center;gap:.7rem;margin-top:12px;padding:12px 14px;border:1.5px solid #25d36633;background:#25d3660d;border-radius:12px;text-decoration:none;color:var(--ink)}
   .sum-wa .ic{width:34px;height:34px;border-radius:50%;background:#0B7A44;color:#fff;display:grid;place-items:center;flex:none}
   .sum-wa .ic svg{width:18px;height:18px}
@@ -762,6 +764,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     </div>
     <p class="route-incomplete-hint" id="dates-order-hint" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg> Some legs are dated out of order — fix the dates (or go back to reorder your route) so your trip runs forward before continuing.</p>
     <p class="route-incomplete-hint" id="dates-drive-hint" hidden></p>
+    <!-- counts the blank dates while "I know my dates" is picked; filled by plan.js renderDatesStep -->
+    <p class="route-incomplete-hint is-info" id="dates-missing-hint" hidden></p>
   </div>
 </div>
 
@@ -798,6 +802,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=1bf11986ce"></script>
+<script src="plan.js?v=9f005fb85b"></script>
 </body>
 </html>
