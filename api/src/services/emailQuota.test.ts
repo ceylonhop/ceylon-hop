@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { emailQuotaAlert, emailSentToday, EMAIL_QUOTA_WARN_SHARE } from './emailQuota';
 import { UsageMeter } from './usageMeter';
 import { InMemoryUsageCounterRepo } from '../db/usageCounterRepo';
+import { FakeAlertAdapter, ThrottledAlerts } from '../adapters/alerts';
+import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 
 // The one new watchdog rule (spec 2026-10-13 §6): warn at 70 % of the Resend daily cap, so the
 // owner upgrades BEFORE the cap — once it bites, the confirmation_email_failed alert can't be
@@ -30,6 +32,22 @@ describe('emailQuotaAlert', () => {
     // 70 % of 15 is 10.5 → 11 sends, not 10.
     expect(emailQuotaAlert('2026-10-13', 10, 15)).toBeNull();
     expect(emailQuotaAlert('2026-10-13', 11, 15)).not.toBeNull();
+  });
+
+  // 2026-11-02: re-sent every 30 min from 73 to 102 of 100, each send counted by the next one.
+  it('pages once a UTC day however long the day stays over the threshold', async () => {
+    const inner = new FakeAlertAdapter();
+    let clock = new Date('2026-11-02T10:00:00.000Z');
+    const alerts = new ThrottledAlerts(inner, new InMemoryAlertLogRepo(), { now: () => clock });
+    await alerts.send(emailQuotaAlert('2026-11-02', 70, 100)!);
+    clock = new Date('2026-11-02T10:31:00.000Z');
+    await alerts.send(emailQuotaAlert('2026-11-02', 71, 100)!);
+    clock = new Date('2026-11-02T23:59:00.000Z');
+    await alerts.send(emailQuotaAlert('2026-11-02', 95, 100)!);
+    expect(inner.sent.map((a) => a.title)).toEqual(['Email sends at 70 of 100 today']);
+    clock = new Date('2026-11-03T00:05:00.000Z');
+    await alerts.send(emailQuotaAlert('2026-11-03', 70, 100)!);
+    expect(inner.sent).toHaveLength(2);
   });
 });
 

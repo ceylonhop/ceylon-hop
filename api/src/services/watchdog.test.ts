@@ -136,6 +136,20 @@ describe('runWatchdog', () => {
     expect(inner.sent).toHaveLength(1); // …but the founder got exactly one email
   });
 
+  // 2026-11-02: four abandoned checkouts paged about 11 times each, 43 of the day's 100 sends.
+  it('a stuck booking alerts once across its whole 30 min to 6 h window', async () => {
+    const { bookings } = await seed('payment_pending');
+    const inner = new FakeAlertAdapter();
+    let clock = later(31);
+    const alerts = new ThrottledAlerts(inner, new InMemoryAlertLogRepo(), { now: () => clock });
+    const deps = { bookings, log: new InMemoryNotificationLogRepo(), alerts };
+    for (const min of [31, 62, 93, 180, 359]) {
+      clock = later(min);
+      expect((await runWatchdog(clock, deps)).stuckPending).toBe(1);
+    }
+    expect(inner.sent).toHaveLength(1);
+  });
+
   // A cash/bank booking settled through POST /admin/bookings/:id/mark-paid deliberately sends no
   // confirmation email, and its status never leaves 'paid' (the pipeline advances on ride_ops).
   // Without an exemption it would page the founder on every sweep until departure.
@@ -750,6 +764,22 @@ describe('runWatchdog — the customer already paid for the same trip on a later
     expect(stuck[0].severity).toBe('warning');
     expect(stuck[0].title).toContain('CH-Y5RXW');
     expect(stuck[0].body).toContain('Customer paid for the same trip on CH-L72HX. Leave this one: cancelling it from ops emails the customer a cancellation for the trip they paid for.');
+  });
+
+  it('the paid-elsewhere warning still arrives after the stuck alert, and only once', async () => {
+    const rows = [mk('CH-Y5RXW', 'payment_pending', at(0), shared())];
+    const inner = new FakeAlertAdapter();
+    let clock = new Date(T0 + 31 * MIN);
+    const alerts = new ThrottledAlerts(inner, new InMemoryAlertLogRepo(), { now: () => clock });
+    const deps = { bookings: repo(rows), log: new InMemoryNotificationLogRepo(), alerts };
+    await runWatchdog(clock, deps);
+    rows.push(mk('CH-L72HX', 'paid', at(40), shared()));
+    for (const min of [62, 93, 180]) {
+      clock = new Date(T0 + min * MIN);
+      await runWatchdog(clock, deps);
+    }
+    const stuck = inner.sent.filter((a) => a.kind === 'watchdog_stuck_pending');
+    expect(stuck.map((a) => a.severity)).toEqual(['critical', 'warning']);
   });
 
   it('counts any later lifecycle status as paid (confirmed, in progress, completed)', async () => {
