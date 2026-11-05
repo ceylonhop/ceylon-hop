@@ -1912,6 +1912,8 @@ function goToBooking(){
   if(roads.some(Boolean)) p.set('roads', roads.join(','));
   if(through.length) p.set('through', through.join(','));
   if(acks.length) p.set('ack', acks.join(','));
+  // they came here from booking's chauffeur card to add dates: hand that choice back
+  if(params.get('svc')==='chauffeur') p.set('svc','chauffeur');
   window.location.href='booking.html?'+p.toString();
 }
 document.getElementById('request-btn').addEventListener('click',showDatesStep);
@@ -1969,7 +1971,7 @@ const forkLaterBtn=document.getElementById('fork-later'); if(forkLaterBtn) forkL
 render();
 // deep-link: arriving with ?step=dates (e.g. “Add your dates” / Back from the booking page)
 // jumps straight to the When step instead of the route-building view
-// Arriving this way IS the answer to the fork: booking's "Add your dates →" and "Back to
+// Arriving this way IS the answer to the fork: booking's chauffeur card and "Back to
 // planner" both land here, and that customer came back to work on dates.
 if((params.get('step')||'').toLowerCase()==='dates'){ state.datesMode='known'; showDatesStep(); }
 
