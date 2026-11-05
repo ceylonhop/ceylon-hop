@@ -187,6 +187,12 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(await bookings.websitePricingSnapshot(plain.id)).toBeNull();
   });
 
+  it('says whether a booking exists', async () => {
+    const b = await bookings.create(sample);
+    expect(await bookings.exists(b.id)).toBe(true);
+    expect(await bookings.exists(randomUUID())).toBe(false);
+  });
+
   it('alert log: atomic cooldown dedupe + countsSince (M17)', async () => {
     const alerts = new PostgresAlertLogRepo(db);
     const key = 'pgtest-' + Date.now(); // unique per run — the shared test DB persists rows

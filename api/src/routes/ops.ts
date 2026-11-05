@@ -325,8 +325,37 @@ export function opsRoutes(deps: OpsDeps) {
   r.get('/bookings/:id', requireCap('bookings:read'), async (c) => {
     const b = await deps.bookings.get(c.req.param('id'));
     if (!b) return c.json({ error: 'not_found' }, 404);
-    const ops = await deps.rideOps.getOrCreate(b.id);
-    const payments = await deps.payments.findByBookingId(b.id);
+    // Every read from here on needs only the booking, so they all go at once: one after another
+    // they were a ~94 ms round-trip each from Render to the database (2026-11-05), most of the
+    // wait for this sheet to open. The best-effort ones catch their own failure, so losing one
+    // costs its block only.
+    const [ops, payments, srcQuote, snapshot, checkoutEventRows, interests, scheduleEvents, notifications] = await Promise.all([
+      deps.rideOps.getOrCreate(b.id),
+      deps.payments.findByBookingId(b.id),
+      // Partial pay link coverage, the vehicle tier and the refund lines all start from here.
+      deps.quotes ? deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null,
+      // A website booking's own pricing snapshot, used below when it did not come from a quote.
+      // Read either way: it costs no extra round-trip here, and knowing first would cost one.
+      // Best-effort: a row that cannot be read costs the refund picker and the vehicle tier only.
+      b.mode === 'shared'
+        ? null
+        : deps.bookings.websitePricingSnapshot(b.id).catch((err) => {
+            console.error(`[ops] pricing snapshot unavailable for ${b.id}:`, err);
+            return null;
+          }),
+      // Payment attempts (2026-09-24): debugging a failed payment took SQL against
+      // booking_checkout_event. Best-effort: a log that cannot be read must not fail the drawer.
+      deps.checkoutEvents
+        ? deps.checkoutEvents.listByBookingId(b.id).catch((err) => {
+            console.error(`[ops] checkout events unavailable for ${b.id}:`, err);
+            return [];
+          })
+        : [],
+      loadBookingInterests(deps, b.id),
+      deps.bookings.listScheduleEvents(b.id),
+      // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
+      deps.notificationLog ? deps.notificationLog.listByBookingId(b.id).catch(() => []) : [],
+    ]);
     // The customer's own pay-by-card link, for ops to paste into WhatsApp. A booking converted
     // from a quote gets no email of its own, so before this there was no way to hand a customer
     // a card option at all — the drawer promised a "payment link" that existed nowhere. Only
@@ -338,23 +367,12 @@ export function opsRoutes(deps: OpsDeps) {
       : null;
     // Partial pay link coverage (spec 2026-08-04) — ops must see what the customer sees: a
     // booking sold as 2-of-4 legs says so, because the flat stop list can't show the gap.
-    const srcQuote = deps.quotes ? await deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null;
     // Coverage is decided by the BOOKING: a chauffeur booking is a whole-trip sale however the
     // quote's selection has moved since (e.g. re-minted to a part-of-trip link).
     const sel = isChauffeurBooking(b) ? null : legSelectionOf(srcQuote?.payLinkSelection);
     const legCount = ((srcQuote?.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
     const coverage = sel && legCount ? { soldLegs: sel.legIndexes.length, totalLegs: legCount } : null;
-    // A website booking's own pricing snapshot, when it did not come from a quote. Best-effort,
-    // like the checkout log below: a row that cannot be read costs the refund picker and the
-    // vehicle tier only.
-    let web: WebsitePricingSnapshot | null = null;
-    if (!srcQuote && b.mode !== 'shared') {
-      try {
-        web = await deps.bookings.websitePricingSnapshot(b.id);
-      } catch (err) {
-        console.error(`[ops] pricing snapshot unavailable for ${b.id}:`, err);
-      }
-    }
+    const web: WebsitePricingSnapshot | null = srcQuote ? null : snapshot;
     // The vehicle ops assign: the tier the trip was priced on. The booking itself keeps only
     // car|van, so a 9-seat van quote reads "van" and a party the engine sized up out of a car can
     // read "car"; the priced request says which. None for a shared seat.
@@ -379,43 +397,25 @@ export function opsRoutes(deps: OpsDeps) {
         console.error(`[ops] refund lines unavailable for ${b.id}:`, err);
       }
     }
-    // Payment attempts (2026-09-24): debugging a failed payment took SQL against
-    // booking_checkout_event. Latest 50, oldest first. `ua` stays server-side — it is
-    // diagnostic only. Best-effort: a log that cannot be read must not fail the drawer.
-    let checkoutEvents: Array<{
-      at: Date; action: string; outcome: string; reason: string | null; source: string;
-      attempt: number | null; httpStatus: number | null;
-    }> = [];
-    if (deps.checkoutEvents) {
-      try {
-        const newestFirst = await deps.checkoutEvents.listByBookingId(b.id);
-        checkoutEvents = newestFirst.slice(0, CHECKOUT_EVENTS_MAX).reverse().map((e) => ({
-          at: e.at, action: e.action, outcome: e.outcome, reason: e.reason, source: e.source,
-          attempt: e.attempt, httpStatus: e.httpStatus,
-        }));
-      } catch (err) {
-        console.error(`[ops] checkout events unavailable for ${b.id}:`, err);
-      }
-    }
+    // Latest 50 payment attempts, oldest first. `ua` stays server-side — it is diagnostic only.
+    const checkoutEvents = checkoutEventRows.slice(0, CHECKOUT_EVENTS_MAX).reverse().map((e) => ({
+      at: e.at, action: e.action, outcome: e.outcome, reason: e.reason, source: e.source,
+      attempt: e.attempt, httpStatus: e.httpStatus,
+    }));
     // The balance of a deposit booking is paid on the SAME link the customer already holds — the
     // source quote's pay URL (spec 2026-10-07 §5.3) — so ops resends exactly that. Only while the
     // balance is open; a booking that did not come from a quote has no such link.
     const balancePayLink = srcQuote && isBalanceOpen(b, payments) && deps.baseUrl && deps.linkSecret
       ? `${deps.baseUrl.replace(/\/$/, '')}/p?t=${signQuotePayToken(srcQuote.id, srcQuote.revision, deps.linkSecret, srcQuote.payLinkSeq)}`
       : null;
-    const experienceInterests = (await loadBookingInterests(deps, b.id)).map(({ interest: i, experience: e }) => ({
+    const experienceInterests = interests.map(({ interest: i, experience: e }) => ({
       id: i.id, experienceName: e?.name ?? i.nameSnapshot, areaLabel: e?.areaLabel ?? '', nameSnapshot: i.nameSnapshot,
       priceCentsSnapshot: i.priceCentsSnapshot, priceUnitSnapshot: i.priceUnitSnapshot, status: i.status,
       paymentRef: i.paymentRef, amountPaidCents: i.amountPaidCents, amountPaidCurrency: i.amountPaidCurrency, opsNote: i.opsNote,
       scheduledDate: i.scheduledDate, scheduledTime: i.scheduledTime, meetingPoint: i.meetingPoint, confirmationSentAt: i.confirmationSentAt,
       confirmationChannel: i.confirmationChannel,
     }));
-    const scheduleEvents = await deps.bookings.listScheduleEvents(b.id);
-    // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
-    const reminders = deps.notificationLog
-      ? (await deps.notificationLog.listByBookingId(b.id).catch(() => []))
-          .filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2')
-      : [];
+    const reminders = notifications.filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2');
     return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
   });
 

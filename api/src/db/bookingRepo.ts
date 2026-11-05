@@ -342,6 +342,7 @@ export interface BookingRepo {
   /** §6.3 — refresh a valid hold, or re-take a lapsed one; throws PromoCodeRefusedError. */
   reholdPromo(bookingId: string, code: PromoCode, now: Date): Promise<void>;
   get(id: string): Promise<Booking | null>;
+  exists(id: string): Promise<boolean>;
   findByIdempotencyKey(key: string): Promise<Booking | null>;
   // The ops payment lookup (spec 2026-09-26): a founder pastes the reference a customer, PayHere's
   // dashboard (its order id IS the reference) or an alert gave them. Any status, drafts included.
@@ -553,6 +554,10 @@ export class InMemoryBookingRepo implements BookingRepo {
   async get(id: string): Promise<Booking | null> {
     const b = this.byId.get(id);
     return b ? this.present(b) : null;
+  }
+
+  async exists(id: string): Promise<boolean> {
+    return this.byId.has(id);
   }
 
   async findByIdempotencyKey(key: string): Promise<Booking | null> {
