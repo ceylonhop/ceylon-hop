@@ -98,12 +98,13 @@ let bookRoad=null, tripRoads=[], roadNotice='';
 // Back to the planner, carrying the roads as they stand NOW — a road dropped on this page (the
 // engine or the booking couldn't confirm it) must not come back when the customer returns.
 // Built at click time for that reason; `dates` lands on the planner's When step.
-function buildTripEditUrl(dates){
+function buildTripEditUrl(dates, svc){
   const q=new URLSearchParams(tripEditQuery);
   const local=tripLocalWires();
   const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
   if(roads) q.set('roads', roads);
   if(dates) q.set('step', 'dates');
+  if(svc) q.set('svc', svc);
   return 'plan.html?'+q.toString();
 }
 function parsedKmList(v){
@@ -764,10 +765,10 @@ if(isTrip){
   });
   html+='</div>';
   tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),through:[...tripThrough].join(','),ack:[...tripAcks].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
-  // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
+  // booking sits after the planner's “When” step, so Back / “Add dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   // (buildTripEditUrl(true) vs buildTripEditUrl()).
-  // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
+  // chauffeur status (day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
   html+=`<div class="tr-foot"><button type="button" class="tr-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
@@ -1155,9 +1156,10 @@ window.toggleFlexDate=function(){
 // service chooser (trip mode)
 window.pickSvc=function(svc){
   // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
-  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
+  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers —
+  // and carry the choice, so they come back to the price they went to get.
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
-    location.href=buildTripEditUrl(true);
+    location.href=buildTripEditUrl(true, 'chauffeur');
     return;
   }
   // Inside the notice window the card can't be chosen online — pressing it opens the explainer
@@ -2553,12 +2555,14 @@ function render(){
     const tooSoon=chauffeurTooSoon();
     const chOK=datesOK && !tooSoon;
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
-    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
+    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add dates to see price');
     if(chBtn && chBtn.style.display!=='none'){
-      // Missing dates are the customer's to fix, so the card stays PRESSABLE and its tag reads
-      // "Add all dates to quote" — pressing it goes and collects them (see pickSvc). It used to
-      // carry `disabled`, which makes every child inert: we told them exactly what to do and gave
-      // them no way to do it (owner-spotted 2026-09-18).
+      // Missing dates are the customer's to fix, so the card reads as an OFFER, not as unavailable:
+      // full strength, with its tag drawn as a button — pressing it goes and collects them (see
+      // pickSvc). It used to carry `disabled`, which makes every child inert: we told them exactly
+      // what to do and gave them no way to do it (owner-spotted 2026-09-18). Then it stayed faded,
+      // with the only real button under every leg of the itinerary, and people missed it
+      // (owner, 2026-11-05).
       // The notice window can't be fixed on this card either, so it can't be SELECTED — but it stays
       // pressable, and pressing it opens the explainer beside it (pickSvc) — so to assistive tech
       // it's a working control that expands that explainer, not a disabled one.
@@ -2566,7 +2570,7 @@ function render(){
       chBtn.setAttribute('aria-disabled', 'false');
       if(tooSoon){ chBtn.setAttribute('aria-controls','chauffeur-notice'); chBtn.setAttribute('aria-expanded', chauffeurNoticeOpen?'true':'false'); }
       else { chBtn.removeAttribute('aria-controls'); chBtn.removeAttribute('aria-expanded'); }
-      chBtn.classList.toggle('disabled', !chOK);
+      chBtn.classList.toggle('disabled', tooSoon);
       chBtn.classList.toggle('needs-dates', !datesOK && !tooSoon);
       chBtn.classList.toggle('too-soon', tooSoon);
     }
@@ -2592,12 +2596,7 @@ function render(){
     if(cx){
       // (the notice-window explainer lives beside the card in #chauffeur-notice, above)
       if(datesOK && tooSoon){ cx.style.display='none'; cx.innerHTML=''; }
-      else if(!datesOK){
-        cx.className='cx-inline warn'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
-          '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Add your dates →</button>';
-      } else if(state.svc==='chauffeur'){
+      else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg><b>Your car &amp; driver-guide stays with you all '+days.length+' day'+(days.length>1?'s':'')+'</b></div>'+
@@ -3733,6 +3732,16 @@ if(isCustom){document.getElementById('pay-btn').firstChild.textContent='Confirm 
     ? '🔒 Secure checkout — card payments are processed by <b>PayHere</b>, Sri Lanka’s Central Bank-approved payment gateway.'
     : '🔒 Demo checkout — the PayHere step is simulated, no real payment is taken.';
 })();
+// Back from the planner after pressing the chauffeur card to add dates (pickSvc): finish that press.
+// Still undated it stays an offer; a one-day trip has no chooser; inside the notice window it
+// explains itself rather than selecting, as a press would.
+if(isTrip && params.get('svc')==='chauffeur' && tripDatesComplete() && !isSingleDayTrip()){
+  if(chauffeurTooSoon()) chauffeurNoticeOpen=true;
+  else {
+    state.svc='chauffeur';
+    document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='chauffeur'));
+  }
+}
 render(); checkWhere(); renderRouteMap();
 
 // funnel: entering the booking flow (Phase 0 analytics)

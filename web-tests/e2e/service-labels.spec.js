@@ -64,13 +64,9 @@ test('chauffeur service is unavailable until every trip leg has a date', async (
   await gotoBooking(page, { query });
 
   const chauffeur = page.locator('[data-svc="chauffeur"]');
-  // Reads as unavailable and says why. It is deliberately NOT `disabled`: the tag offers the one
-  // fix there is, and `disabled` made every child inert so the offer could not be taken
-  // (owner-spotted 2026-09-18, see booking-chauffeur-needs-dates.spec.js).
-  await expect(chauffeur).toHaveClass(/disabled/);
-  await expect(page.locator('#svc-chauffeur-tag')).toHaveText('Add all dates to quote');
-  await expect(page.locator('#chauffeur-extra')).toContainText('Add all leg dates to quote chauffeur-guide');
-  await expect(page.locator('#chauffeur-extra')).toContainText('every transfer leg has a date');
+  // Offers the one fix there is, on the card itself (see booking-chauffeur-needs-dates.spec.js).
+  await expect(page.locator('#svc-chauffeur-tag')).toHaveText('Add dates to see price');
+  await expect(page.locator('#chauffeur-extra')).toBeHidden();
 
   // Undated, it is never the selected service and never priced as one.
   await expect(chauffeur).not.toHaveClass(/\bon\b/);
