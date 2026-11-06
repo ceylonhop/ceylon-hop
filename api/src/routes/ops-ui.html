@@ -427,6 +427,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sheet-h{padding:18px 22px 15px;background:linear-gradient(165deg,color-mix(in srgb,var(--c) 13%,var(--paper)),var(--paper) 82%);position:relative;flex:none}
   .sheet-h::after{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 18%,transparent))}
   .sh-top{display:flex;align-items:center;gap:9px}
+  .sh-wa{margin-left:auto;flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--wa);background:var(--wa-bg);border-radius:10px;color:color-mix(in srgb,var(--wa) 80%,var(--ink));transition:.15s}
+  .sh-wa svg{width:16px;height:16px}
+  .sh-wa:hover{transform:translateY(-1px)}
+  .sheet-h .sh-wa+.x{margin-left:0}
   .sheet-h .x{margin-left:auto;flex:none;width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:0;font-weight:700;color:var(--ink-soft);transition:.15s}
   .sheet-h .x:hover{color:var(--ink);border-color:var(--ink-soft);transform:translateY(-1px)}
   .sheet-h .ey{font-size:.65rem;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--c);display:flex;align-items:center;gap:8px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -498,6 +502,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .who .mph{display:block;font-family:var(--mono);font-size:.74rem;font-weight:500;color:var(--teal-deep);text-decoration:none;margin-top:1px}
   .mrow .who a.mph:hover{text-decoration:underline}
   .mrow .who .mph.none{color:var(--ink-faint);font-family:inherit}
+  .sheet-b .kv a.mph{color:var(--teal-deep);text-decoration:underline;text-underline-offset:2px}
   .mrow .mseats{font-family:var(--mono);font-size:.72rem;color:var(--ink-soft);flex:none}
   .mrow .mst{font-size:.64rem;font-weight:800;padding:3px 8px;border-radius:999px;flex:none;color:var(--wait);background:var(--wait-bg)}
   .mrow .mst.charged{color:var(--ok);background:var(--ok-bg)}
@@ -4171,7 +4176,7 @@ function bookingPromo(booking) {
 function sheetHeadHtml(t,o){
   const pipe=o.pipe?`<div class="pipe">${STAGES.map((s,i)=>`<span class="pstep ${i<o.idx&&!(s==='paid'&&cashDue(t))?'done':i===o.idx?'cur':''}">${pipeLabel(t,s)}</span>`).join('')}</div>`:'';
   return `<div class="sheet-h">
-      <div class="sh-top"><div class="ey">${o.ey}</div><button class="x" data-act="close" aria-label="Close">✕</button></div>
+      <div class="sh-top"><div class="ey">${o.ey}</div>${o.action||''}<button class="x" data-act="close" aria-label="Close">✕</button></div>
       <h2${String(o.title).length>26?' class="sm"':''}>${esc(o.title)}</h2>
       <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
@@ -4323,9 +4328,13 @@ function renderSheet(){
   /* Ride-board vans get their own read-only sheet: no pipeline, no flags, no
      notes — none of those exist for a list. Just the manifest ops needs to run it. */
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
+  /* Opens this customer's WhatsApp chat, from the fixed header so it stays on screen while the
+     body scrolls (owner, 2026-11-05). Same digits rule as memberPhoneHtml. */
+  const waDigits=String(d?.booking?.input?.customer?.whatsapp||'').replace(/\D/g,'');
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
     title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t),pipe:true,idx,
+    action:waDigits.length>=8?`<a class="sh-wa" href="https://wa.me/${waDigits}" target="_blank" rel="noopener" aria-label="Message on WhatsApp" title="Message on WhatsApp">${ICON.wa}</a>`:'',
     /* The row's own balance tag, repeated in the header so an open balance is visible without
        scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
     tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`
@@ -4405,7 +4414,7 @@ function renderSheet(){
     <div class="sheet-b">
       ${pendingBlock}
       <div class="block"><h4>Customer</h4>
-        <div class="kv"><span class="k">WhatsApp</span><span class="v">${esc(cust?.whatsapp||'—')}</span></div>
+        <div class="kv"><span class="k">WhatsApp</span><span class="v">${memberPhoneHtml(cust?.whatsapp)}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
         ${noteRow}
