@@ -15,6 +15,7 @@ export interface Alert {
   title: string; // one-line human summary
   body: string; // detail — reference, route, error message
   dedupeKey?: string; // defaults to kind; storms collapse per key per cooldown
+  cooldownMs?: number; // defaults to the adapter's cooldown; for a problem that stays true for hours
   // A fully rendered email for alerts a human reads as a message, not an incident (the team's
   // "Paid:" mail). Sent verbatim — no [SEVERITY] prefix — so its subject can be filtered on.
   // Title/body stay required: they are what the log fallback prints.
@@ -89,7 +90,7 @@ export class ThrottledAlerts implements AlertAdapter {
     let reserved = false;
     try {
       // Reserve atomically first (so concurrent ticks can't both deliver), then send.
-      reserved = await this.log.shouldSend(alert.kind, dedupeKey, this.cooldownMs, reservedAt);
+      reserved = await this.log.shouldSend(alert.kind, dedupeKey, alert.cooldownMs ?? this.cooldownMs, reservedAt);
       if (reserved) {
         await this.inner.send(alert);
         reserved = false; // delivered — keep the reservation recorded

@@ -236,7 +236,9 @@ export async function runWatchdog(
           // customer "Your booking is cancelled" (admin.ts), so never steer ops to it here.
           `Customer paid for the same trip on ${paidOn.reference}. Leave this one: cancelling it from ops emails the customer a cancellation for the trip they paid for.\n` +
           stuckPendingBody(b, now, gateway, `not sent — the customer already paid on ${paidOn.reference}`, opsBaseUrl ?? ''),
-        dedupeKey: b.id,
+        // Its own key: an earlier stuck alert for this booking must not swallow the news that they paid.
+        dedupeKey: `${b.id}:paid_elsewhere`,
+        cooldownMs: STUCK_PENDING_MAX_MS,
       });
       continue;
     }
@@ -287,6 +289,8 @@ export async function runWatchdog(
       title: `Booking ${b.reference} stuck in payment_pending`,
       body: stuckPendingBody(b, now, gateway, recovery, opsBaseUrl ?? ''),
       dedupeKey: b.id,
+      // Outlasts the page window, so a stuck booking pages once rather than every half hour.
+      cooldownMs: STUCK_PENDING_MAX_MS,
     });
   }
 

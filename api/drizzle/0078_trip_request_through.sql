@@ -1,0 +1,11 @@
+-- Stops on the way inside one leg (spec 2026-10-30-planner-stops-within-a-leg-design.md §4.2).
+-- Hand-written: drizzle-kit generate needs a TTY. Indexes of the wires (stops[i] → stops[i+1])
+-- the car drives STRAIGHT ON from: stops[i+1] is a stop on the way, not an overnight, and the
+-- same leg continues on wire i+1. Pricing groups a through-run into one ride; booking_legs
+-- stores it as one row with via_stops. Additive, nullable, no backfill: null means no through
+-- wires, which is today's reading of every existing row. A nullable ADD COLUMN takes no rewrite
+-- and no long lock on Postgres 11+.
+-- RELEASE ORDER IS HARD: this migration (when 1792540800000) must release AFTER
+-- 0077_booking_payment_arrangement (when 1792454400000) — drizzle applies only migrations newer
+-- than the last one applied. Rollback: ALTER TABLE "trip_request" DROP COLUMN "through".
+ALTER TABLE "trip_request" ADD COLUMN IF NOT EXISTS "through" integer[];

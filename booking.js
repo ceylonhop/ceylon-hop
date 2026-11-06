@@ -88,7 +88,7 @@ populateCountryFields();
 const params=new URLSearchParams(location.search);
 const mode=params.get('mode'); // 'private' | 'shared' | 'trip' | null (catalogue route)
 let r, isCustom, unit, perVehicle=false, vehicleLabel='', vehicleKey='car', routeNamePrefix='';
-let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
+let isTrip=false, tripStops=[], tripNights=[], tripDates=[], tripKms=[], tripGaps=new Set(), tripThrough=new Set(), tripAcks=new Set(), tripLegs=[], tripDays=0, tripBase=0, tripFallbackPrice=0, tripEditQuery='';
 let chauffeurNoticeOpen=false;   // the notice-window explainer, opened by pressing the chauffeur card
 let routeFromId=null, routeToId=null, vehPrices=null; // for the car→van switch
 // The road the customer chose (route choice): search's `road=no_tolls` for a single transfer,
@@ -98,12 +98,13 @@ let bookRoad=null, tripRoads=[], roadNotice='';
 // Back to the planner, carrying the roads as they stand NOW — a road dropped on this page (the
 // engine or the booking couldn't confirm it) must not come back when the customer returns.
 // Built at click time for that reason; `dates` lands on the planner's When step.
-function buildTripEditUrl(dates){
+function buildTripEditUrl(dates, svc){
   const q=new URLSearchParams(tripEditQuery);
   const local=tripLocalWires();
   const roads=local.length ? tripStops.slice(1).map((_,i)=>local.includes(i)?'no_tolls':'').join(',') : '';
   if(roads) q.set('roads', roads);
   if(dates) q.set('step', 'dates');
+  if(svc) q.set('svc', svc);
   return 'plan.html?'+q.toString();
 }
 function parsedKmList(v){
@@ -145,30 +146,43 @@ function repaintTripDrives(){
     if(leg && chip) chip.textContent=tripDriveText(leg, i, est);
   });
 }
+// A through wire continues the leg onto the next wire (spec 2026-10-30 §4.3): the run that starts
+// at `head` owns every wire up to the first non-through one. tripLegs stays indexed PER WIRE so
+// nothing that reads tripLegs[i] by data-wire changes; a continuation wire is marked `cont`.
+function tripIsCont(i){ return i>0 && tripThrough.has(i-1) && !tripGaps.has(i-1) && !tripGaps.has(i); }
+function tripRunOf(i){
+  let head=i; while(tripIsCont(head)) head--;
+  const wires=[head]; let w=head;
+  while(tripThrough.has(w) && w+1<tripStops.length-1 && !tripGaps.has(w+1)){ w++; wires.push(w); }
+  return { head, wires, stops:[tripStops[head]].concat(wires.map(x=>tripStops[x+1])) };
+}
 function tripQuoteWithKms(veh){
   const T=window.TRANSFERS;
   const baked=T.tripQuote(tripStops, veh);
   // With gaps present we must walk the per-wire loop (which skips them) rather than trust
   // baked.total, which prices every consecutive stop-pair including the gap.
-  if(!tripGaps.size && !tripKms.some(km=>km!=null)) return baked;
+  if(!tripGaps.size && !tripThrough.size && !tripKms.some(km=>km!=null)) return baked;
   const legs=[];
   let total=0, totalKm=0, hasEst=false;
   for(let i=0;i<Math.max(0,tripStops.length-1);i++){
     // A gap wire is a stretch the traveller arranges themselves — carried through for display,
     // but NEVER a priced leg (it must not enter the quote, the booking, or the total).
     if(tripGaps.has(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], gap:true, km:null, price:0 }); continue; }
+    if(tripIsCont(i)){ legs.push({ from:tripStops[i], to:tripStops[i+1], cont:true, km:null, price:0 }); continue; }
+    const run=tripRunOf(i);
     const bakedLeg=baked.legs[i]||{from:tripStops[i],to:tripStops[i+1],km:null,duration:'',price:55,est:true};
-    const km=tripKms[i]!=null ? tripKms[i] : bakedLeg.km;
-    // A leg with no resolvable distance must still charge the baked estimate (never $0),
-    // exactly as T.tripQuote does — otherwise a single unpriceable leg silently drops out
-    // of the total and the customer is quoted (and charged) for one fewer leg than they take.
+    // A run's km is the sum over its wires — or null while ANY wire is unmeasured (a partial sum
+    // would price part of a route as the whole leg; ops legKm has the same rule).
+    let km=0;
+    for(const w of run.wires){ const k=tripKms[w]!=null ? tripKms[w] : (w===i ? bakedLeg.km : null); if(k==null){ km=null; break; } km+=k; }
     let price, est=false;
     if(km!=null){ price=T.legPrice(km, veh); totalKm+=km; }
     else { price=(bakedLeg.price!=null ? bakedLeg.price : 55); est=true; hasEst=true; }
     total+=price;
     legs.push({
-      from:bakedLeg.from || tripStops[i],
-      to:bakedLeg.to || tripStops[i+1],
+      from:run.stops[0],
+      to:run.stops[run.stops.length-1],
+      via:run.stops.slice(1,-1),
       km,
       duration:km!=null ? T.durationText(km) : bakedLeg.duration,
       price,
@@ -186,6 +200,8 @@ if(mode==='trip' && window.TRANSFERS){
   tripDates=(params.get('dates')||'').split(',').map(s=>s.trim());
   tripKms=parsedKmList(params.get('kms'));
   tripGaps=new Set((params.get('gaps')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripThrough=new Set((params.get('through')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)));
+  tripAcks=new Set((params.get('ack')||'').split(',').map(n=>parseInt(n,10)).filter(n=>!isNaN(n)&&n>=0&&n<tripStops.length-1&&!tripGaps.has(n)&&!tripIsCont(n)));
   tripRoads=(params.get('roads')||'').split(',').map(s=>s.trim()==='no_tolls'?'no_tolls':'fastest');
   tripFallbackPrice=parseInt(params.get('price')||'0',10)||0;
   vehicleKey=params.get('vehicle')||'car';
@@ -737,20 +753,22 @@ if(isTrip){
         `<div class="tr-leg-meta"><span class="tr-chip muted">You arrange this stretch — not included</span></div></div>`;
       return;
     }
+    if(leg.cont) return;
     const dt=fmtLeg(tripDates[i]);
+    const viaHtml=(leg.via&&leg.via.length) ? `<span class="tr-via"> <span class="tr-ar">→</span> ${leg.via.map(escHtml).join(' <span class="tr-ar">→</span> ')}</span>` : '';
     html+=`<div class="tr-leg" data-wire="${i}">`+
-      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
+      `<div class="tr-leg-main"><span class="tr-leg-badge">Leg ${++_legNo}</span><span class="tr-leg-title">${escHtml(leg.from)}${viaHtml} <span class="tr-ar">→</span> ${escHtml(leg.to)}</span></div>`+
       `<div class="tr-leg-meta">`+
         (dt?`<span class="tr-chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 2.8V6M16 2.8V6"/><circle class="wp" cx="12" cy="15" r="1.9"/></svg>${dt}</span>`:`<span class="tr-chip muted">Date flexible</span>`)+
         `<span class="tr-chip muted tr-drive">${tripDriveText(leg, i, null)}</span>`+
       `</div></div>`;
   });
   html+='</div>';
-  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
-  // booking sits after the planner's “When” step, so Back / “Add your dates” should land on the
+  tripEditQuery=new URLSearchParams({stops:tripStops.join('|'),nights:tripNights.join(','),dates:tripDates.join(','),kms:tripKms.map(km=>km!=null?String(km):'').join(','),gaps:[...tripGaps].join(','),through:[...tripThrough].join(','),ack:[...tripAcks].join(','),pax:String(state.ad+state.ch),vehicle:vehicleKey,start:(startParam||'')}).toString();
+  // booking sits after the planner's “When” step, so Back / “Add dates” should land on the
   // dates step (not the route-building view); “Edit this itinerary” still opens the route view
   // (buildTripEditUrl(true) vs buildTripEditUrl()).
-  // chauffeur status (missing-dates prompt or day-count confirmation) lives INSIDE this card,
+  // chauffeur status (day-count confirmation) lives INSIDE this card,
   // so the itinerary and the service status read as a single consolidated box (filled by render)
   html+='<div id="chauffeur-extra" class="cx-inline" style="display:none"></div>';
   html+=`<div class="tr-foot"><button type="button" class="tr-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg> Edit this itinerary</button></div>`;
@@ -1138,9 +1156,10 @@ window.toggleFlexDate=function(){
 // service chooser (trip mode)
 window.pickSvc=function(svc){
   // Chauffeur is priced per day, so an undated trip can't be quoted as one. Rather than a dead
-  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers.
+  // press, take them to the planner's WHEN step — which is exactly what the card's tag offers —
+  // and carry the choice, so they come back to the price they went to get.
   if(isTrip && svc==='chauffeur' && !tripDatesComplete()){
-    location.href=buildTripEditUrl(true);
+    location.href=buildTripEditUrl(true, 'chauffeur');
     return;
   }
   // Inside the notice window the card can't be chosen online — pressing it opens the explainer
@@ -1771,7 +1790,7 @@ let promoRefusedAtBooking = {};
 // The road for trip wire i. A chauffeur-guide keeps one car on the usual roads, so the local-road
 // choice only applies to private transfers.
 // A gap wire is the traveller's own stretch, so it never asks for a road either.
-function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
+function tripRoadAt(i){ return (state.svc==='chauffeur' || tripGaps.has(i) || tripThrough.has(i) || tripIsCont(i)) ? 'fastest' : (tripRoads[i]||'fastest'); }
 // The priced (non-gap) wires the customer chose the local road for, whatever the service.
 function tripLocalWires(){
   const out=[];
@@ -1801,7 +1820,7 @@ function dropLocalRoad(estLegs){
   }
   let dropped=false;
   for(let i=0, j=0; i<tripStops.length-1; i++){
-    if(tripGaps.has(i)) continue; // the estimate has no leg for a gap wire
+    if(tripGaps.has(i) || tripIsCont(i)) continue; // the estimate has no leg for a gap wire
     const leg=estLegs ? estLegs[j++] : null;
     if(tripRoads[i]!=='no_tolls') continue;
     if(estLegs && !(leg && leg.routeVariant==='fastest')) continue;
@@ -1833,18 +1852,25 @@ function itineraryIntent(){
       const lastDate = dated.length ? dated[dated.length-1] : undefined;
       const travelDays = [];
       for(let i=0;i<tripStops.length-1;i++){
-        if(tripGaps.has(i)) continue;
+        if(tripGaps.has(i) || tripIsCont(i)) continue;
         const date = (tripDates[i]||'').trim();
         if(!date) continue; // an undated wire has no day to attach to the estimate
-        travelDays.push({ date, from: tripStops[i], to: tripStops[i+1] });
+        const run = tripRunOf(i);
+        const day = { date, from: run.stops[0], to: run.stops[run.stops.length-1] };
+        if(run.stops.length>2) day.via = run.stops.slice(1,-1); // sent only when non-empty (fingerprint rule)
+        travelDays.push(day);
       }
       return { product:'chauffeur', vehicle, pax, bags, firstDate, lastDate, travelDays, extras };
     }
     // Trip + private: one leg per non-gap wire (mirrors tripQuoteWithKms, :110).
     const legs = [];
     for(let i=0;i<tripStops.length-1;i++){
-      if(tripGaps.has(i)) continue;
-      legs.push(Object.assign({ from: tripStops[i], to: tripStops[i+1] }, tripRoadAt(i)==='no_tolls' ? { routeVariant:'no_tolls' } : {}));
+      if(tripGaps.has(i) || tripIsCont(i)) continue;
+      const run = tripRunOf(i);
+      const leg = { from: run.stops[0], to: run.stops[run.stops.length-1] };
+      if(run.stops.length>2) leg.via = run.stops.slice(1,-1);           // sent only when non-empty (fingerprint rule)
+      else if(tripRoadAt(i)==='no_tolls') leg.routeVariant = 'no_tolls'; // a chain has no road choice
+      legs.push(leg);
     }
     return { product:'private', vehicle, pax, bags, legs, extras };
   }
@@ -2167,7 +2193,7 @@ function calcTotal(){
   state.addons.forEach(a=>t+=addonPrices[a]);
   if(isShared) return t;
   const privateFloor = (isTrip && state.svc!=='chauffeur')
-    ? tripLegs.filter(l=>!l.gap).length * window.TRANSFERS.FLOORS[vehicleKey]
+    ? tripLegs.filter(l=>!l.gap && !l.cont).length * window.TRANSFERS.FLOORS[vehicleKey]
     : (!isTrip && perVehicle ? window.TRANSFERS.FLOORS[vehicleKey] : 0);
   return window.TRANSFERS.finishPrice(t, privateFloor);
 }
@@ -2529,12 +2555,14 @@ function render(){
     const tooSoon=chauffeurTooSoon();
     const chOK=datesOK && !tooSoon;
     const chBtn=document.querySelector('.svc[data-svc="chauffeur"]');
-    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add all dates to quote');
+    if(chf) chf.textContent=tooSoon ? `Needs ${CHAUFFEUR_MIN_LEAD_DAYS} days’ notice` : (datesOK ? 'Priced for the whole trip · pay in full' : 'Add dates to see price');
     if(chBtn && chBtn.style.display!=='none'){
-      // Missing dates are the customer's to fix, so the card stays PRESSABLE and its tag reads
-      // "Add all dates to quote" — pressing it goes and collects them (see pickSvc). It used to
-      // carry `disabled`, which makes every child inert: we told them exactly what to do and gave
-      // them no way to do it (owner-spotted 2026-09-18).
+      // Missing dates are the customer's to fix, so the card reads as an OFFER, not as unavailable:
+      // full strength, with its tag drawn as a button — pressing it goes and collects them (see
+      // pickSvc). It used to carry `disabled`, which makes every child inert: we told them exactly
+      // what to do and gave them no way to do it (owner-spotted 2026-09-18). Then it stayed faded,
+      // with the only real button under every leg of the itinerary, and people missed it
+      // (owner, 2026-11-05).
       // The notice window can't be fixed on this card either, so it can't be SELECTED — but it stays
       // pressable, and pressing it opens the explainer beside it (pickSvc) — so to assistive tech
       // it's a working control that expands that explainer, not a disabled one.
@@ -2542,7 +2570,7 @@ function render(){
       chBtn.setAttribute('aria-disabled', 'false');
       if(tooSoon){ chBtn.setAttribute('aria-controls','chauffeur-notice'); chBtn.setAttribute('aria-expanded', chauffeurNoticeOpen?'true':'false'); }
       else { chBtn.removeAttribute('aria-controls'); chBtn.removeAttribute('aria-expanded'); }
-      chBtn.classList.toggle('disabled', !chOK);
+      chBtn.classList.toggle('disabled', tooSoon);
       chBtn.classList.toggle('needs-dates', !datesOK && !tooSoon);
       chBtn.classList.toggle('too-soon', tooSoon);
     }
@@ -2568,12 +2596,7 @@ function render(){
     if(cx){
       // (the notice-window explainer lives beside the card in #chauffeur-notice, above)
       if(datesOK && tooSoon){ cx.style.display='none'; cx.innerHTML=''; }
-      else if(!datesOK){
-        cx.className='cx-inline warn'; cx.style.display='block';
-        cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg><b>Add all leg dates to quote chauffeur-guide</b></div>'+
-          '<p>A chauffeur-guide is priced by the length of your journey, so we can only quote it once every transfer leg has a date.</p>'+
-          '<button type="button" class="cx-btn" onclick="location.href=\''+buildTripEditUrl(true)+'\'">Add your dates →</button>';
-      } else if(state.svc==='chauffeur'){
+      else if(state.svc==='chauffeur'){
         const days=chauffeurDayList();
         cx.className='cx-inline ok'; cx.style.display='block';
         cx.innerHTML='<div class="cx-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg><b>Your car &amp; driver-guide stays with you all '+days.length+' day'+(days.length>1?'s':'')+'</b></div>'+
@@ -3426,9 +3449,12 @@ async function createApiBooking(){
     // don't need to reconstruct the chauffeur day-model here just to freeze the rates.
     const tripLegs = [];
     for(let i=0; i<tripStops.length-1; i++){
-      if(tripGaps.has(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
-      const tf = tripStops[i], tt = tripStops[i+1];
-      tripLegs.push({ from: tf, to: tt, distanceKm: lockLegKm(tf, tt) });
+      if(tripGaps.has(i) || tripIsCont(i)) continue; // a self-arranged gap is not part of the quoted/locked trip
+      const run = tripRunOf(i);
+      const tf = run.stops[0], tt = run.stops[run.stops.length-1];
+      const lockLeg = { from: tf, to: tt, distanceKm: run.wires.reduce((s,w)=>s+lockLegKm(tripStops[w], tripStops[w+1]), 0) };
+      if(run.stops.length>2) lockLeg.via = run.stops.slice(1,-1);
+      tripLegs.push(lockLeg);
     }
     const tQuoteId = tripLegs.length
       ? await ensureLockedQuoteId(API, { product:'private', vehicle:tVeh, pax: state.ad + state.ch, bags: 0, legs: tripLegs })
@@ -3448,6 +3474,8 @@ async function createApiBooking(){
       // The server prices from THIS payload, so it must know which wires are the traveller's own
       // (tripQuoteWithKms, :110) — without it the API charged each gap as a leg we drive.
       gaps: tripGaps.size ? [...tripGaps].sort((a,b)=>a-b) : undefined,
+      // Wires that continue the same leg (a stop on the way), so the server prices the run as one.
+      through: tripThrough.size ? [...tripThrough].sort((a,b)=>a-b) : undefined,
       // One road per consecutive stop pair; sent only when a local road is actually chosen.
       routeVariants: (state.svc!=='chauffeur' && tripLocalWires().length) ? tripStops.slice(1).map((_,i)=>tripRoadAt(i)) : undefined,
       // Only while the estimate for THIS trip accepted it (spec §4.5); undefined drops the key.
@@ -3524,6 +3552,15 @@ async function createApiBooking(){
   // read this box before, so ops never saw it. Omitted when blank; the API cleans and bounds it.
   const notes = document.getElementById('f-notes').value.trim();
   if(notes) payload.customerNotes = notes;
+  if(isTrip && tripAcks.size){
+    const lines=[...tripAcks].sort((a,b)=>a-b).map(h=>{
+      const run=tripRunOf(h), leg=tripLegs[h];
+      const hrs=leg && leg.km!=null ? Math.round(leg.km/42) : null;
+      const when=(tripDates[h]||'').trim();
+      return 'Planner: kept a '+(hrs!=null?hrs+' h':'long')+' day ('+run.stops.join(' → ')+')'+(when?', '+when:'');
+    });
+    payload.customerNotes=[payload.customerNotes||'', ...lines].filter(Boolean).join('\n');
+  }
   // The partner experiences they tapped "Request" on - ids only (the API looks the names up
   // itself, spec 2026-10-06 D11) and never part of the price. Omitted when none.
   if(state.experiences.size) payload.experienceIds = [...state.experiences.keys()];
@@ -3695,6 +3732,16 @@ if(isCustom){document.getElementById('pay-btn').firstChild.textContent='Confirm 
     ? '🔒 Secure checkout — card payments are processed by <b>PayHere</b>, Sri Lanka’s Central Bank-approved payment gateway.'
     : '🔒 Demo checkout — the PayHere step is simulated, no real payment is taken.';
 })();
+// Back from the planner after pressing the chauffeur card to add dates (pickSvc): finish that press.
+// Still undated it stays an offer; a one-day trip has no chooser; inside the notice window it
+// explains itself rather than selecting, as a press would.
+if(isTrip && params.get('svc')==='chauffeur' && tripDatesComplete() && !isSingleDayTrip()){
+  if(chauffeurTooSoon()) chauffeurNoticeOpen=true;
+  else {
+    state.svc='chauffeur';
+    document.querySelectorAll('.svc').forEach(b=>b.classList.toggle('on', b.dataset.svc==='chauffeur'));
+  }
+}
 render(); checkWhere(); renderRouteMap();
 
 // funnel: entering the booking flow (Phase 0 analytics)

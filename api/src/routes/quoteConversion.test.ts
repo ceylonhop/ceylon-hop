@@ -335,6 +335,32 @@ describe('POST /bookings/from-quote-v2', () => {
     expect(await bookings.list()).toHaveLength(0);
   });
 
+  describe('stops on the way (via)', () => {
+    const viaIntent = { ...intent, routeId: undefined, legs: [{ from: 'Kandy', to: 'Ella', via: ['Sigiriya / Dambulla'] }] };
+
+    it('converts a locked via quote into a trip booking carrying the stop chain', async () => {
+      const bookings = new InMemoryBookingRepo();
+      const app = createApp({ quotes: new InMemoryQuoteRepo(), bookings, quoteV2Enabled: true });
+      const locked = await lock(app, viaIntent);
+      const response = await convert(app, locked, viaIntent);
+      expect(response.status).toBe(201);
+      const booking = await response.json();
+      const saved = await bookings.get(booking.id);
+      expect((saved?.input as { stops?: string[] }).stops).toEqual(['Kandy', 'Sigiriya / Dambulla', 'Ella']);
+    });
+
+    it('a stored plain quote does not match an intent that now carries via', async () => {
+      const bookings = new InMemoryBookingRepo();
+      const app = createApp({ quotes: new InMemoryQuoteRepo(), bookings, quoteV2Enabled: true });
+      const plain = { ...intent, routeId: undefined, legs: [{ from: 'Kandy', to: 'Ella' }] };
+      const locked = await lock(app, plain);
+      const response = await convert(app, locked, viaIntent);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toBe('quote_intent_mismatch');
+      expect(await bookings.list()).toHaveLength(0);
+    });
+  });
+
   it('rejects a forged token and stale revision without mutation', async () => {
     const bookings = new InMemoryBookingRepo();
     const app = createApp({

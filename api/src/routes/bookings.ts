@@ -197,6 +197,10 @@ export interface CustomerBookingView {
   addOns?: string[];
   // The road the customer paid for, in the emails' words (roadRow). Absent on the expressway.
   road?: string;
+  // A shared leg's published meeting points (departureRepo SHARED_PRODUCTS). Absent unless the
+  // booking recorded its leg and the catalogue names the point (owner, 2026-10-29).
+  pickupPoint?: string;
+  dropoffPoint?: string;
   // The promo code the booking was made with and what it took off (promoDiscount) — the card's
   // Promo row above Total. Both absent on every booking without a code.
   promoCode?: string;
@@ -270,8 +274,11 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
   // because the corridor's endpoints are the van's route and not this traveller's (CH-6HE3V).
   const label = sharedRouteLabel(b.input);
   const leg = label?.kind === 'leg' ? label : null;
+  const product = leg ? sharedProductFor(leg.from, leg.to) : null;
   return {
     ...base,
+    ...(product?.pickup ? { pickupPoint: product.pickup } : {}),
+    ...(product?.dropoff ? { dropoffPoint: product.dropoff } : {}),
     from: leg?.from ?? 'Pickup',
     to: leg?.to ?? 'Drop-off',
     date: b.input.date,
@@ -592,6 +599,9 @@ function tripGapsProblem(t: TripInput): string | null {
   return null;
 }
 
+// Stops on the way (TripInput.through): wire i continues the same leg onto wire i+1, so stops[i+1]
+// is a stop, not an overnight. Each rule here is a shape the planner never produces; a violation
+// means a hand-built or stale request, and pricing it would silently merge or split legs.
 // A chauffeur-guide trip is priced on its real date span when every leg is dated, and on the
 // customer's own `days` when it is fully flexible (services/pricing.ts chauffeurDates). Half of
 // each let a hand-made request keep a 10-day itinerary's dates while paying for `days: 1`
@@ -607,6 +617,23 @@ function chauffeurDatesProblem(t: TripInput): string | null {
   if (legDates.length < legs || !legDates.every((d) => LEG_DATE.test(d))) {
     return 'a chauffeur-guide trip needs a date for every leg, or none';
   }
+  return null;
+}
+
+function tripThroughProblem(t: TripInput): string | null {
+  const through = t.through ?? [];
+  if (!through.length) return null;
+  const wires = t.stops.length - 1;
+  if (new Set(through).size !== through.length) return 'each wire can be listed once';
+  if (through.some((w) => w >= wires - 1)) return `only wires 0–${Math.max(0, wires - 2)} can continue onto a next wire`;
+  const gaps = new Set(t.gaps ?? []);
+  if (through.some((w) => gaps.has(w) || gaps.has(w + 1))) return 'a stop on the way cannot sit on a self-arranged stretch';
+  if (through.some((w) => (t.nights[w + 1] ?? 0) !== 0)) return 'a stop on the way has no nights';
+  const dates = t.dates ?? [];
+  if (through.some((w) => (dates[w] || dates[w + 1]) && (dates[w] ?? '') !== (dates[w + 1] ?? ''))) return 'a leg with stops runs on one date';
+  const rv = t.routeVariants ?? [];
+  const inRun = new Set(through.flatMap((w) => [w, w + 1]));
+  if ([...inRun].some((w) => rv[w] === 'no_tolls')) return 'a leg with stops has no road choice';
   return null;
 }
 
@@ -748,6 +775,8 @@ function invalidRequest(error: ZodError) {
     if (gapsProblem) return c.json({ error: 'invalid_request', message: `gaps: ${gapsProblem}` }, 400);
     const datesProblem = chauffeurDatesProblem(parsed.data);
     if (datesProblem) return c.json({ error: 'invalid_request', message: `dates: ${datesProblem}` }, 400);
+    const throughProblem = tripThroughProblem(parsed.data);
+    if (throughProblem) return c.json({ error: 'invalid_request', message: `through: ${throughProblem}` }, 400);
     // No past dates — reject if any leg date has already passed (Asia/Colombo).
     if (firstPastDate(parsed.data.dates ?? [], isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);

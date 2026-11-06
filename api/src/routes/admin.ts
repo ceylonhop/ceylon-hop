@@ -245,8 +245,11 @@ export function adminRoutes(deps: {
   // Everyone who works bookings reads the ledger — ops needs to see its own requests waiting.
   // Moving money is gated on the routes below, never here.
   r.get('/bookings/:id/refunds', requireCap('bookings:read'), async (c) => {
-    if (!(await bookings.get(c.req.param('id')))) return c.json({ error: 'booking_not_found' }, 404);
-    return c.json(await deps.refunds.list(c.req.param('id')), 200);
+    // The ops sheet waits on this every time it opens: no need to assemble the whole booking
+    // (three round-trips) just to learn that it exists.
+    const [exists, rows] = await Promise.all([bookings.exists(c.req.param('id')), deps.refunds.list(c.req.param('id'))]);
+    if (!exists) return c.json({ error: 'booking_not_found' }, 404);
+    return c.json(rows, 200);
   });
 
   // A request moves no money and a founder decides every one, so it is not held to the 24-hour

@@ -81,6 +81,16 @@ describe('quoteToBooking', () => {
     expect(m.distanceKm).toBe(255);
   });
 
+  it('a web via-leg converts to a trip whose stops include the stop on the way, with no gap', () => {
+    const m = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1,
+      legs: [{ stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], segmentKms: [90, 180] }] }), DETAILS);
+    expect(m.mode).toBe('trip');
+    if (m.mode === 'trip') {
+      expect(m.input).toMatchObject({ stops: ['Kandy', 'Sigiriya / Dambulla', 'Ella'], nights: [0, 0] });
+      expect((m.input as { gaps?: number[] }).gaps).toBeUndefined();
+    }
+  });
+
   it('private multi-ride trip: chain = rides[0].stops + each later ride.stops.slice(1)', () => {
     const m = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
       { stops: ['CMB', 'Kandy', 'Sigiriya'], segmentKms: [115, 90] }, // 3-stop ride
@@ -89,6 +99,25 @@ describe('quoteToBooking', () => {
     expect(m.mode).toBe('trip');
     if (m.mode === 'trip') expect(m.input.stops).toEqual(['CMB', 'Kandy', 'Sigiriya', 'CMB']);
     expect(m.distanceKm).toBe(380); // 115 + 90 + 175, summed via rideRawKm
+  });
+
+  it('marks every segment inside a 3+-stop ride as through, so the booking keeps it as one leg', () => {
+    const out = quoteToBooking(q({ product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [
+      { stops: ['Kandy', 'Pinnawala', 'Sigiriya'], segmentKms: [40, 70] },
+      { from: 'Sigiriya', to: 'Ella', distanceKm: 180 },
+    ] }), DETAILS);
+    expect(out.mode).toBe('trip');
+    if (out.mode === 'trip') expect(out.input).toMatchObject({ stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'], through: [0] });
+  });
+
+  it("chauffeur: a 3+-stop day's inner segments are through too", () => {
+    const out = quoteToBooking(q({ product: 'chauffeur', vehicle: 'car', pax: 2, bags: 1, firstDate: '2026-08-01', lastDate: '2026-08-02',
+      travelDays: [
+        { date: '2026-08-01', stops: ['Kandy', 'Pinnawala', 'Sigiriya'], segmentKms: [40, 70] },
+        { date: '2026-08-02', from: 'Sigiriya', to: 'Ella', distanceKm: 180 },
+      ] }), DETAILS);
+    expect(out.mode).toBe('trip');
+    if (out.mode === 'trip') expect(out.input).toMatchObject({ stops: ['Kandy', 'Pinnawala', 'Sigiriya', 'Ella'], through: [0] });
   });
 
   // Was: "pins the pre-existing quirk (GC-13)". GC-13 dropped a non-chaining leg's own origin,

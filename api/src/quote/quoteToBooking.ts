@@ -37,7 +37,7 @@ function sumKm(rides: Ride[]): number | null {
 // `rideIndex` says which ride each segment belongs to (-1 for a gap). Anything the caller keeps
 // aligned per segment (today: `dates`) must be rebuilt through it, because inserting a gap stop
 // shifts every later index.
-function chainStops(rides: Ride[]): { stops: string[]; rideIndex: number[] } {
+function chainStops(rides: Ride[]): { stops: string[]; rideIndex: number[]; through: number[] } {
   const stops = [...rides[0].stops];
   const rideIndex: number[] = rides[0].stops.slice(1).map(() => 0);
   rides.slice(1).forEach((ride, i) => {
@@ -50,7 +50,9 @@ function chainStops(rides: Ride[]): { stops: string[]; rideIndex: number[] } {
       rideIndex.push(i + 1);
     }
   });
-  return { stops, rideIndex };
+  // Segment k continues onto k+1 when both belong to the same ride (a 3+-stop ride's inner stops).
+  const through = rideIndex.flatMap((r, k) => (r >= 0 && rideIndex[k + 1] === r ? [k] : []));
+  return { stops, rideIndex, through };
 }
 
 // Inclusive day span between two ISO dates (e.g. 08-01..08-03 = 3 days).
@@ -116,7 +118,7 @@ export function quoteToBooking(
         },
       };
     }
-    const { stops, rideIndex } = chainStops(rides);
+    const { stops, rideIndex, through } = chainStops(rides);
     const segmentCount = Math.max(0, stops.length - 1);
 
     // Per-leg dates (2026-08-08, closing docs/known-bugs.md 2026-07-30). A PrivateLeg carries no
@@ -159,6 +161,7 @@ export function quoteToBooking(
         // The hops chainStops() bridged: the customer's own, never a leg we drive. Absent when the
         // rides all connect, so a connected trip's input is unchanged.
         ...(gaps.length ? { gaps } : {}),
+        ...(through.length ? { through } : {}),
       },
     };
   }
@@ -167,7 +170,7 @@ export function quoteToBooking(
   if (!engine.travelDays.length) throw new QuoteNotBookableError('chauffeur quote has no travel days');
   const days = engine.travelDays.map(normalizeChauffeurDay).sort((a, b) => a.date.localeCompare(b.date));
   const span = daySpan(engine.firstDate, engine.lastDate);
-  const { stops, rideIndex } = chainStops(days);
+  const { stops, rideIndex, through } = chainStops(days);
   return {
     mode: 'trip',
     distanceKm: sumKm(days),
@@ -184,6 +187,7 @@ export function quoteToBooking(
       customer: details.customer,
       days: span,
       driverNights: Math.max(0, span - 1),
+      ...(through.length ? { through } : {}),
     },
   };
 }

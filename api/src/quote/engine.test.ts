@@ -181,9 +181,9 @@ describe('quote()', () => {
     expect(r.warnings.some((w) => w.includes('included in chauffeur day rate'))).toBe(false);
   });
 
-  it('shared total (Hakan $22 incl pickup)', () => {
-    const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: true }] });
-    expect(r.totalCents).toBe(2200);
+  it('shared total (Hakan $19 — seat price only)', () => {
+    const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900 }] });
+    expect(r.totalCents).toBe(1900);
   });
 
   it('throws TOO_BIG only when pax exceeds custom capacity (>99)', () => {
@@ -380,7 +380,7 @@ describe('quote()', () => {
   });
 
   it('shared product has marginEstimateCents === null (cost not modelled)', () => {
-    const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: false }] });
+    const r = quote({ product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900 }] });
     expect(r.marginEstimateCents).toBeNull();
   });
 });
@@ -405,8 +405,8 @@ describe('invariants', () => {
       },
     },
     {
-      label: 'shared (Hakan, 1 seat + pickup)',
-      req: { product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900, colomboPickup: true }] },
+      label: 'shared (Hakan, 1 seat)',
+      req: { product: 'shared', legs: [{ routeId: 'negombo->sigiriya', seats: 1, seatPriceCents: 1900 }] },
     },
   ];
 

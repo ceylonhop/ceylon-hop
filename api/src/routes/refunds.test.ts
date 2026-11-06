@@ -68,6 +68,30 @@ async function fixture(tracked = false) {
   return { app, bookings, payments, email, alerts, booking, payment };
 }
 
+// The ops sheet waits on this list every time it opens, so it asks only whether the booking exists
+// (one statement), at the same time as the refunds, rather than assembling the whole booking first.
+describe('GET /admin/bookings/:id/refunds', () => {
+  it('reads the refunds without assembling the booking', async () => {
+    const { app, bookings, booking } = await fixture();
+    const get = vi.spyOn(bookings, 'get');
+    const history = await app.request(`/admin/bookings/${booking.id}/refunds`, {
+      headers: { cookie: await cookie('founder@test') },
+    });
+    expect(history.status).toBe(200);
+    expect(await history.json()).toEqual([]);
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('is still a 404 for a booking that does not exist', async () => {
+    const { app } = await fixture();
+    const history = await app.request('/admin/bookings/no-such-booking/refunds', {
+      headers: { cookie: await cookie('founder@test') },
+    });
+    expect(history.status).toBe(404);
+    expect((await history.json()).error).toBe('booking_not_found');
+  });
+});
+
 const requestRefund = async (
   app: ReturnType<typeof createApp>,
   bookingId: string,
