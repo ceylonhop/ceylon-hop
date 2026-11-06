@@ -16,6 +16,7 @@ import {
 } from '../services/notifications';
 import { runScheduledNotifications, sweepStaleSharedHolds, NOTIFICATIONS_TICK } from '../services/scheduler';
 import { runRideBoardCutoff } from '../services/rideBoardCutoff';
+import { track } from '../observability/track';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import { teamCancelledEmail, teamRefundedEmail, bookingDeepLink } from '../services/opsNotifications';
 import { runBoardOpsBackfill } from '../services/rideBoardOpsBackfill';
@@ -658,6 +659,24 @@ export function adminRoutes(deps: {
     // ONE budget for the whole tick: the scheduler and the Ride Board sweep both draw on
     // it, so the cap bounds everything this endpoint can send, not each sweep separately.
     const budget = deps.notifyMaxPerRun == null ? undefined : new SendBudget(deps.notifyMaxPerRun);
+    // A rider that throws is logged and skipped, which used to be ALL it did — a cutoff that died
+    // mid-charge went unseen (2026-11-06). Each failure now also reaches Sentry and raises one alert
+    // per sweep; the cutoff is critical because it may have charged some travellers before it threw.
+    const sweepFailed = (sweep: string, err: unknown, severity: 'critical' | 'warning' = 'warning'): Promise<void> => {
+      track(err, { route: '/admin/jobs/notifications', tag: sweep });
+      return alerts.send({
+        severity,
+        kind: 'job_sweep_failed',
+        title: `Daily job: the ${sweep} sweep failed`,
+        body:
+          `${err instanceof Error ? err.message : String(err)}\n\n` +
+          (sweep === 'ride_board_cutoff'
+            ? 'It may have charged some travellers before it stopped: check the ride board for lists past their cutoff that are still open. '
+            : '') +
+          'The rest of the daily job still ran; the sweep retries on the next tick. The API logs carry the stack trace.',
+        dedupeKey: sweep,
+      });
+    };
     const window = { maxTripAgeDays: deps.notifyMaxTripAgeDays, epoch: deps.notifyEpoch };
 
     // Dry run (R7): report what a real tick WOULD send and return. Deliberately returns
@@ -683,6 +702,7 @@ export function adminRoutes(deps: {
       })).swept;
     } catch (err) {
       console.error('stale shared-hold sweep failed:', err);
+      await sweepFailed('stale_shared_holds', err);
     }
     // Ride Board cutoff (confirm/charge or expire due lists) rides the same tick, best-effort.
     let rideBoard = { processed: 0, confirmed: 0, expired: 0 };
@@ -692,6 +712,7 @@ export function adminRoutes(deps: {
         rideBoard = { processed: rb.processed, confirmed: rb.confirmed, expired: rb.expired };
       } catch (err) {
         console.error('ride-board cutoff sweep failed:', err);
+        await sweepFailed('ride_board_cutoff', err, 'critical');
       }
     }
     // "How to fill your van" rides the same tick, best-effort, on the same budget: one mail per
@@ -704,6 +725,7 @@ export function adminRoutes(deps: {
         });
       } catch (err) {
         console.error('ride-board fill-tip sweep failed:', err);
+        await sweepFailed('fill_tips', err);
       }
     }
     // Quote expiry rides the same tick, best-effort: close ops quotes sat unanswered in 'sent'
@@ -715,6 +737,7 @@ export function adminRoutes(deps: {
         expiredQuotes = (await expireStaleQuotes(new Date(), { quotes: deps.quotes })).expired;
       } catch (err) {
         console.error('quote expiry sweep failed:', err);
+        await sweepFailed('quote_expiry', err);
       }
     }
     // Abandoned autosave shells ride the same tick, best-effort: "+ New quote" creates a real
@@ -727,6 +750,7 @@ export function adminRoutes(deps: {
         abandonedDrafts = (await sweepAbandonedDrafts(new Date(), { quotes: deps.quotes })).swept;
       } catch (err) {
         console.error('abandoned-draft sweep failed:', err);
+        await sweepFailed('abandoned_drafts', err);
       }
     }
     // The monitor is monitored (CH-V43ZU, 2026-09-24): the payments watchdog is driven by an
@@ -738,6 +762,7 @@ export function adminRoutes(deps: {
         watchdogStale = (await checkWatchdogLiveness(new Date(), { alertLog: deps.alertLog, alerts })).stale;
       } catch (err) {
         console.error('watchdog liveness check failed:', err);
+        await sweepFailed('watchdog_liveness', err);
       }
     }
     // M17: the daily ops digest rides the same daily tick, best-effort — a digest
@@ -757,6 +782,7 @@ export function adminRoutes(deps: {
           digest = true;
         } catch (err) {
           console.error('ops digest failed:', err);
+          await sweepFailed('ops_digest', err);
         }
       }
     }
@@ -771,6 +797,7 @@ export function adminRoutes(deps: {
         ga4 = await deps.ga4.sweep();
       } catch (err) {
         console.error('ga4 sweep failed:', err instanceof Error ? err.message : String(err));
+        await sweepFailed('ga4_retries', err);
       }
     }
     // Experience pins from Google ride the same tick, once per ~day however often the cron POSTs (20h
@@ -783,6 +810,7 @@ export function adminRoutes(deps: {
           experiencePins = await refreshExperiencePins(deps.experiencePins);
         } catch (err) {
           console.error('experience pin refresh failed:', err);
+          await sweepFailed('experience_pins', err);
         }
       }
     }

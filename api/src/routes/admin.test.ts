@@ -1411,6 +1411,35 @@ describe('POST /admin/jobs/notifications — heartbeat', () => {
   });
 });
 
+// The tick's riders are best-effort, but a failure used to reach only console.error — nobody saw
+// a ride-board cutoff (which charges cards) die mid-run (2026-11-06). Each now reports and alerts.
+describe('POST /admin/jobs/notifications — a failing sweep is reported', () => {
+  it('alerts per failed sweep, critical for the ride-board cutoff, and the tick still answers 200', async () => {
+    const alerts = new FakeAlertAdapter();
+    const rideLists = new InMemoryRideListRepo();
+    rideLists.dueForCutoff = async () => { throw new Error('db blip'); };
+    const quotes = new InMemoryQuoteRepo();
+    quotes.list = async () => { throw new Error('db blip'); };
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo(), rideLists, quotes });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const failed = alerts.sent.filter((a) => a.kind === 'job_sweep_failed');
+    expect(failed.map((a) => [a.dedupeKey, a.severity])).toEqual([
+      ['ride_board_cutoff', 'critical'],
+      ['quote_expiry', 'warning'],
+      ['abandoned_drafts', 'warning'],
+    ]);
+    expect(failed[0].body).toContain('db blip');
+  });
+
+  it('raises nothing when every sweep succeeds', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo(), quotes: new InMemoryQuoteRepo() });
+    await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('job_sweep_failed');
+  });
+});
+
 // Places lat/lng may be kept for 30 days (Service Specific Terms §14.3): the daily tick re-fetches every
 // Google-sourced experience pin by place id, once per day however often the cron POSTs (2026-10-18).
 describe('POST /admin/jobs/notifications — experience pin refresh', () => {
