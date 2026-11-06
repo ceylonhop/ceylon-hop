@@ -104,6 +104,35 @@ describe('opsView', () => {
     expect(row.travelTime).toBeNull();
   });
 
+  // Owner 2026-11-05: a multi-stop trip files in the queue under its NEXT leg, not its first, so
+  // the row carries the legs we drive (spec 2026-11-06-ops-multistop-next-leg-design.md §1).
+  it('carries a private trip\'s driven legs in order; travelDate stays the start date', () => {
+    const priv = { ...trip, input: { ...trip.input, serviceType: 'private', stops: ['Colombo Airport', 'Kandy', 'Ella', 'Yala'],
+      nights: [0, 2, 2, 1], dates: ['2026-07-01', '2026-07-03', '2026-07-05'] } } as Booking;
+    const row = toOpsRow(priv, { paid: true });
+    expect(row.legs).toEqual([
+      { date: '2026-07-01', from: 'Colombo Airport', to: 'Kandy' },
+      { date: '2026-07-03', from: 'Kandy', to: 'Ella' },
+      { date: '2026-07-05', from: 'Ella', to: 'Yala' },
+    ]);
+    expect(row.travelDate).toBe('2026-07-01');
+  });
+
+  it('leaves out a stretch the customer travels themselves', () => {
+    const gapped = { ...trip, input: { ...trip.input, serviceType: 'private', stops: ['Colombo Airport', 'Kandy', 'Ella', 'Yala'],
+      nights: [0, 2, 2, 1], dates: ['2026-07-01', '2026-07-03', '2026-07-05'], gaps: [1] } } as Booking;
+    expect(toOpsRow(gapped, { paid: true }).legs.map((l) => `${l.from}>${l.to}`)).toEqual(['Colombo Airport>Kandy', 'Ella>Yala']);
+  });
+
+  it('gives a chauffeur trip one entry per travel day', () => {
+    const legs = toOpsRow(trip, { paid: true }).legs;
+    expect(legs.map((l) => l.date)).toEqual(['2026-07-01', '2026-07-03']);
+  });
+
+  it('has no legs on a single transfer', () => {
+    expect(toOpsRow(base, { paid: true }).legs).toEqual([]);
+  });
+
   const shared: Booking = {
     mode: 'shared', id: 's1', reference: 'CH-SHR01', status: 'paid', createdAt: '2026-06-21T00:00:00Z',
     total: 4000, currency: 'USD', channel: 'website',
