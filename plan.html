@@ -75,7 +75,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .panel-card{background:var(--white);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow);padding:24px}
 
   /* ── trip-basics ribbon: two aligned label rows in one slim card ──────── */
-  .setup-bar{display:flex;align-items:center;gap:14px;row-gap:12px;flex-wrap:wrap;padding:13px 16px}
+  .setup-bar{display:flex;align-items:center;gap:14px;row-gap:12px;flex-wrap:wrap;padding:13px 16px;transition:border-color .18s ease, box-shadow .18s ease}
+  .setup-bar.pax-bad{border-color:var(--tomato);box-shadow:0 0 0 3px rgba(236,58,36,.16)}
+  .setup-bar.pax-bad #pax-lbl{color:var(--tomato)}
   .sb-group{display:flex;align-items:center;gap:10px;min-width:0}
   .sb-lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;font-weight:800;color:var(--ink-soft);flex:none;width:76px}
   .pax-pills{display:flex;gap:5px}
@@ -802,6 +804,6 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-choice.js?v=5a3a128097"></script>
 <!-- generated from api/src/quote/shortPlace.ts — must load before plan.js reads CH.shortPlace -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
-<script src="plan.js?v=db98bd0a7f"></script>
+<script src="plan.js?v=233158ee7c"></script>
 </body>
 </html>
