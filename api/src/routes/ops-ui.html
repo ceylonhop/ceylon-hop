@@ -4488,12 +4488,18 @@ async function openDetail(id, opts){
      Everything its sheet shows already arrived on the queue row. */
   if(String(id).indexOf('board:')===0)return;
   try{
+    /* Both at once: the sheet shows neither until it has both, so asking for the second only after
+       the first answered was time spent on the skeleton. The failure is held as a value until the
+       booking has answered, so a failed booking never says "Booking loaded". */
+    const refundsAsked=state.caps&&state.caps.includes('bookings:read')
+      ?adminApi.get('/bookings/'+id+'/refunds').then(got=>({got}),refundErr=>({refundErr})):null;
     const detail=await api.get('/bookings/'+id);
     /* Everyone who works bookings reads the ledger since 2026-10-17. Keep only a list: a mock
        catch-all (or an odd answer) of {} would otherwise reach refundSummary's .filter and throw. */
-    if(state.caps&&state.caps.includes('bookings:read')){
-      try{const got=await adminApi.get('/bookings/'+id+'/refunds');detail.refunds=Array.isArray(got)?got:[];}
-      catch(refundErr){
+    if(refundsAsked){
+      const {got,refundErr}=await refundsAsked;
+      if(!refundErr)detail.refunds=Array.isArray(got)?got:[];
+      else{
         if(refundErr.message==='auth')throw refundErr;
         detail.refunds=[];
         window.opsReportError&&window.opsReportError('refund history',refundErr);

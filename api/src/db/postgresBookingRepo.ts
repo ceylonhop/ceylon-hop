@@ -555,6 +555,11 @@ export class PostgresBookingRepo implements BookingRepo {
     return row ? this.assemble(row) : null;
   }
 
+  async exists(id: string): Promise<boolean> {
+    const [row] = await this.db.select({ id: bookings.id }).from(bookings).where(eq(bookings.id, id));
+    return !!row;
+  }
+
   async promoUsage(codeId: string, now: Date): Promise<{ paid: number; held: number }> {
     return this.db.transaction((tx) => this.countUses(tx, codeId, now));
   }
