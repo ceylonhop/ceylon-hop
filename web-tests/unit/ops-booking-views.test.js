@@ -31,6 +31,7 @@ const TOMORROW = iso(1);
 
 // eslint-disable-next-line no-new-func
 const { productType, byRecent, inQueue } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
+  const anchorDate=${extractConst('anchorDate')};
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
   ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
@@ -77,6 +78,13 @@ describe('bookings queue views', () => {
     expect(rows.filter((r) => inQueue(r, s({ view: 'recent' })))).toHaveLength(5);
     // …whereas by travel date, "All open" keeps only the forward work.
     expect(rows.filter((r) => inQueue(r, s()))).toHaveLength(1);
+  });
+
+  // Spec 2026-11-06: a multi-stop trip that started days ago is forward work until its last leg.
+  it('keeps a trip under way in "All open" by travel date', () => {
+    const midTrip = t({ stage: 'on_trip', date: iso(-3), legs: [{ date: iso(-3), from: 'A', to: 'B' }, { date: iso(1), from: 'B', to: 'C' }] });
+    expect(inQueue(midTrip, s())).toBe(true);
+    expect(inQueue(midTrip, s({ group: 'trip' }))).toBe(true);
   });
 
   it('"Recently booked" ignores the stage chip it was left on', () => {
