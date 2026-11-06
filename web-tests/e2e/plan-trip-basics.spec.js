@@ -104,9 +104,13 @@ test('a handed-in route cannot reach booking without a traveller count', async (
   await expect(page.locator('#dates-wrap')).toBeHidden();
   await expect(page.locator('#route-incomplete-hint')).toBeVisible();
   await expect(page.locator('#route-incomplete-hint')).toContainText(/travelling/i);
+  // The hint sits by the button, far from the fix — the pills themselves are flagged and focused.
+  await expect(page.locator('.setup-bar')).toHaveClass(/pax-bad/);
+  await expect(page.locator('.pax-pill[data-pax="1"]')).toBeFocused();
 
   // Picking a count unblocks the flow, and booking receives the real number.
   await page.locator('.pax-pill[data-pax="5"]').click();
+  await expect(page.locator('.setup-bar')).not.toHaveClass(/pax-bad/);
   await page.locator('#request-btn').click();
   await expect(page.locator('#dates-wrap')).toBeVisible();
   await page.locator('#dates-continue').click();
