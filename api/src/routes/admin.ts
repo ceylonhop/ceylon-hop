@@ -26,7 +26,7 @@ import type { RideListRepo } from '../db/rideListRepo';
 import type { TokenizedPaymentAdapter } from '../adapters/tokenizedPayments';
 import { expireStaleQuotes } from '../services/quoteExpiry';
 import { sweepAbandonedDrafts } from '../services/abandonedDrafts';
-import { runWatchdog, checkWatchdogLiveness, type WatchdogEmailQuota } from '../services/watchdog';
+import { runWatchdog, checkWatchdogLiveness, checkNotificationsLiveness, type WatchdogEmailQuota } from '../services/watchdog';
 import { SendBudget, burstAlert } from '../services/sendBudget';
 import { buildDigest } from '../services/digest';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
@@ -915,7 +915,17 @@ export function adminRoutes(deps: {
     console.log(JSON.stringify({ event: 'watchdog_tick', at: new Date().toISOString(), ...correlation, ...result }));
     const burst = budget && burstAlert(budget, 'watchdog');
     if (burst) await alerts.send(burst);
-    return c.json({ ...result, suppressed: budget?.report().suppressed ?? 0 }, 200);
+    // The daily tick has no clock of its own worth trusting (GitHub delivers it hours late), so
+    // this ~15-min cron is what notices it stopped. Best-effort: never fails the sweep above.
+    let notificationsStale: boolean | undefined;
+    if (deps.alertLog) {
+      try {
+        notificationsStale = (await checkNotificationsLiveness(new Date(), { alertLog: deps.alertLog, alerts })).stale;
+      } catch (err) {
+        console.error('daily-tick liveness check failed:', err);
+      }
+    }
+    return c.json({ ...result, notificationsStale, suppressed: budget?.report().suppressed ?? 0 }, 200);
   });
 
   return r;
