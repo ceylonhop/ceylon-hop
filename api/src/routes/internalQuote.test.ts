@@ -4287,3 +4287,65 @@ describe('GET /admin/quote/:id — balancePayLink (the balance link after a depo
     }
   });
 });
+
+describe('part-of-trip sale on the quote (Q-GTDJA: paid 1 of 4 legs, read as the whole trip)', () => {
+  const CUSTOMER = { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' };
+  const LEG = { from: 'CMB', to: 'Galle', distanceKm: 120 };
+
+  async function world() {
+    const bookings = new InMemoryBookingRepo();
+    const quotes = new InMemoryQuoteRepo();
+    const app = createApp({ bookings, quotes });
+    const saved = await quotes.save({
+      channel: 'ops', product: 'private', vehicle: 'car', customerName: 'Maya', customerContact: '+34600',
+      totalCents: 26700, currency: 'USD', rateCardVersion: 'v1', marginCents: 2600, result: { totalCents: 26700 }, requestedService: 'private',
+      request: { tool: { vehicle: 'car', passengerCount: 2, luggageCount: 1, legs: [LEG, LEG, LEG, LEG] },
+                 engine: { product: 'private', vehicle: 'car', pax: 2, bags: 1, legs: [LEG, LEG, LEG, LEG] } },
+    });
+    const b = await bookings.create({
+      mode: 'single', total: 9293, amountDueNow: 9293, currency: 'USD',
+      input: { from: 'Colombo Airport', to: 'Galle', vehicleType: 'car', adults: 2, children: 0, bags: 1, date: '2026-06-22', time: '09:00', customer: CUSTOMER },
+    });
+    const read = async () => (await app.request(`/admin/quote/${saved.id}`, { headers: { cookie: FOUNDER_COOKIE } })).json();
+    const listed = async () => {
+      const { quotes: rows } = await (await app.request('/admin/quote/list', { headers: { cookie: FOUNDER_COOKIE } })).json();
+      return rows.find((r: { id: string }) => r.id === saved.id);
+    };
+    return { quotes, id: saved.id, b, read, listed };
+  }
+  const ONE_LEG = { payLinkSelection: { legIndexes: [0], extraIndexes: [] }, soldCents: 9293 };
+
+  it('a won quote sold through a part-of-trip link says what sold', async () => {
+    const w = await world();
+    await w.quotes.patch(w.id, { ...ONE_LEG, status: 'won', convertedBookingId: w.b.id });
+    expect((await w.read()).partSale).toEqual({
+      soldLegs: 1, totalLegs: 4, soldCents: 9293, quotedCents: 26700, bookingReference: w.b.reference,
+    });
+  });
+
+  it('a quote still waiting on its part-of-trip link has sold nothing yet', async () => {
+    const w = await world();
+    await w.quotes.patch(w.id, { ...ONE_LEG, status: 'sent' });
+    expect((await w.read()).partSale).toBeNull();
+  });
+
+  it('a whole-trip sale, or a chauffeur pick on the chooser, is not a part sale', async () => {
+    const whole = await world();
+    await whole.quotes.patch(whole.id, { status: 'won', convertedBookingId: whole.b.id });
+    expect((await whole.read()).partSale).toBeNull();
+
+    const chauffeur = await world();
+    await chauffeur.quotes.patch(chauffeur.id, {
+      payLinkSelection: { service: 'chauffeur' }, soldCents: 40000, status: 'won', convertedBookingId: chauffeur.b.id,
+    });
+    expect((await chauffeur.read()).partSale).toBeNull();
+  });
+
+  it('the queue row carries the sold amount, so it can stop showing the full quote', async () => {
+    const w = await world();
+    await w.quotes.patch(w.id, { ...ONE_LEG, status: 'won', convertedBookingId: w.b.id });
+    const row = await w.listed();
+    expect(row.soldCents).toBe(9293);
+    expect(row.totalCents).toBe(26700);
+  });
+});
