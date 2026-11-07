@@ -21,6 +21,7 @@ import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo'
 import { reconcileBookingTracking, type BookingTrackingFinding } from './bookingTracking';
 import { emailQuotaAlert, emailSentToday, type UsageSource } from './emailQuota';
 import { utcDay } from './usageMeter';
+import { NOTIFICATIONS_TICK, NOTIFICATIONS_STALE_MS } from './scheduler';
 
 // Spec 2026-10-13 §6 — what the quota rule below needs: the shared usage counters and the plan's cap.
 export interface WatchdogEmailQuota {
@@ -542,6 +543,33 @@ export async function checkWatchdogLiveness(
         `Either the external cron is not calling it, or every call is failing before the sweep completes — ` +
         `check the cron service's run history and the API logs for "watchdog_tick".`,
       dedupeKey: 'watchdog',
+    });
+  }
+  return { stale, lastRunAt };
+}
+
+// The mirror image: the watchdog's own cron checks the daily tick's heartbeat, which until
+// 2026-11-06 only the Health tab read. 12 h cooldown, not the 30-min default — this check runs
+// every ~15 min, and a dead tick stays dead for hours (the #1136 quota lesson).
+const NOTIFICATIONS_STALE_COOLDOWN_MS = 12 * 3600_000;
+
+export async function checkNotificationsLiveness(
+  now: Date,
+  deps: { alertLog: AlertLogRepo; alerts: AlertAdapter },
+): Promise<{ stale: boolean; lastRunAt: Date | null }> {
+  const lastRunAt = await deps.alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key);
+  const stale = !lastRunAt || now.getTime() - lastRunAt.getTime() > NOTIFICATIONS_STALE_MS;
+  if (stale) {
+    await deps.alerts.send({
+      severity: 'warning',
+      kind: 'notifications_stale',
+      title: 'Daily job is not running',
+      body:
+        `The daily job (POST /admin/jobs/notifications) last completed ${agoText(now, lastRunAt)}; it should run once a day. ` +
+        `While it is down, trip reminders, the ride-board cutoff, quote expiry and the ops digest all stop.\n\n` +
+        `Check the "notifications" GitHub Actions workflow's run history and the API logs for "sweep failed".`,
+      dedupeKey: 'notifications',
+      cooldownMs: NOTIFICATIONS_STALE_COOLDOWN_MS,
     });
   }
   return { stale, lastRunAt };
