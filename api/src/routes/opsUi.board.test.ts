@@ -134,8 +134,9 @@ describe('stageLabel keeps grouping and wording separate', () => {
 
 describe('reason() never nags about a van', () => {
   it('returns nothing for a ride-board row whatever its stage', () => {
-    // reason() consults CLOSED to stay silent about finished bookings, so lift both.
-    const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
+    // reason() consults CLOSED to stay silent about finished bookings, and isOverdue (with the
+    // anchorDate it reads) for a trip that is over, so lift those too.
+    const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'anchorDate')} ${liftConst(body, 'isOverdue')} ${liftConst(body, 'reason')}`;
     const reason = new Function(`${src}; return reason;`)() as (t: unknown) => string;
     expect(reason({ source: 'ride_board', stage: 'gathering' })).toBe('');
     expect(reason({ source: 'ride_board', stage: 'paid' })).toBe('');

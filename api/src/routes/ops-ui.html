@@ -202,6 +202,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
   .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tk-meta .tk-next{white-space:nowrap;color:var(--ink-soft);font-weight:700}
   .tk-meta .tk-paid.late{color:var(--wait);font-weight:700}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
@@ -511,6 +512,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
   .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
+  .legs .leg-done .r{color:var(--ink-faint);text-decoration:line-through}
+  .legs .leg-done .r::before{content:"✓ ";text-decoration:none;display:inline-block;margin-right:4px}
+  .legs .leg-next .r{font-weight:700}
+  .legs .leg-next .r::after{content:"Next";display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--cream-deep);color:var(--ink);font-size:.72rem;font-weight:700;vertical-align:1px}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -2095,8 +2100,27 @@ const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}
      Expired       — unpaid and the date is gone. The money can never arrive; there is no trip
                      to close. Action: none. It is display-only — no status is written here,
                      because auto-expiring a booking is a lifecycle change and its own step. */
+/* A multi-stop trip files under its NEXT leg still to run, not its first (owner 2026-11-05, spec
+   2026-11-06-ops-multistop-next-leg-design.md): filed by day one, a trip went to Needs closing the
+   morning after it started while leg 3 tomorrow never showed under Tomorrow. Once every leg has
+   passed it is the last leg's date, so the trip reaches Needs closing only when it is over. A
+   transfer has no legs, so this is its own date. t.date stays the START: the reversal window,
+   "travels today" and the When line all mean the start, and Expired stays on it too — an unpaid
+   trip whose first day has gone is dead money whatever its later legs say. */
+const anchorDate=t=>{
+  const dated=(t.legs||[]).map(l=>l.date).filter(Boolean).sort();
+  if(!dated.length)return t.date;
+  return dated.find(d=>d>=TODAY)||dated[dated.length-1];
+};
+/* "Leg 3 of 4 · Ella → Yala" on a trip already under way, so the row reads as a trip resuming,
+   not a new booking. Nothing before the first leg (the row's date says it) or after the last. */
+const legNote=t=>{
+  const legs=t.legs||[],a=anchorDate(t),i=legs.findIndex(l=>l.date===a);
+  if(i<1||a<TODAY||!legs.some(l=>l.date&&l.date<TODAY))return '';
+  return `Leg ${i+1} of ${legs.length} · ${legs[i].from} → ${legs[i].to}`;
+};
 const isExpired=t=>{ return t.stage==='awaiting_payment'&&!!t.date&&t.date<TODAY; };
-const isOverdue=t=>{ return !CLOSED.includes(t.stage)&&t.stage!=='awaiting_payment'&&!!t.date&&t.date<TODAY; };
+const isOverdue=t=>{ const d=anchorDate(t); return !CLOSED.includes(t.stage)&&t.stage!=='awaiting_payment'&&!!d&&d<TODAY; };
 
 const DAYGROUPS=['Today','Tomorrow','Upcoming','No date yet','Needs closing','Expired','Closed'];
 const dayGroup=t=>{
@@ -2113,13 +2137,14 @@ const dayGroup=t=>{
   /* Undated is its own state, not a payment state. 9 of these were PAID bookings with no travel
      date, filed under a heading that read "awaiting payment · undated" — the money was in and
      what was missing was a date, which is a different phone call. */
-  if(!t.date)return 'No date yet';
+  const d=anchorDate(t);
+  if(!d)return 'No date yet';
   /* Everything still to come files by ITS OWN DATE, paid or not. A dated unpaid booking is a
      trip that is coming: the two most urgent rows in the real queue were exactly that (trip
      inside the week, money not in) and the old "Pending" block put them as far from their date
      as the layout allowed. The row's stage pill already says it is unpaid. */
-  if(t.date===TODAY)return 'Today';
-  if(t.date===TOMORROW)return 'Tomorrow';
+  if(d===TODAY)return 'Today';
+  if(d===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
 const groupNote={Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead','No date yet':'trip date not set — confirm with the customer','Needs closing':'date passed — mark completed or no-show',Expired:'unpaid and the date has passed — no trip to run',Closed:'done · cancelled · refunded'};
@@ -2202,7 +2227,8 @@ const reason=t=>{
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
-  if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Over means its LAST leg has passed on a multi-stop trip (spec 2026-11-06), as in Needs closing. */
+  if(isOverdue(t))return 'Trip date passed — mark completed or no-show';
   /* Pay on the day: the team collects the cash at today's first pickup. On any other day the
      vehicle nag still wins — the car is arranged first. */
   if(cashDue(t)&&t.date===TODAY)return `Collect ${money({amount:t.cashDue,currency:t.currency})} cash · travels today`;
@@ -2321,6 +2347,8 @@ function rowToTicket(row){
   return {
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
+    /* A trip's driven legs (date/from/to); [] on a transfer, absent on an older or mocked row. */
+    legs:row.legs||[],
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     /* A deposit booking: what has landed and what is still owed (the ledger's figures, never
        derived here). balance>0 on a paid row means the customer owes the rest. */
@@ -2607,9 +2635,11 @@ function ticketRow(t,i){
   const lead=board
     ?`<div class="chan board" title="Ride board van">${ICON.van}</div>`
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
+  /* A trip under way names its next leg first (spec 2026-11-06): the row is filed by that leg. */
+  const nl=board?'':legNote(t);
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${nl?`<span class="tk-next">${esc(nl)}</span><span class="sep"></span>`:''}${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
@@ -2628,7 +2658,7 @@ function ticketRow(t,i){
     <div class="tk-side">
       <span class="pill${t.stage==='paid'&&cashDue(t)?' pill-bal':''}"><span class="pd"></span>${esc(stageLabel(t))}</span>
       ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}${cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''}
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${anchorDate(t)?fmtDate(anchorDate(t)):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
 }
@@ -2681,7 +2711,7 @@ function viewTickets(){
     if(q&&!`${t.cust} ${t.ref} ${t.route}`.toLowerCase().includes(q))return false;
     return true;
   });
-  const tkey=t=>(t.date||'9999-99-99')+'T'+(t.time||'99:99');
+  const tkey=t=>(anchorDate(t)||'9999-99-99')+'T'+(t.time||'99:99');
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
@@ -3832,6 +3862,10 @@ function legsHtmlFor(d){
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
     const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
+    /* Progress through a trip under way (spec 2026-11-06 §3): a leg dated before today has run and
+       is struck out; the first driven leg today or later is next. Styling only — the words stay. */
+    let next=-1;
+    for(let i=0;i<stops.length-1;i++)if(!gaps.includes(i)&&dates[i]&&dates[i]>=TODAY){next=i;break;}
     let rows='';
     for(let i=0;i<stops.length-1;i++){
       /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
@@ -3844,7 +3878,8 @@ function legsHtmlFor(d){
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
       const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
-      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
+      const st=dates[i]&&dates[i]<TODAY?' leg-done':i===next?' leg-next':'';
+      rows+=`<div class="leg${st}"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }

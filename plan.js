@@ -439,6 +439,8 @@ function syncPaxPills(){
     p.classList.toggle('on',on);
     p.setAttribute('aria-pressed', on?'true':'false');
   });
+  // flagPax's outline stays until a count is picked
+  if(state.pax!=null){ const bar=document.querySelector('.setup-bar'); if(bar) bar.classList.remove('pax-bad'); }
 }
 syncPaxPills(); // reflect a template/booking hand-off that pre-set pax
 paxPills.forEach(p=>p.addEventListener('click',()=>{
@@ -1827,7 +1829,8 @@ function setJourney(step){
 })();
 
 // Surfaces a blocking message in the page's own hint element rather than a browser alert box.
-function showRouteHint(msg){
+// `fixAt` is where the customer fixes it, when that isn't next to the hint — scroll there instead.
+function showRouteHint(msg, fixAt){
   const hint=document.getElementById('route-incomplete-hint');
   if(!hint){ return; }
   const svg=hint.querySelector('svg');
@@ -1836,14 +1839,23 @@ function showRouteHint(msg){
   hint.appendChild(document.createTextNode(' '+msg));
   hint.hidden=false;
   hint.setAttribute('role','alert');
-  hint.scrollIntoView({block:'center',behavior:'smooth'});
+  (fixAt||hint).scrollIntoView({block:'center',behavior:'smooth'});
 }
 
 // A route handed in from the homepage, search or a template arrives without a traveller
 // count (the board itself is only pax-gated when FRESH), and trip-mode booking parks its
 // Travellers step — so this is the last moment anyone asks. Without it a family of five
 // books as 1 traveller in a 3-seat car.
-const PAX_HINT='Pick how many are travelling — choose your travellers above to continue.';
+const PAX_HINT='Choose how many are travelling in the Travellers row at the top to continue.';
+// The hint sits by the Next button, far from the traveller pills — take them to the pills
+// and outline them until a count is picked (syncPaxPills clears it).
+function flagPax(){
+  const bar=document.querySelector('.setup-bar');
+  showRouteHint(PAX_HINT, bar);
+  if(!bar) return;
+  bar.classList.add('pax-bad');
+  const first=bar.querySelector('.pax-pill'); if(first) first.focus({preventScroll:true});
+}
 function showDatesStep(){
   // blockers first, matching the Next hint in updateSummary
   const b=legBlockers(); if(b.length){ flagIncompleteLeg(b[0].i); return; }
@@ -1852,7 +1864,7 @@ function showDatesStep(){
   if(bad>=0){ flagIncompleteLeg(bad); return; }
   const seq=routeSeq();
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
-  if(state.pax==null){ showRouteHint(PAX_HINT); return; }
+  if(state.pax==null){ flagPax(); return; }
   document.querySelector('.board-wrap').style.display='none';
   // the “Build your route” hero belongs to step 1 — hide it on the dates step, which has its own header
   const head=document.querySelector('.plan-head'); if(head) head.style.display='none';
@@ -1891,7 +1903,7 @@ function goToBooking(){
   if(seq.length<2){ showRouteHint('Add a pick-up and drop-off to continue.'); return; }
   // Backstop for the showDatesStep gate (?step=dates deep-links land here too): never hand
   // booking pax=null — it parses "null" as 1 traveller and there is no later step to fix it.
-  if(state.pax==null){ backToRoute(); showRouteHint(PAX_HINT); return; }
+  if(state.pax==null){ backToRoute(); flagPax(); return; }
   const stops=seq.map(s=>s.place);
   const nights=seq.map(s=>s.nights);   // stays carry through as nights at each place
   // kms comes from routeSeqDetailed so it is index-aligned per wire with stops/dates —

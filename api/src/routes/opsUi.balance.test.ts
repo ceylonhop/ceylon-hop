@@ -27,9 +27,24 @@ beforeAll(async () => {
 const TODAY = '2026-10-08';
 // `caps` is the signed-in user's capabilities (state.caps in the shell); founder/finance by default.
 function reasonFn(caps: string[] = ['payments:act']) {
-  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'money')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'reason')}`;
+  const src = `${liftConst(body, 'CLOSED')} ${liftConst(body, 'money')} ${liftConst(body, 'cashDue')} ${liftConst(body, 'anchorDate')} ${liftConst(body, 'isOverdue')} ${liftConst(body, 'reason')}`;
   return new Function('TODAY', 'state', `${src}; return reason;`)(TODAY, { caps }) as (t: unknown) => string;
 }
+
+// Spec 2026-11-06: a multi-stop trip is over only when its LAST leg has passed — the row must not
+// tell ops to close a trip whose customer is still travelling.
+describe('reason() — a multi-stop trip under way', () => {
+  const midTrip = { source: 'booking', stage: 'on_trip', balance: 0, updated: true, date: '2026-10-05',
+    legs: [{ date: '2026-10-05', from: 'A', to: 'B' }, { date: '2026-10-09', from: 'B', to: 'C' }] };
+
+  it('does not say the trip date has passed while a leg is still to run', () => {
+    expect(reasonFn()(midTrip)).toBe('');
+  });
+  it('says it once the last leg has passed', () => {
+    expect(reasonFn()({ ...midTrip, legs: [midTrip.legs[0], { date: '2026-10-07', from: 'B', to: 'C' }] }))
+      .toBe('Trip date passed — mark completed or no-show');
+  });
+});
 
 describe('reason() — a balance that is still open on the day of travel', () => {
   const live = { source: 'booking', stage: 'paid', balance: 16900, updated: false };
