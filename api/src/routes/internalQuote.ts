@@ -1763,7 +1763,23 @@ export function internalQuoteRoutes(deps: {
         console.error(`[quote] balance link unavailable for ${q.id}:`, err);
       }
     }
-    return c.json({ ...view, estimate, mayApprove, payOptions: payOptionsOf(q), balancePayLink, balanceCents });
+    // A part-of-trip sale (Q-GTDJA, 2026-11-02): "Booked" with 4 legs and the full total read as
+    // the whole trip sold when only 1 leg was. Coverage is decided as the booking pane decides it
+    // (ops.ts, GET /bookings/:id). Best-effort like the balance link: it costs the line, never the quote.
+    let partSale: { soldLegs: number; totalLegs: number; soldCents: number; quotedCents: number; bookingReference: string } | null = null;
+    const sel = q.status === 'won' ? legSelectionOf(q.payLinkSelection) : null;
+    const legCount = ((q.request as { engine?: { legs?: unknown[] } } | null)?.engine?.legs ?? []).length;
+    if (sel && legCount && q.soldCents != null && q.convertedBookingId) {
+      try {
+        const booking = await deps.bookings.get(q.convertedBookingId);
+        if (booking && !isChauffeurBooking(booking)) {
+          partSale = { soldLegs: sel.legIndexes.length, totalLegs: legCount, soldCents: q.soldCents, quotedCents: q.totalCents, bookingReference: booking.reference };
+        }
+      } catch (err) {
+        console.error(`[quote] part sale unavailable for ${q.id}:`, err);
+      }
+    }
+    return c.json({ ...view, estimate, mayApprove, payOptions: payOptionsOf(q), balancePayLink, balanceCents, partSale });
   });
 
   // Update a quote's status, lostReason, or notes. Stamps sentAt/decidedAt via the repo.

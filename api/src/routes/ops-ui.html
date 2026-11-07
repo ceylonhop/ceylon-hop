@@ -2818,6 +2818,11 @@ function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve')
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 // List surfaces show a glance value — whole dollars; detail views keep exact cents.
 function quoteUsdWhole(cents){return '$'+Math.round((cents||0)/100).toLocaleString('en-US');}
+// A booked row shows what was sold, which a part-of-trip link makes less than the quote. Only once
+// booked: an open quote's soldCents is a link still out, and nothing has sold yet.
+function quoteRowCents(q) {
+  return q.status==='won'&&q.soldCents!=null?q.soldCents:q.totalCents;
+}
 /* ── Quotes queue search (spec 2026-07-25) ───────────────────────────────────
    Both helpers are deliberately self-contained — no DOM, no module state — so
    web-tests/unit can extract and eval them straight out of this file. */
@@ -2986,11 +2991,13 @@ function quoteRowHtml(q,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
+  const rowCents=quoteRowCents(q);
+  const rowTitle=rowCents!==q.totalCents?`Sold ${quoteUsd(rowCents)} · quoted ${quoteUsd(q.totalCents)}`:quoteUsd(rowCents);
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(rowTitle)}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
-    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(quoteUsd(q.totalCents))}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(q.totalCents))}</span>
+    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(rowTitle)}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(rowCents))}</span>
     <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -6843,6 +6850,7 @@ function resetToNew() {
     payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
     balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
     balanceCents: null, // what is still owed on it, for the copy toast
+    partSale: null, // server's {soldLegs, totalLegs, soldCents, quotedCents, bookingReference} when only some legs sold
     // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
     // founder always may; ops may only on a single-leg standard transfer. Never derive it from
     // caps: the capability alone is true on every quote, including the ones the server refuses.
@@ -7192,6 +7200,7 @@ async function transition(toStatus, opts) {
   state.status = toStatus;
   state.payOptions = null; // priced for the previous status; the next open of the quote re-reads it
   state.balancePayLink = null; state.balanceCents = null; // same rule: read with the quote, never carried across a status change
+  state.partSale = null;
   // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
   // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
@@ -7632,6 +7641,18 @@ function renderPayPartialChip() {
     + _payPartial.totalLegs + ' legs \u2014 ' + fmtUsd(_payPartial.amountCents)
     + ' \u00b7 sending a full payment link will replace it</div>';
 }
+
+/* Once a part-of-trip link has settled the quote is Booked, but the builder still shows every leg
+   and the full total. This says what actually sold. */
+function partSaleText(sale) {
+  var unsold = sale.totalLegs - sale.soldLegs;
+  return 'Sold ' + sale.soldLegs + ' of ' + sale.totalLegs + ' legs: ' + fmtUsd(sale.soldCents)
+    + ' of the ' + fmtUsd(sale.quotedCents) + ' quoted \u00b7 ' + unsold + (unsold === 1 ? ' leg' : ' legs')
+    + ' not sold \u00b7 ' + sale.bookingReference;
+}
+function renderPartSaleChip() {
+  return state.partSale ? '<div class="ch-paypartial-chip">' + esc(partSaleText(state.partSale)) + '</div>' : '';
+}
 function renderPayLinkRow() {
   // Only when copying failed. The happy path never shows this — the link goes straight to the
   // clipboard and the toast says so.
@@ -7997,6 +8018,7 @@ async function reopenQuote(id) {
   state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
   state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
   state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
+  state.partSale = q.partSale || null;
 
   /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
      state.discount is client state and starts null on every page load; without this the pane
@@ -11551,6 +11573,7 @@ const STATUS_PILL_TONE = {
 };
 function renderStatusPill() {
   var label = STATUS_LABELS[state.status] || state.status || 'Draft';
+  if (state.partSale) label += ' \u00b7 ' + state.partSale.soldLegs + ' of ' + state.partSale.totalLegs + ' legs';
   return '<span class="ch-status-pill tone-' + (STATUS_PILL_TONE[state.status] || 'slate') + '">' + esc(label) + '</span>';
 }
 
@@ -12318,6 +12341,7 @@ function render() {
     renderPayPicker(),
     renderPayChooser(),
     renderPayPartialChip(),
+    renderPartSaleChip(),
     renderPayLinkOut(),
     '</header>',
 
