@@ -118,6 +118,12 @@ function isRoundTrip(booking: Booking): boolean {
   return s.length > 2 && s[0] === s[s.length - 1];
 }
 
+// Stops on the way (trip_request.through, 0078): wire i in `through` continues the same ride onto
+// wire i+1, so stops[i+1] is a place the car passes through, not the end of a transfer.
+function viaStops(booking: Extract<Booking, { mode: 'trip' }>): Set<number> {
+  return new Set((booking.input.through ?? []).map((w) => w + 1));
+}
+
 // The journey as labelled, colour-coded stops. For trips each stop also carries a `sub`
 // line: nights stayed there + the travel date of the leg leaving it (both from the booking,
 // so it renders website multi-stop / chauffeur / round-trip itineraries faithfully).
@@ -127,6 +133,7 @@ function journey(booking: Booking): Stop[] {
     const nights = booking.input.nights ?? [];
     const dates = booking.input.dates ?? [];
     const gaps = booking.input.gaps ?? [];
+    const via = viaStops(booking);
     const roundTrip = isRoundTrip(booking);
     return stops.map((s, i) => {
       const last = i === stops.length - 1;
@@ -136,11 +143,12 @@ function journey(booking: Booking): Stop[] {
       if (n > 0) parts.push(`${n} night${n > 1 ? 's' : ''}`);
       // A self-arranged stretch (their own train) must not read as a transfer we drive.
       if (gapAfter) parts.push(`Your own travel to ${shortPlace(stops[i + 1]!)}, not with us`);
-      else if (!last && dates[i]) parts.push(`depart ${fmtDate(dates[i])}`);
+      // A stop on the way is the same ride carrying on — a date of its own reads as a new transfer.
+      else if (!last && dates[i] && !via.has(i)) parts.push(`depart ${fmtDate(dates[i])}`);
       return {
         ...(gapAfter ? { gapAfter } : {}),
         color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
-        label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : 'Stop',
+        label: i === 0 ? 'Start' : last ? (roundTrip ? 'Return' : 'End') : via.has(i) ? 'On the way' : 'Stop',
         // Short labels (2026-08-06) — an email column is narrow, and a full address swamps it.
         place: shortPlace(s),
         sub: parts.join(' · ') || undefined,
@@ -293,7 +301,10 @@ export function travelWhenText(booking: Booking): string {
 }
 
 export function routeText(booking: Booking): string {
-  if (booking.mode === 'trip') return booking.input.stops.map(shortPlace).join(' → ');
+  if (booking.mode === 'trip') {
+    const via = viaStops(booking);
+    return booking.input.stops.map((s, i) => (via.has(i) ? `${shortPlace(s)} (on the way)` : shortPlace(s))).join(' → ');
+  }
   if (booking.mode === 'shared') {
     const label = sharedRouteLabel(booking.input);
     if (!label) return 'Shared ride';
