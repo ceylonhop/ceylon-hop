@@ -66,6 +66,20 @@ describe('projectBooking surfaces the whole journey', () => {
   });
 });
 
+// Stops on the way (trip_request.through, 0078): without them the card counts a ride that passes
+// through Colombo city as two journeys. Absent when there are none, like addOns.
+describe('projectBooking carries stops on the way', () => {
+  it('passes `through` to the card', () => {
+    const via = { ...tripBooking, input: { ...(tripBooking as never as { input: Record<string, unknown> }).input, through: [0, 1] } } as unknown as Booking;
+    expect(projectBooking(via).through).toEqual([0, 1]);
+  });
+
+  it('leaves it off a trip without any', () => {
+    expect(projectBooking(tripBooking)).not.toHaveProperty('through');
+    expect(projectBooking(singleBooking)).not.toHaveProperty('through');
+  });
+});
+
 // The add-ons the customer chose reach the manage card as the booking carries them (booking.addOns,
 // read off its quote). Only when there are some: no empty row on a booking without add-ons.
 describe('projectBooking names the add-ons the customer chose', () => {

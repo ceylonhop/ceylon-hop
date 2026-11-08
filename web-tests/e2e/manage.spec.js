@@ -98,6 +98,43 @@ test('the stop count appears on every card, direct transfers included', async ({
   await expect(page.locator('.fact', { hasText: 'Trip end' })).toContainText('same day');
 });
 
+/* Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1, so
+   stops[i+1] is passed through. Counted hop by hop, a ride through Colombo city read as two
+   journeys, and a one-ride booking with a stop called itself "direct". */
+const VIA_VIEW = {
+  ...TRIP_VIEW, reference: 'CH-VIA01',
+  from: 'Negombo', to: 'Ella',
+  stops: ['Negombo', 'Colombo city', 'Anuradhapura', 'Ella'],
+  legDates: [futureIsoDate(30), futureIsoDate(30), futureIsoDate(32)],
+  date: futureIsoDate(30), endDate: futureIsoDate(32),
+  through: [0],
+};
+
+test('a ride with a stop on the way is one journey that names the stop', async ({ page }) => {
+  await serve(page, VIA_VIEW);
+  await page.goto('/manage.html?t=fake-token');
+  await expect(page.locator('.pp-title')).toContainText(/Two journeys/i);
+  const rail = page.locator('.hops .hop');
+  await expect(rail).toHaveCount(2);
+  await expect(rail.nth(0)).toContainText('Negombo → Anuradhapura');
+  await expect(rail.nth(0)).toContainText('via Colombo city');
+  await expect(rail.nth(1)).toContainText('Anuradhapura → Ella');
+  // Every place still counts as a stop.
+  await expect(page.locator('.fact', { hasText: 'Stops' })).toContainText('4 stops');
+});
+
+test('a single ride with a stop on the way keeps its route title, shows the stop, and is not "direct"', async ({ page }) => {
+  await serve(page, { ...VIA_VIEW, to: 'Anuradhapura', stops: VIA_VIEW.stops.slice(0, 3),
+    legDates: VIA_VIEW.legDates.slice(0, 2), endDate: VIA_VIEW.date });
+  await page.goto('/manage.html?t=fake-token');
+  await expect(page.locator('.pp-title')).toContainText('Negombo → Anuradhapura');
+  await expect(page.locator('.hops .hop')).toHaveCount(1);
+  await expect(page.locator('.hops .hop')).toContainText('via Colombo city');
+  const stops = page.locator('.fact', { hasText: 'Stops' });
+  await expect(stops).toContainText('3 stops');
+  await expect(stops).not.toContainText('direct');
+});
+
 /* The ?t= link token authorises viewing this booking AND minting a checkout token for it
    (POST /bookings/view/checkout-token). While it sits in the URL it flows into GA4's
    page_location, Clarity's session recording and this page's own error beacon, which posts

@@ -175,6 +175,9 @@ export interface CustomerBookingView {
      leg departing `stops[i]` runs, null where it isn't set yet. */
   stops: string[];
   legDates: (string | null)[]; // always stops.length - 1 entries
+  // Stops on the way (trip_request.through, 0078): leg i carries straight on into leg i+1 as one
+  // ride, so stops[i+1] is passed through. Absent when there are none.
+  through?: number[];
   endDate: string; // last known leg date, or 'to confirm'
   travellers: number;
   bags: number | null;
@@ -262,6 +265,7 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
       time: 'to confirm',
       stops,
       legDates,
+      ...(b.input.through?.length ? { through: b.input.through } : {}),
       endDate: known.length ? known[known.length - 1] : 'to confirm',
       travellers: b.input.pax,
       bags: null,
