@@ -782,8 +782,16 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     if (found.list.status !== 'gathering') return c.json({ error: 'locked' }, 409);
 
     const removed = await deps.rideLists.removeMember(found.list.id, sub);
-    const fresh = await deps.rideLists.getByCode(c.req.param('code'));
+    let fresh = await deps.rideLists.getByCode(c.req.param('code'));
     const left = committedSeats(fresh?.members ?? []);
+    // The last name off closes the ride: an empty ride is not an offer, and the board would
+    // otherwise show it until its cutoff. A traveller still approving their card counts as on
+    // it — their approval would land as a held card on a ride that is gone.
+    if (removed && fresh && fresh.list.status === 'gathering'
+      && !fresh.members.some((m) => m.status === 'held' || m.status === 'charged' || m.status === 'preapproval_pending')) {
+      await deps.rideLists.setStatus(found.list.id, 'cancelled');
+      fresh = await deps.rideLists.getByCode(c.req.param('code'));
+    }
     if (removed) {
       track({
         action: 'scratch', outcome: 'succeeded', httpStatus: 200, listCode: found.list.code,
