@@ -179,6 +179,17 @@ describe('teamPaidEmail', () => {
     }
   });
 
+  // Stops on the way (trip_request.through, 0078): the Stops row must not read as two transfers.
+  it('marks a stop on the way in the Stops row', () => {
+    const trip = sampleBooking('trip');
+    const b = {
+      ...trip,
+      input: { ...trip.input, serviceType: 'private', stops: ['Negombo', 'Colombo city', 'Anuradhapura'], nights: [0, 0, 0], dates: ['2026-11-12', '2026-11-12'], through: [0] },
+    } as typeof trip;
+    const m = teamPaidEmail(b, '');
+    for (const part of [m.html, m.text]) expect(part).toContain('Negombo → Colombo city (on the way) → Anuradhapura');
+  });
+
   it('names the add-ons a quote-booked trip carries', () => {
     const trip = sampleBooking('trip');
     const b = { ...trip, input: { ...trip.input, serviceType: 'private' }, addOns: ['Waiting fee — Kandy → Ella'] } as typeof trip;
