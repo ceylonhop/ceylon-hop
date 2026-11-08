@@ -104,6 +104,12 @@ function localRouteEstimate(a,b){
 const roadOptions = new Map();   // key → {from,to, fastest:{km,min}, noTolls:{km,min}}: the engine's answer
 const roadChecked = new Set();   // keys already sent in a batch — never sent again
 const roadChoice = new Map();    // key → 'no_tolls' | 'fastest'
+// The engine's fare per drive and vehicle (fareKey → totalCents), from the same batch. Booking
+// charges what the API measures, and the visitor's browser measures a few km differently, so a
+// figure priced here from the browser's km could promise more or less than booking then asks.
+const serverFares = new Map();
+const fareAsked = new Set();     // fareKeys already sent — never sent again, like roadChecked
+function fareKey(chain, veh){ return chain.map(norm).join('>')+'|'+veh; }
 // The road the page draws a drive on before any choice: Google's, or the catalogue's.
 function baseRouteEstimate(a,b){
   return liveRouteCache.get(liveRouteKey(a,b)) || localRouteEstimate(a,b);
@@ -212,6 +218,15 @@ function minutesText(min){
 }
 function legPrice(km, veh){
   return T.legPrice(km, veh);
+}
+// A transfer's price at `km`: the engine's fare once the batch has answered, else this page's own
+// formula. A drive on the local road keeps the page's figure at that road's km (route choice §4.7).
+function legFare(leg, km){
+  if(km==null) return null;
+  const chain=legRouteChain(leg);
+  if(chain.length===2 && roadChoice.get(liveRouteKey(chain[0],chain[1]))==='no_tolls') return legPrice(km,state.vehicle);
+  const cents=serverFares.get(fareKey(chain,state.vehicle));
+  return cents!=null ? cents/100 : legPrice(km,state.vehicle);
 }
 function minLegPrice(veh){
   // Source the floors from the generated FLOORS mirror (window.TRANSFERS), not hardcoded
@@ -639,8 +654,9 @@ function vehiclePriceIcon(){
 
 /* ---- route choice: the chip, the popup and the batch that finds the forks (spec §4.7) ----
    The engine's routeChoice decides only WHETHER a drive has a cheaper local road, and its km and
-   time. Every price here stays this page's own — legPrice at that road's km, finished as the card
-   finishes it — so the chip, the popup and the card can never disagree. */
+   time. The expressway is priced at the card's own figure (the engine's fare once known, see
+   legFare) and the local road at legPrice of its km, finished as the card finishes it — so the
+   chip, the popup and the card can never disagree. */
 const planFareCents = km => Math.round(T.finishPrice(legPrice(km, state.vehicle), minLegPrice(state.vehicle))*100);
 // What a drive's chip and popup describe, or null when there is nothing to offer. A drive whose
 // two roads price the same here shows no chip, unless the traveller already chose (so they can
@@ -649,7 +665,8 @@ function roadOffer(key){
   const opt=roadOptions.get(key); if(!opt) return null;
   const base=baseRouteEstimate(opt.from, opt.to);
   if(!base || base.distanceKm==null) return null;
-  const fastCents=planFareCents(base.distanceKm), localCents=planFareCents(opt.noTolls.km);
+  const engineFast=serverFares.get(fareKey([opt.from,opt.to],state.vehicle));
+  const fastCents=engineFast!=null ? engineFast : planFareCents(base.distanceKm), localCents=planFareCents(opt.noTolls.km);
   const saving=Math.max(0, Math.floor((fastCents-localCents)/100));
   const choice=roadChoice.get(key)||null;
   if(saving<1 && !choice) return null;
@@ -753,11 +770,13 @@ document.addEventListener('focusout', ()=>{
   if(roadSkipped) checkRoads();
 });
 
-/* One estimate-batch request per change of drives (debounced like the rest of the page), one
-   one-leg car intent with compareRoutes per drive not yet checked — so however many drives there
-   are, the page stays inside the API's rate limit. At most 10 drives (the planner's maximum; the
-   server compares at most 12). API off, a network error or a non-200: nothing happens, and
-   nothing retries — every sent drive is already marked checked. */
+/* One estimate-batch request per change of drives (debounced like the rest of the page): per drive
+   not yet asked, a car and a van intent for its fare (serverFares), the car one also carrying
+   compareRoutes when a plain drive's road is not yet checked — so however many drives there are,
+   the page stays inside the API's rate limit, and switching vehicle needs no second request (the
+   API memoises a batch's distances, so the van bills no extra Google lookup). At most 10 drives
+   (the planner's maximum; the server compares at most 12). API off, a network error or a non-200:
+   nothing happens, and nothing retries — every sent drive is already marked asked/checked. */
 let roadTimer=null;
 function checkRoads(){
   clearTimeout(roadTimer);
@@ -775,29 +794,48 @@ function sendRoadBatch(){
   const editing=ae && ae.closest && ae.closest('#rail .leg') && ae.matches('.place-input') ? +ae.closest('#rail .leg').dataset.i : -1;
   const drives=[];
   state.legs.forEach((l,i)=>{
-    if(l.type==='stay' || legVia(l).length) return;   // a leg with stops carries no road
+    if(l.type==='stay') return;
     if(i===editing){ roadSkipped=true; return; }
-    const from=(l.from||'').trim(), to=(l.to||'').trim();
-    if(!from || !to || norm(from)===norm(to) || !isCatalogueTown(from) || !isCatalogueTown(to)) return;
-    const key=liveRouteKey(from,to);
-    if(roadChecked.has(key) || drives.some(d=>d.key===key) || drives.length>=10) return;
-    drives.push({ key, from, to });
+    const chain=legRouteChain(l).map(p=>p.trim());
+    if(chain.some(p=>!p || !isCatalogueTown(p)) || legChainDuplicate(l)) return;
+    if(chain.length===2 && norm(chain[0])===norm(chain[1])) return;
+    const plain=chain.length===2;   // a leg with stops carries no road (ops GC-10)
+    const key=plain ? liveRouteKey(chain[0],chain[1]) : null;
+    const compare=plain && !roadChecked.has(key);
+    const vehicles=['car','van'].filter(v=>!fareAsked.has(fareKey(chain,v)));
+    if((!compare && !vehicles.length) || drives.length>=10) return;
+    if(drives.some(d=>fareKey(d.chain,'car')===fareKey(chain,'car'))) return;
+    drives.push({ key, chain, compare, vehicles });
   });
   if(!drives.length) return;
-  drives.forEach(d=>roadChecked.add(d.key));
-  const intents=drives.map(d=>({ product:'private', vehicle:'car', pax:1, bags:0, extras:[], legs:[{ from:d.from, to:d.to }], compareRoutes:true }));
+  const sent=[];   // one entry per intent, in request order: which drive and vehicle it asked for
+  drives.forEach(d=>{
+    if(d.compare) roadChecked.add(d.key);
+    const vs=d.compare && !d.vehicles.includes('car') ? ['car'].concat(d.vehicles) : d.vehicles;
+    vs.forEach(v=>{ fareAsked.add(fareKey(d.chain,v)); sent.push({ d, v, compare:d.compare && v==='car' }); });
+  });
+  const intents=sent.map(({ d, v, compare })=>{
+    const leg={ from:d.chain[0], to:d.chain[d.chain.length-1] };
+    if(d.chain.length>2) leg.via=d.chain.slice(1,-1);
+    const it={ product:'private', vehicle:v, pax:1, bags:0, extras:[], legs:[leg] };
+    if(compare) it.compareRoutes=true;
+    return it;
+  });
   fetch(window.CEYLON_HOP_API.replace(/\/$/, '')+'/quote/v2/estimate-batch', {
     method:'POST', headers:{ 'content-type':'application/json' }, body:JSON.stringify({ intents })
   }).then(res=>res.ok ? res.json() : null).then(body=>{
     const results=body && Array.isArray(body.results) ? body.results : null;
-    if(!results || results.length!==drives.length) return;
+    if(!results || results.length!==sent.length) return;
     const road=r=>r && Number.isFinite(r.distanceKm) && r.distanceKm>0;
     let changed=false;
-    drives.forEach((d,i)=>{
+    sent.forEach(({ d, v, compare },i)=>{
+      const cents=results[i] && results[i].totalCents;
+      if(Number.isInteger(cents) && cents>0){ serverFares.set(fareKey(d.chain,v), cents); changed=true; }
+      if(!compare) return;
       const rc=results[i] && results[i].routeChoice;
       if(rc && road(rc.fastest) && road(rc.noTolls)){
         roadOptions.set(d.key, {
-          from:d.from, to:d.to,
+          from:d.chain[0], to:d.chain[1],
           fastest:{ km:rc.fastest.distanceKm, min:rc.fastest.durationMin },
           noTolls:{ km:rc.noTolls.distanceKm, min:rc.noTolls.durationMin }
         });
@@ -820,7 +858,7 @@ function refreshRoads(){
     if(!leg || leg.type==='stay' || !distEl) return;
     const route=legRoute(leg);
     const km=route?route.distanceKm:null;
-    distEl.innerHTML=legHeaderHtml(leg, route, km!=null?legPrice(km,state.vehicle):null);
+    distEl.innerHTML=legHeaderHtml(leg, route, legFare(leg, km));
     distEl.classList.toggle('on', km!=null);
   });
   updateSummary();
@@ -945,7 +983,7 @@ function render(){
     const route=!isStay?legRoute(leg):null;
     const km=route?route.distanceKm:null;
     if(!isStay) requestLiveChain(leg, ()=>render());
-    const price=km!=null?legPrice(km,state.vehicle):null;
+    const price=legFare(leg, km);
     const badge = badges[i];
     const dup = legChainDuplicate(leg);
     const ask = !dup ? legLongDay(leg) : null;
@@ -1040,7 +1078,7 @@ function render(){
         state.legs[i].from=fromI.value; state.legs[i].to=toI.value;
         const route=legRoute(state.legs[i]);
         const k=route?route.distanceKm:null;
-        const pr=k!=null?legPrice(k,state.vehicle):null;
+        const pr=legFare(state.legs[i], k);
         distEl.innerHTML=legHeaderHtml(state.legs[i],route,pr);
         distEl.classList.toggle('on', k!=null);
         // Live (Google) distance is resolved only once a place is COMMITTED — on 'change'
@@ -1247,7 +1285,7 @@ function refreshVehiclePricing(){
     if(!distEl) return;
     const route=legRoute(leg);
     const km=route?route.distanceKm:null;
-    const price=km!=null?legPrice(km,state.vehicle):null;
+    const price=legFare(leg, km);
     distEl.innerHTML=legHeaderHtml(leg,route,price);
     distEl.classList.toggle('on', km!=null);
     const b=distEl.querySelector('.lm-price b');
@@ -1366,7 +1404,7 @@ function updateSummary(opts={}){
     const km=route?route.distanceKm:null;
     if(km!=null){
       totalKm+=km;
-      totalPrice+=legPrice(km,state.vehicle);
+      totalPrice+=legFare(l, km);
       resolvedLegs++;
       if(route.durationMin>0) totalDurationMin+=route.durationMin;
       else durationComplete=false;
