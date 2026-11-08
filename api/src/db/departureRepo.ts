@@ -65,6 +65,12 @@ const CORRIDOR_ROUTES: CorridorRoute[] = [
   // joined the south coast to CMB, so Mirissa/Weligama -> Airport could not be represented
   // at all. Seeded by seedCorridors() at boot — no migration.
   { id: 'south-airport', stops: ['Mirissa', 'Weligama', 'Colombo city', 'Colombo Airport (CMB)'], seat: 30, days: SHARED_SERVICE_DAYS, times: ['14:45'] },
+  // Cultural Triangle -> hill country, for the ride board only (owner, 2026-11-07): no corridor
+  // joined Sigiriya to Nuwara Eliya / Ella, so neither could be put on the board. No catalogue
+  // leg rides it, so it sells no scheduled seat; board lists on it price by road distance, and
+  // `seat` (~ that distance price) is only the corridor row's required value. Declared LAST so
+  // Kandy pairs keep resolving to hill-line / airport-cultural (first match wins).
+  { id: 'cultural-hill', stops: ['Sigiriya / Dambulla', 'Kandy', 'Nuwara Eliya', 'Ella'], seat: 31, days: SHARED_SERVICE_DAYS, times: ['08:00'] },
 ];
 
 // ────────────────────────────────────────────────────────────────────────────

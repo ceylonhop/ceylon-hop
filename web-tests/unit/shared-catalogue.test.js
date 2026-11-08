@@ -249,6 +249,17 @@ describe('corridorFor — the ride board keeps pooling everything', () => {
     expect(T.corridorFor('cmb-airport', 'weligama')).toBeTruthy();
   });
 
+  // Sigiriya -> Ella could not be put on the board: no corridor joined the Cultural Triangle
+  // to the hill country (owner, 2026-11-07). A board corridor only — not a scheduled seat.
+  it('pools Sigiriya with the hill country on the cultural-hill corridor, both ways', () => {
+    for (const [a, b] of [['sigiriya', 'ella'], ['ella', 'sigiriya'], ['sigiriya', 'nuwara-eliya']]) {
+      expect(T.corridorFor(a, b)?.corridorId, `${a} -> ${b}`).toBe('cultural-hill');
+      expect(T.sharedOption(a, b), `${a} -> ${b} is not a scheduled seat`).toBeNull();
+    }
+    expect(T.corridorFor('kandy', 'ella')?.corridorId).toBe('hill-line');
+    expect(T.corridorFor('sigiriya', 'kandy')?.corridorId).toBe('airport-cultural');
+  });
+
   it('still returns null for a pair no corridor carries', () => {
     expect(T.corridorFor('trincomalee', 'galle')).toBeNull();
     expect(T.corridorFor('galle', 'galle')).toBeNull();
