@@ -255,11 +255,22 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   var NUMWORD = ['zero','one','two','three','four','five','six','seven','eight','nine','ten'];
   function countWord(n){ return NUMWORD[n] || String(n); }
   // A journey is a LEG — the hop between two stops — so four stops is three journeys.
+  // A stop on the way (v.through, trip_request.through 0078) doesn't end a journey: leg i carries
+  // straight on into leg i+1 as the same ride, so its stop is named "via" and the journey runs on.
+  function stopsOf(v){ return (v && v.stops && v.stops.length >= 2) ? v.stops : [v.from, v.to]; }
   function legsOf(v){
-    var stops = (v && v.stops && v.stops.length >= 2) ? v.stops : [v.from, v.to];
+    var stops = stopsOf(v);
     var dates = (v && v.legDates) || [];
+    var through = (v && v.through) || [];
     var out = [];
-    for (var i = 0; i < stops.length - 1; i++) out.push({ route: stops[i] + ' \u2192 ' + stops[i + 1], date: dates[i] || null });
+    for (var i = 0; i < stops.length - 1;) {
+      var end = i;
+      while (end < stops.length - 2 && through.indexOf(end) >= 0) end++;
+      var via = stops.slice(i + 1, end + 1);
+      out.push({ route: stops[i] + ' \u2192 ' + stops[end + 1] + (via.length ? ' \u00b7 via ' + via.join(', ') : ''),
+        via: via.length > 0, date: dates[i] || null });
+      i = end + 1;
+    }
     return out;
   }
 
@@ -496,7 +507,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   }
   function factsOf(v){
     var legs = legsOf(v);
-    var stopCount = legs.length + 1;
+    // Every place counts as a stop, a stop on the way included (stopsOf's rule, inline).
+    var stopCount = v.stops && v.stops.length >= 2 ? v.stops.length : 2;
     // A one-day trip genuinely starts and ends on the same date; say so rather than printing
     // the same line twice with no explanation.
     var sameDay = isoParts(v.date) && v.date === v.endDate;
@@ -517,7 +529,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         sub: noTime ? '' : 'Sri Lanka time' },
       // Asked for on every card, not just the multi-stop ones: "2 stops" on a direct transfer
       // still answers "is there anything else on this trip?".
-      { k: 'Stops', v: stopCount + ' stops', sub: legs.length <= 1 ? 'direct' : '' }
+      { k: 'Stops', v: stopCount + ' stops', sub: stopCount <= 2 ? 'direct' : '' }
     );
     // The local road the customer chose (the view carries it only then), in the emails' words.
     if (v.road) rows.push({ k: 'Road', v: v.road });
@@ -591,8 +603,9 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
       + statusChip(v.status, v.needsPricing) + '</div>'
       // A trip with stops in the middle shows every journey; a direct transfer has nothing to
-      // add beyond its title, so it skips the rail rather than drawing a rail of one.
-      + (legsOf(v).length > 1 ? '<div class="hops">' + legsOf(v).map(function(l, i, all){
+      // add beyond its title, so it skips the rail rather than drawing a rail of one — unless that
+      // one ride passes through a stop on the way, which the title alone would hide.
+      + (stopsOf(v).length > 2 ? '<div class="hops">' + legsOf(v).map(function(l, i, all){
           var last = i === all.length - 1;
           return '<div class="hop"><div class="hop-rail"><span class="hop-dot' + (last ? ' end' : '') + '"></span>'
             + (last ? '' : '<span class="hop-line"></span>') + '</div>'
