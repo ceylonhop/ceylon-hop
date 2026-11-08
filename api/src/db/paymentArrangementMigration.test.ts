@@ -30,10 +30,10 @@ describe(TAG, () => {
     expect(sql).not.toMatch(/\b(insert\s+into|delete\s+from|drop\s+table|drop\s+column)\b/i);
     expect(sql).not.toMatch(/\bupdate\s+\w+\s+set\b/i);
   });
-  it('is journalled as idx 77, after every other entry', () => {
+  it('is journalled as idx 77, after every earlier entry', () => {
     const entry = journal.entries.find((e) => e.tag === TAG);
     expect(entry?.idx).toBe(77);
-    const others = journal.entries.filter((e) => e.tag !== TAG).map((e) => e.when);
+    const others = journal.entries.filter((e) => e.idx < 77).map((e) => e.when);
     expect(entry!.when).toBeGreaterThan(Math.max(...others));
   });
 });

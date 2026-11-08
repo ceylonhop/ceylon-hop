@@ -36,6 +36,10 @@ export const TripInput = z.object({
   // `stops`, so TripInput stays a plain ZodObject); 'fastest' covers "no choice" and gap wires,
   // pricing identically to absent so the column is a plain text[] with no NULL elements.
   routeVariants: z.array(z.enum(ROUTE_VARIANTS)).max(MAX_TRIP_STOPS - 1).optional(),
+  // Stops on the way (spec 2026-10-30 §4.2): wire i in `through` is driven straight on — stops[i+1]
+  // is a stop inside the same leg, not an overnight. Cross-field rules (not a gap, nights 0, same
+  // date, no road, never the last wire) live in the route handler like gaps' do.
+  through: z.array(z.number().int().min(0)).max(MAX_TRIP_STOPS - 1).optional(),
 });
 
 export type TripInput = z.infer<typeof TripInput>;

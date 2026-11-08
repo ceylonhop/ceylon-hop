@@ -102,6 +102,43 @@ test('the ops sheet survives a refund history that is not a list', async ({ page
   expect(errors).toEqual([]);
 });
 
+// Each request is a trip to the server and the sheet shows neither until it has both, so asking for
+// one only after the other has answered was time the operator spent looking at a skeleton.
+test('the sheet asks for the booking and its refund history at the same time', async ({ page }) => {
+  const store = { refunds: [] };
+  await boot(page, { role: 'ops', store });
+  // The booking answers only once the refund history has been asked for. In sequence this never
+  // answers, and the sheet never leaves its skeleton.
+  let refundsAsked;
+  const asked = new Promise((resolve) => { refundsAsked = resolve; });
+  await page.route('**/admin/bookings/booking-1/refunds', (r) => { refundsAsked(); return r.fulfill(json([])); });
+  await page.route('**/admin/ops/bookings/booking-1', async (r) => {
+    await Promise.race([asked, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    return r.fulfill(json(detail));
+  });
+  await openSheet(page);
+  await expect(page.getByText('Refundable remaining')).toBeVisible({ timeout: 3000 });
+});
+
+test('a refund history that fails costs only the refund history', async ({ page }) => {
+  const store = { refunds: [] };
+  await boot(page, { role: 'ops', store });
+  await page.route('**/admin/bookings/booking-1/refunds', (r) => r.fulfill(json({ error: 'boom' }, 500)));
+  await openSheet(page);
+  await expect(page.getByText('Booking loaded, but refund history is unavailable')).toBeVisible();
+  await expect(page.getByText('Refundable remaining')).toBeVisible();
+});
+
+test('a booking that fails to load never claims it loaded', async ({ page }) => {
+  const store = { refunds: [] };
+  await boot(page, { role: 'ops', store });
+  await page.route('**/admin/bookings/booking-1/refunds', (r) => r.fulfill(json({ error: 'boom' }, 500)));
+  await page.route('**/admin/ops/bookings/booking-1', (r) => r.fulfill(json({ error: 'boom' }, 500)));
+  await page.locator('[data-act="open"][data-id="booking-1"]').dispatchEvent('click');
+  await expect(page.getByText('Could not load details')).toBeVisible();
+  await expect(page.getByText('Booking loaded, but refund history is unavailable')).toHaveCount(0);
+});
+
 test('ops sees its request waiting for a founder, partial, and may withdraw it', async ({ page }) => {
   const store = { refunds: [] };
   page.on('dialog', (d) => d.accept());

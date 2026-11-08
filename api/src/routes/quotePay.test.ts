@@ -1740,7 +1740,8 @@ describe('the pay_on_day state', () => {
     expect(body).not.toHaveProperty('payOnDay');
   });
 
-  it('/view: a won quote whose booking has no arrangement is paid, unchanged', async () => {
+  // Was "is paid, unchanged" — the bug: no money in, yet the link showed "Paid". See payment_due.
+  it('/view: a won quote whose booking has no arrangement and no payment reads payment_due', async () => {
     const quotes = new InMemoryQuoteRepo();
     const bookings = new InMemoryBookingRepo();
     const payments = new InMemoryPaymentRepo();
@@ -1749,7 +1750,7 @@ describe('the pay_on_day state', () => {
     const t = signQuotePayToken(q.id, q.revision, SECRET);
     await start(app, t);
     await quotes.patch(q.id, { status: 'won' });
-    expect((await (await view(app, t)).json()).state).toBe('paid');
+    expect((await (await view(app, t)).json()).state).toBe('payment_due');
   });
 
   it('/start on a pay_on_day link is refused exactly like a paid link — no card checkout', async () => {
@@ -1786,5 +1787,60 @@ describe('the pay_on_day state', () => {
     const res = await payBalance(app, t);
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('no_balance_due');
+  });
+});
+
+// Booked, payment due (owner 2026-11-01): ops pressed Mark booked WITHOUT cash on the day — quote
+// `won`, booking still `payment_pending`, no payment. The link used to show the paid keepsake
+// ("You're booked. Confirmation emailed." + "Paid $X") though nothing was paid. It must say the
+// trip is booked and what is still owed, never "Paid", and must still refuse a card checkout
+// (a second booking beside the marked-booked one).
+describe('the payment_due state', () => {
+  async function markedBooked() {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t)).json();
+    await quotes.patch(q.id, { convertedBookingId: bookingId, status: 'won' });
+    const booking = (await bookings.get(bookingId))!;
+    return { quotes, bookings, payments, app, q, t, bookingId, booking };
+  }
+
+  it('/view: a won quote whose booking is still payment_pending reads payment_due with what is owed', async () => {
+    const { app, t, booking } = await markedBooked();
+    expect(booking.status).toBe('payment_pending'); // guard: the Mark booked shape
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payment_due');
+    expect(body).not.toHaveProperty('paid');
+    expect(body.paymentDue).toEqual({ reference: booking.reference, firstName: 'Nimal', amountUsd: '$219.00', title: expect.any(String) });
+    expect(body).not.toHaveProperty('totals');
+    expect(body).not.toHaveProperty('copy');
+  });
+
+  it('/view: once ops records the payment, the link shows the paid keepsake', async () => {
+    const { app, t, payments, bookings, bookingId, booking } = await markedBooked();
+    const p = await payments.create({ bookingId, provider: 'manual', orderId: booking.reference, amount: 21900, currency: 'USD', idempotencyKey: `manual:${bookingId}` });
+    await payments.markSucceeded(p.id);
+    await bookings.setStatus(bookingId, 'paid');
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe('$219.00');
+  });
+
+  it('/view: an older secured booking with no recorded payment still reads paid', async () => {
+    const { app, t, bookings, bookingId } = await markedBooked();
+    await bookings.setStatus(bookingId, 'paid');
+    expect((await (await view(app, t)).json()).state).toBe('paid');
+  });
+
+  it('/start on a payment_due link is refused like a paid link — no second booking', async () => {
+    const { app, t, bookings } = await markedBooked();
+    const res = await start(app, t);
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_paid');
+    expect((await bookings.list()).length).toBe(1);
   });
 });

@@ -14,10 +14,11 @@ import { test, expect } from '@playwright/test';
 const stubHealth = (page) =>
   page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
-const engine = (page, { car, van, delayMs = 0 }) =>
+const engine = (page, { car, van, delayMs = 0, until }) =>
   page.route('**/quote/v2/estimate', async (r) => {
     const intent = JSON.parse(r.request().postData() || '{}');
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    if (until) await until;
     await r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ totalCents: intent.vehicle === 'van' ? van : car, legs: [] }),
@@ -61,8 +62,15 @@ test('with the engine off, the van books at the catalogue fare and keeps its raw
 });
 
 test('select the van BEFORE the engine answers: fares-pending still lets the href track the choice, and the engine answer then wins', async ({ page }) => {
-  await engine(page, { car: 6600, van: 8900, delayMs: 600 });
+  // The engine answers when this test says so, not after a fixed delay: page.goto() returns at
+  // `load`, and real Google Fonts requests held that back up to 2.6s past DOMContentLoaded, so
+  // a delayed answer could land first and the page was already (correctly) released. Fonts are
+  // aborted because ch-pricing.js gives up on a held answer after 3s, and that clock is running.
+  let answer;
+  const answered = new Promise((res) => { answer = res; });
+  await engine(page, { car: 6600, van: 8900, until: answered });
   await stubHealth(page);
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await page.goto('/trip/kandy-to-ella/');
 
   expect(await pending(page)).toBe(true);
@@ -76,6 +84,7 @@ test('select the van BEFORE the engine answers: fares-pending still lets the hre
 
   // The engine answers later, for the vehicle still selected (van): the href must switch to
   // the engine fare and drop rawPrice, and the bar (if it existed) would show the same number.
+  answer();
   await expect(page.locator('.fares [data-fare=van]')).toHaveText('$89');
   expect(await pending(page)).toBe(false);
   p = q(await page.locator('.fares a.opt-cta').getAttribute('href'));

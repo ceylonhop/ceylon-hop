@@ -16,11 +16,12 @@ import { test, expect } from '@playwright/test';
 const stubHealth = (page) =>
   page.route('**/health', (r) => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
 
-const engine = (page, { car, van, delayMs = 0 }, intents = []) =>
+const engine = (page, { car, van, delayMs = 0, until }, intents = []) =>
   page.route('**/quote/v2/estimate', async (r) => {
     const intent = JSON.parse(r.request().postData() || '{}');
     intents.push(intent);
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    if (until) await until;
     await r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -70,8 +71,15 @@ test('a route page shows the engine fare everywhere it states a price, and books
 });
 
 test('the fare figures are held back while the engine is asked — never one number, then another', async ({ page }) => {
-  await engine(page, { car: 6600, van: 8800, delayMs: 700 });
+  // The engine answers when this test says so, not after a fixed delay: page.goto() returns at
+  // `load`, and real Google Fonts requests held that back up to 2.6s past DOMContentLoaded, so
+  // a delayed answer could land first and the page was already (correctly) released. Fonts are
+  // aborted because ch-pricing.js gives up on a held answer after 3s, and that clock is running.
+  let answer;
+  const answered = new Promise((res) => { answer = res; });
+  await engine(page, { car: 6600, van: 8800, until: answered });
   await stubHealth(page);
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await page.goto('/trip/kandy-to-ella/');
 
   expect(await pending(page)).toBe(true);
@@ -80,6 +88,7 @@ test('the fare figures are held back while the engine is asked — never one num
   expect(await colour()).toMatch(/rgba\(0, 0, 0, 0\)|transparent/);
   const box = await page.locator('.opt-private a.opt-cta').boundingBox();
 
+  answer();
   await expect(page.locator('.opt-private [data-fare="car"]')).toHaveText('$66');
   expect(await pending(page)).toBe(false);
   expect(await colour()).not.toMatch(/rgba\(0, 0, 0, 0\)|transparent/);

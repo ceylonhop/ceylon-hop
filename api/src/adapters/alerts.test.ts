@@ -78,6 +78,19 @@ describe('ThrottledAlerts', () => {
     expect(inner.sent).toHaveLength(2);
   });
 
+  it('an alert with its own cooldown stays quiet past the default one, then sends again', async () => {
+    const now = { t: 0 };
+    const { inner, alerts } = mk(now);
+    const long = { ...alert, cooldownMs: 6 * 3600_000 };
+    await alerts.send(long);
+    now.t = 31 * 60_000;
+    await alerts.send(long);
+    expect(inner.sent).toHaveLength(1);
+    now.t = 6 * 3600_000 + 1;
+    await alerts.send(long);
+    expect(inner.sent).toHaveLength(2);
+  });
+
   it('different dedupe keys are independent', async () => {
     const now = { t: 0 };
     const { inner, alerts } = mk(now);

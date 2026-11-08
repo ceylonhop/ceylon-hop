@@ -37,7 +37,7 @@ import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 // not on the webhook (payments.booking_id is NOT NULL, so settlement needs a booking to
 // land on). Idempotent per quote+revision, so a double tap resumes rather than duplicates.
 
-type PayState = 'balance' | 'pay_on_day' | 'paid' | 'revised' | 'payable' | 'unavailable';
+type PayState = 'balance' | 'pay_on_day' | 'payment_due' | 'paid' | 'revised' | 'payable' | 'unavailable';
 
 // `billing` is optional so a cached older pay.html keeps working; when present it must carry
 // the full address/city/country set (BillingInput), because a half-filled billing object is
@@ -232,6 +232,12 @@ export function quotePayRoutes(deps: {
           ? { state: 'pay_on_day', paidVia: { bookingId: booking.id } }
           : { state: 'unavailable' };
       }
+      // Booked, payment due (owner 2026-11-01): Mark booked without cash on the day leaves the quote
+      // won and the booking payment_pending with no money in. That is booked, not "Paid". Only
+      // payment_pending: an older secured booking with no recorded payment keeps the keepsake.
+      if (!settled && quote.status === 'won' && booking?.status === 'payment_pending') {
+        return { state: 'payment_due', paidVia: { bookingId: booking.id } };
+      }
       if (settled || quote.status === 'won') {
         return { state: 'paid', paidVia: { bookingId: quote.convertedBookingId } };
       }
@@ -337,6 +343,23 @@ export function quotePayRoutes(deps: {
       });
     }
 
+    if (state === 'payment_due' && quote && paidVia) {
+      const booking = await deps.bookings.get(paidVia.bookingId);
+      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const sold = soldViewFor(quote, booking);
+      return c.json({
+        state,
+        paymentDue: {
+          reference: booking?.reference ?? null,
+          firstName: prefillFor(quote).firstName || null,
+          // Total − succeeded payments. Not balanceDueCents: for payment_pending with no arrangement
+          // that is the planned split (total − amountDueNow), i.e. $0 — the opposite of what is owed.
+          amountUsd: usd(booking ? Math.max(0, booking.total - paidCents(rows)) : sold.totalCents),
+          title: payPageCopy(sold, legSelectionOf(sold.payLinkSelection)).title,
+        },
+      });
+    }
+
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
       const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
@@ -410,7 +433,7 @@ export function quotePayRoutes(deps: {
     if (!parsed) return c.json({ error: 'quote_unavailable' }, 409);
     const stored = await deps.quotes.get(parsed.quoteId);
     const { state } = await stateFor(stored, parsed);
-    if (state === 'paid' || state === 'balance' || state === 'pay_on_day') return c.json({ error: 'already_paid' }, 409);
+    if (state === 'paid' || state === 'balance' || state === 'pay_on_day' || state === 'payment_due') return c.json({ error: 'already_paid' }, 409);
     if (state === 'revised') return c.json({ error: 'quote_revised' }, 409);
     if (state !== 'payable' || !stored) return c.json({ error: 'quote_unavailable' }, 409);
     // The quote AS SOLD on this link — see /view. null (nothing valid behind the selection) is the

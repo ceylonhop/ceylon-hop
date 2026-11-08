@@ -66,7 +66,7 @@ export const RATE_CARD = {
   // 5 km of the meeting point (owner 2026-10-16; split into $5 each and 5 km on 2026-10-29). They
   // are not in EXTRA_CODES, so a private quote can't buy them.
   extras: { sightseeing: 1000, 'safari-wait': 1900, luggage: 500, front: 800, flex: 1200, waiting: 1000, 'hotel-pickup': 500, 'hotel-dropoff': 500 },
-  shared: { colomboPickupCents: 300, extraBagCents: 1000 },
+  shared: { extraBagCents: 1000 },
 } as const;
 
 // Structural shape of a rate card, so the engine can price against a LOCKED snapshot (a plain
@@ -88,7 +88,7 @@ export type RateCard = {
   priceFinishing?: { maxReductionBps: number; roundToCents: number };
   fxUsdToLkr: number;
   extras: Record<string, number>;
-  shared: { colomboPickupCents: number; extraBagCents: number };
+  shared: { extraBagCents: number };
   // Active hot zones, composed onto the live card per request (zonesRepo.activeZones()) and frozen
   // into a locked quote's snapshot. Optional for back-compat: a snapshot created before hot zones
   // (or with none active) has no field ⇒ no boost = pre-hot-zones behaviour. The compiled RATE_CARD

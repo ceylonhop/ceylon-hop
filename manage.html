@@ -66,6 +66,8 @@
   .tot.tot-disc .v{color:var(--accent-deep)}
   .tot.tot-final{margin-top:10px;padding-top:10px;border-top:1px solid var(--line-soft,#f0ece1)}
   /* A blank pickup date/time on the card — something still to do (Phase 4). */
+  .fact .v .pt-map{color:inherit;text-decoration:underline;text-decoration-color:var(--line,#e7e3d6);text-underline-offset:3px}
+  .fact .v .pt-map:hover{color:var(--teal-deep,#1f6f78);text-decoration-color:currentColor}
   .fact .v .need{color:#96631a;background:#fbf0d8;border-radius:99px;padding:2px 9px;font-size:.74rem;font-weight:800}
   /* The pickup card (dateless capture Phase 4): one thing left to do, above the ticket. */
   .pk{background:var(--paper);border:1px solid var(--warn-line);border-radius:var(--r);box-shadow:var(--shadow-s);padding:16px 18px;margin:0 0 14px;scroll-margin-top:16px}
@@ -523,10 +525,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       { k: 'Travellers', v: String(v.travellers) },
       { k: 'Vehicle', v: vehicleLabel(v.vehicleType) }
     );
+    // A shared leg's published meeting points, each linking to Google Maps: customers could not
+    // tell where to stand or where they would be set down from the towns (owner, 2026-10-29).
+    if (v.pickupPoint) rows.push({ k: 'Pick-up point', v: v.pickupPoint, map: true });
+    if (v.dropoffPoint) rows.push({ k: 'Drop-off point', v: v.dropoffPoint, map: true });
     // The add-ons the customer chose, as the quote named them. Only when there are some.
     if (v.addOns && v.addOns.length) rows.push({ k: 'Extras', lines: v.addOns });
     return rows.map(function(r){
       var val = r.lines ? r.lines.map(function(l){ return esc(l); }).join('<br>') : esc(r.v);
+      if (r.map) val = '<a class="pt-map" href="https://www.google.com/maps/search/?api=1&amp;query=' + encodeURIComponent(r.v + ', Sri Lanka') + '" target="_blank" rel="noopener">' + val + '</a>';
       // A blank the customer can fill is something to do, not a fact: say so plainly.
       if (r.blank && needs) val = '<span class="need">Not set yet</span>';
       return '<div class="fact"><span class="k">' + esc(r.k) + '</span><span class="v">' + val
