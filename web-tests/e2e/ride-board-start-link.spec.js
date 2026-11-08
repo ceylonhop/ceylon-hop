@@ -72,3 +72,17 @@ test('"Start another van" opens the form with that ride\'s route — it used to 
   await expect(page.locator('#c-to')).toHaveValue('kandy');
   await expect(page.locator('#c-date')).toHaveValue(THU);
 });
+
+// Sigiriya -> Ella was missing from the To list (owner, 2026-11-07): the list only offers places
+// that share a corridor with From, and none joined Sigiriya to Ella. Priced by road distance —
+// it is not a scheduled seat, so no "we already run this" stop on a Saturday either.
+test('Sigiriya can start a list to Ella, priced by distance', async ({ page }) => {
+  await stubApi(page);
+  await page.goto('/board.html?from=' + encodeURIComponent('Sigiriya / Dambulla') + '&to=Ella&date=' + SAT + '&start=1');
+  await expect(page.locator('#mstep-0')).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('#c-from')).toHaveValue('sigiriya');
+  await expect(page.locator('#c-to option[value="ella"]')).toHaveCount(1);
+  await expect(page.locator('#c-to')).toHaveValue('ella');
+  await expect(page.locator('#c-est')).toContainText('$31.50');
+  await expect(page.locator('#sched-stop')).toBeHidden();
+});

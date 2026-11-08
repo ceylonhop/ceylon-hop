@@ -73,6 +73,27 @@ describe('InMemoryDepartureRepo', () => {
   });
 });
 
+// The ride board only offers a pair that shares a corridor, and nothing joined the Cultural
+// Triangle to the hill country: Sigiriya -> Ella could not be put on the board (owner,
+// 2026-11-07). `cultural-hill` is the road between them. It is a board corridor only: no
+// SHARED_PRODUCTS leg rides it, so it opens no scheduled seat.
+describe('cultural-hill corridor (Sigiriya to the hill country)', () => {
+  it('lets the board resolve Sigiriya <-> Ella and Sigiriya <-> Nuwara Eliya', async () => {
+    const repo = new InMemoryDepartureRepo();
+    expect((await repo.findCorridorByRoute('Sigiriya / Dambulla', 'Ella'))?.id).toBe('cultural-hill');
+    expect((await repo.findCorridorByRoute('Ella', 'Sigiriya / Dambulla'))?.id).toBe('cultural-hill');
+    expect((await repo.findCorridorByRoute('Sigiriya / Dambulla', 'Nuwara Eliya'))?.id).toBe('cultural-hill');
+  });
+  it('leaves the existing pairs on the corridors they already resolve to', async () => {
+    const repo = new InMemoryDepartureRepo();
+    expect((await repo.findCorridorByRoute('Kandy', 'Ella'))?.id).toBe('hill-line');
+    expect((await repo.findCorridorByRoute('Sigiriya / Dambulla', 'Kandy'))?.id).toBe('airport-cultural');
+  });
+  it('sells no scheduled seat on it', () => {
+    expect(SHARED_PRODUCTS.filter((p) => p.corridorId === 'cultural-hill')).toEqual([]);
+  });
+});
+
 describe('serviceDaysForCorridor', () => {
   it('returns a corridor’s service weekdays from the catalogue', () => {
     expect(serviceDaysForCorridor('hill-line')).toEqual([3, 6]);

@@ -14,7 +14,7 @@
   const DEPOSIT_PCT = 0.1;
   const DEPOSIT_MIN = 50;
   const EXTRAS = {"sightseeing":10,"safari-wait":19,"luggage":5,"front":8,"flex":12,"waiting":10,"hotel-pickup":5,"hotel-dropoff":5};
-  const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30};
+  const CORRIDOR_SEAT = {"airport-cultural":19,"hill-line":21,"ella-east":23,"south-coast":14,"yala-south":16,"ella-south":24,"south-airport":30,"cultural-hill":31};
   const SEAT_PRICING = {"perKmCentsVan":54.05,"floorCentsVan":4999,"seatsCoveringVan":3};
   const SHARED_PRODUCTS = [{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Colombo Airport (CMB)","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:00","pickup":"CMB Airport","dropoff":"Barista Cafe, Sigiriya"},{"id":"negombo-sigiriya","corridorId":"airport-cultural","from":"Negombo","to":"Sigiriya / Dambulla","seat":27.49,"time":"07:30","pickup":"Zen Cafe, Negombo","dropoff":"Barista Cafe, Sigiriya"},{"id":"sigiriya-kandy","corridorId":"airport-cultural","from":"Sigiriya / Dambulla","to":"Kandy","seat":19.99,"time":"11:30","pickup":"Barista Cafe, Sigiriya","dropoff":"Kandy City Centre"},{"id":"ella-yala","corridorId":"ella-east","from":"Ella","to":"Yala","seat":22.99,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Chef Lady, Tissamaharama"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Weligama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Nomad Cafe, Weligama"},{"id":"ella-south-coast","corridorId":"ella-south","from":"Ella","to":"Ahangama","seat":24,"time":"09:00","pickup":"Barn by Starbeans Cafe, Ella","dropoff":"Thileni's, Ahangama"},{"id":"south-airport","corridorId":"south-airport","from":"Mirissa","to":"Colombo Airport (CMB)","seat":29.99,"time":"14:45","pickup":"Barista Cafe, Mirissa","dropoff":"CMB Airport"},{"id":"south-airport","corridorId":"south-airport","from":"Weligama","to":"Colombo Airport (CMB)","seat":29.99,"time":"15:00","pickup":"Nomad Cafe, Weligama","dropoff":"CMB Airport"}];
   /* @end:pricing */
@@ -94,6 +94,15 @@
       label: 'South Coast → Airport',
       stops: ['mirissa', 'weligama', 'colombo', 'cmb-airport'],
       seat: CORRIDOR_SEAT['south-airport'], times: ['14:45'], days: SHARED_DAYS, freqText: 'Wed & Sat'
+    },
+    {
+      // Ride board only (2026-11-07): joins Sigiriya to the hill country so Sigiriya -> Ella can
+      // be pooled. No catalogue leg rides it — not a scheduled seat. Last, so Kandy pairs keep
+      // their existing corridor (first match wins).
+      id: 'cultural-hill',
+      label: 'Sigiriya → Hill Country',
+      stops: ['sigiriya', 'kandy', 'nuwara-eliya', 'ella'],
+      seat: CORRIDOR_SEAT['cultural-hill'], times: ['08:00'], days: SHARED_DAYS, freqText: 'Wed & Sat'
     }
   ];
 
