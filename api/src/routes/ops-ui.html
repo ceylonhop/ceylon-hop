@@ -3861,25 +3861,34 @@ function legsHtmlFor(d){
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
+    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[],through=b.input.through||[];
+    const lastWire=stops.length-2;
     /* Progress through a trip under way (spec 2026-11-06 §3): a leg dated before today has run and
        is struck out; the first driven leg today or later is next. Styling only — the words stay. */
-    let next=-1;
-    for(let i=0;i<stops.length-1;i++)if(!gaps.includes(i)&&dates[i]&&dates[i]>=TODAY){next=i;break;}
-    let rows='';
-    for(let i=0;i<stops.length-1;i++){
+    let next=false,rows='',n=0;
+    for(let i=0;i<=lastWire;){
+      n++;
       /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
          pay link left out. Never brief a driver for it. */
       if(gaps.includes(i)){
         rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
+        i++;
         continue;
       }
-      const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
+      /* Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1,
+         so the run is ONE leg — one pickup, one driver. Same grouping as bookingLegs.ts privateLegs. */
+      let end=i;
+      while(end<lastWire&&through.includes(end)&&!gaps.includes(end+1))end++;
+      const via=stops.slice(i+1,end+1);
+      const when=dates[i]?fmtDate(dates[i]):`Leg ${n}`;
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
-      const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
-      const st=dates[i]&&dates[i]<TODAY?' leg-done':i===next?' leg-next':'';
-      rows+=`<div class="leg${st}"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
+      const road=(b.input.routeVariants||[]).slice(i,end+1).includes('no_tolls')?' · local road':'';
+      const isNext=!next&&!!dates[i]&&dates[i]>=TODAY;
+      if(isNext)next=true;
+      const st=dates[i]&&dates[i]<TODAY?' leg-done':isNext?' leg-next':'';
+      rows+=`<div class="leg${st}"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[end+1])}${via.length?` · via ${via.map(esc).join(', ')}`:''}${road}</span></div>`;
+      i=end+1;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }
