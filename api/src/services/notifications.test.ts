@@ -187,6 +187,56 @@ describe('sendBookingConfirmation — trip with a self-arranged stretch', () => 
   });
 });
 
+// Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1, so
+// stops[i+1] is a place the car passes through. Listed like any other stop, with its own "depart"
+// date, it read as a second transfer.
+describe('emails — stops on the way', () => {
+  const viaTrip: Booking = {
+    mode: 'trip',
+    id: 'id5',
+    reference: 'CH-VIA01',
+    status: 'paid',
+    createdAt: new Date().toISOString(),
+    total: 12000,
+    currency: 'USD',
+    channel: 'website',
+    input: {
+      stops: ['Negombo', 'Colombo city', 'Anuradhapura'],
+      nights: [0, 0, 0],
+      dates: ['2026-11-12', '2026-11-12'],
+      pax: 2,
+      vehicleType: 'car',
+      serviceType: 'private',
+      customer,
+      through: [0],
+    },
+  };
+
+  it('marks the stop on the way in the route text every email uses', () => {
+    expect(routeText(viaTrip)).toBe('Negombo → Colombo city (on the way) → Anuradhapura');
+  });
+
+  it('labels the stop "On the way" in the timeline, with no depart date of its own', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(viaTrip, email);
+    const { html, text } = email.sent[0];
+    expect(html).toContain('On the way');
+    expect(html.match(/depart /g)).toHaveLength(1);
+    expect(text).toContain('Trip: Negombo → Colombo city (on the way) → Anuradhapura');
+  });
+
+  it('leaves a trip without stops on the way exactly as before', async () => {
+    const input = { ...(viaTrip.input as Extract<Booking, { mode: 'trip' }>['input']) };
+    delete input.through;
+    const plain = { ...viaTrip, input } as Booking;
+    expect(routeText(plain)).toBe('Negombo → Colombo city → Anuradhapura');
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(plain, email);
+    expect(email.sent[0].html).not.toContain('On the way');
+    expect(email.sent[0].html.match(/depart /g)).toHaveLength(2);
+  });
+});
+
 describe('sendBookingConfirmation — shared seat', () => {
   const shared: Booking = {
     mode: 'shared',

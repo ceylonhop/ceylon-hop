@@ -56,6 +56,57 @@ describe('drawer legs', () => {
   });
 });
 
+// Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1, so
+// stops[i+1] is a place the car passes through, not the end of a transfer. Drawn one row per hop it
+// read as two same-day transfers — a driver briefing could book two pickups for one ride.
+describe('drawer legs — stops on the way', () => {
+  it('draws a ride with a stop on the way as ONE leg, naming the stop', () => {
+    const r = rows(legsHtmlFor(trip({
+      stops: ['Negombo', 'Colombo city', 'Anuradhapura'],
+      dates: ['2026-11-12', '2026-11-12'],
+      through: [0],
+    })));
+    expect(r).toEqual(['D(2026-11-12) · Negombo → Anuradhapura · via Colombo city']);
+  });
+
+  it('names several stops on the way in order, and keeps the overnight legs around them', () => {
+    const r = rows(legsHtmlFor(trip({
+      stops: ['Colombo', 'Kandy', 'Dambulla', 'Sigiriya', 'Ella'],
+      dates: ['2026-11-12', '2026-11-12', '2026-11-12', '2026-11-15'],
+      through: [0, 1],
+    })));
+    expect(r).toEqual([
+      'D(2026-11-12) · Colombo → Sigiriya · via Kandy, Dambulla',
+      'D(2026-11-15) · Sigiriya → Ella',
+    ]);
+  });
+
+  it('keeps the customer’s own travel apart from a ride with stops', () => {
+    const r = rows(legsHtmlFor(trip({
+      stops: ['A', 'B', 'C', 'D'],
+      dates: ['2026-11-12', '2026-11-12', ''],
+      through: [0],
+      gaps: [2],
+    })));
+    expect(r).toEqual(['D(2026-11-12) · A → C · via B', 'C → D · customer’s own travel, not driven by us']);
+  });
+
+  it('numbers undated legs by row, and flags a local road on any hop of the ride', () => {
+    const r = rows(legsHtmlFor(trip({
+      stops: ['A', 'B', 'C', 'D'],
+      through: [1],
+      routeVariants: ['fastest', 'no_tolls', 'fastest'],
+    })));
+    expect(r).toEqual(['Leg 1 · A → B', 'Leg 2 · B → D · via C · local road']);
+  });
+
+  it('strikes out or tags the whole ride, never its stop on the way', () => {
+    const classes = (html: string) => [...html.matchAll(/<div class="(leg(?: [^"]*)?)">/g)].map((m) => m[1]);
+    const html = legsHtmlFor(trip({ stops: ['A', 'B', 'C', 'D'], dates: [iso(-1), iso(2), iso(2)], through: [1] }));
+    expect(classes(html)).toEqual(['leg leg-done', 'leg leg-next']);
+  });
+});
+
 // Owner 2026-11-05 (spec 2026-11-06-ops-multistop-next-leg-design.md §3): on a trip under way, the
 // legs that have run are struck out and the next one is tagged, so ops sees where the customer is.
 describe('drawer legs — progress through the trip', () => {
