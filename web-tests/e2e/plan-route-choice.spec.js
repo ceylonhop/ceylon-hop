@@ -9,8 +9,9 @@ import { futureIsoDate } from '../dates.js';
   car intent per drive. A drive whose answer carries a `routeChoice` gains a chip on its card,
   and the earliest undecided one is offered once, in the shared popup, when the page is quiet.
 
-  The engine answer decides only WHETHER a cheaper fork exists and its km/time. Every price on
-  this page stays the planner's own (legPrice at that road's km), labelled "about".
+  The engine answer decides WHETHER a cheaper fork exists and its km/time. The expressway shows
+  the engine's fare (the card's figure, plan-server-fares.spec.js); the local road is the
+  planner's own legPrice at that road's km, labelled "about".
 
   CMB airport → Ella: expressway 335 km / 299 min; local road 213 km / 374 min.
   The planner's car prices: $140 at the catalogue's 335 km, $89.99 at 213 km — save about $50.
@@ -34,8 +35,10 @@ async function stubBatch(page, { gate = null, choiceFor = (i) => (isCmbElla(i) ?
     const body = JSON.parse(r.request().postData() || '{}');
     calls.push(body);
     if (gate) await gate;
+    // Each drive's fare is its fastest road's (the planner now shows it); only a compareRoutes
+    // intent gets the routeChoice, as the API answers.
     const results = (body.intents || []).map((i) => (choiceFor(i)
-      ? { totalCents: 14000, currency: 'USD', routeChoice: choiceFor(i) }
+      ? { totalCents: choiceFor(i).fastest.totalCents, currency: 'USD', ...(i.compareRoutes ? { routeChoice: choiceFor(i) } : {}) }
       : { totalCents: 5600, currency: 'USD' }));
     await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
   });
@@ -91,8 +94,13 @@ test('one batch checks every drive; only the forked drive gets a chip', async ({
   await page.goto(PLAN);
   await expect(chip(page, 0)).toContainText('Cheaper local road · save about $50');
   expect(calls).toHaveLength(1);
-  expect(calls[0].intents).toHaveLength(2);
-  expect(calls[0].intents.every((i) => i.compareRoutes === true && i.product === 'private' && i.vehicle === 'car')).toBe(true);
+  // per drive: a car intent that compares roads, and a van intent for the van fare only
+  const car = calls[0].intents.filter((i) => i.vehicle === 'car');
+  const van = calls[0].intents.filter((i) => i.vehicle === 'van');
+  expect(car).toHaveLength(2);
+  expect(car.every((i) => i.compareRoutes === true && i.product === 'private')).toBe(true);
+  expect(van.map(pair)).toEqual(car.map(pair));
+  expect(van.some((i) => i.compareRoutes)).toBe(false);
   await expect(chip(page, 2)).toHaveCount(0);
   // nothing more is asked once the drives are known
   await page.waitForTimeout(1200);
@@ -251,7 +259,7 @@ test('only catalogue towns are checked', async ({ page }) => {
   await page.goto('/plan.html?stops=' + encodeURIComponent('Colombo Airport (CMB)|Ella|Ella Rock Guesthouse, Ella') + '&pax=2');
   await expect(chip(page, 0)).toContainText('Cheaper local road');
   expect(calls).toHaveLength(1);
-  expect(calls[0].intents.map(pair)).toEqual(['Colombo Airport (CMB)>Ella']);
+  expect([...new Set(calls[0].intents.map(pair))]).toEqual(['Colombo Airport (CMB)>Ella']);
 });
 
 test('a gapped trip\'s roads re-index onto the planner\'s own stops', async ({ page }) => {
@@ -281,7 +289,8 @@ test('two forked drives: only the first opens, and the second never follows', as
   await page.goto(PLAN);
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading')).toHaveText('Two roads to Ella');
-  await expect(chip(page, 2)).toContainText('Cheaper local road · save about $11');
+  // the engine's $56 fastest fare (now the card's figure) less the planner's $44 at 100 km
+  await expect(chip(page, 2)).toContainText('Cheaper local road · save about $12');
   await dialog.getByRole('button', { name: 'Close' }).click();
   await expect(dialog).toHaveCount(0);
   // a quiet moment (focus in and out of a field) does not bring the second drive's popup

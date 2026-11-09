@@ -1261,7 +1261,7 @@
     var need = Math.max(0, min - L.committed);
     var conf = L.confirmed || need === 0;
     // Names are shut: no join anywhere on this sheet, and no empty "you?" seats inviting one.
-    var shut = !L.confirmed && isClosed(L);
+    var shut = !L.confirmed && (isClosed(L) || L.cancelled);
     var slots = (conf || shut) ? 0 : need;
     var youIn = iAmOn(L);
     // Seats you could still add to your own name: what's free on the van, capped at the

@@ -631,6 +631,41 @@ describe('POST /admin/jobs/watchdog', () => {
     const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(res.status).toBe(200);
   });
+
+  // The daily tick's heartbeat used to be read only by the Health tab, so a tick that never
+  // ran alerted nobody (2026-11-06). The watchdog's independent ~15-min cron now checks it.
+  describe('daily-tick liveness', () => {
+    const HOUR = 3600_000;
+    async function appWithTickAt(at: Date | null) {
+      const { NOTIFICATIONS_TICK } = await import('../services/scheduler');
+      const alerts = new FakeAlertAdapter();
+      const alertLog = new InMemoryAlertLogRepo();
+      if (at) await alertLog.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, at);
+      return { alerts, app: createApp({ adminApiKey: KEY, auth, alerts, alertLog }) };
+    }
+    const stale = (alerts: FakeAlertAdapter) => alerts.sent.filter((a) => a.kind === 'notifications_stale');
+
+    it('warns, on a long cooldown, when the daily tick last finished over 26 h ago', async () => {
+      const { app, alerts } = await appWithTickAt(new Date(Date.now() - 27 * HOUR));
+      const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+      expect((await res.json()).notificationsStale).toBe(true);
+      expect(stale(alerts)).toHaveLength(1);
+      expect(stale(alerts)[0]).toMatchObject({ severity: 'warning', cooldownMs: 12 * HOUR });
+    });
+
+    it('warns when the daily tick has never run', async () => {
+      const { app, alerts } = await appWithTickAt(null);
+      await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+      expect(stale(alerts)).toHaveLength(1);
+    });
+
+    it('stays quiet when the daily tick finished recently', async () => {
+      const { app, alerts } = await appWithTickAt(new Date(Date.now() - 2 * HOUR));
+      const res = await app.request('/admin/jobs/watchdog', { method: 'POST', headers: { 'x-admin-key': KEY } });
+      expect((await res.json()).notificationsStale).toBe(false);
+      expect(stale(alerts)).toHaveLength(0);
+    });
+  });
 });
 
 // GL-3 — cancelling/refunding a shared booking must give its seats back to the departure.
@@ -1408,6 +1443,35 @@ describe('POST /admin/jobs/notifications — heartbeat', () => {
     const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
     expect(res.status).toBe(200);
     expect(await alertLog.lastSentAt(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key)).not.toBeNull();
+  });
+});
+
+// The tick's riders are best-effort, but a failure used to reach only console.error — nobody saw
+// a ride-board cutoff (which charges cards) die mid-run (2026-11-06). Each now reports and alerts.
+describe('POST /admin/jobs/notifications — a failing sweep is reported', () => {
+  it('alerts per failed sweep, critical for the ride-board cutoff, and the tick still answers 200', async () => {
+    const alerts = new FakeAlertAdapter();
+    const rideLists = new InMemoryRideListRepo();
+    rideLists.dueForCutoff = async () => { throw new Error('db blip'); };
+    const quotes = new InMemoryQuoteRepo();
+    quotes.list = async () => { throw new Error('db blip'); };
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo(), rideLists, quotes });
+    const res = await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(res.status).toBe(200);
+    const failed = alerts.sent.filter((a) => a.kind === 'job_sweep_failed');
+    expect(failed.map((a) => [a.dedupeKey, a.severity])).toEqual([
+      ['ride_board_cutoff', 'critical'],
+      ['quote_expiry', 'warning'],
+      ['abandoned_drafts', 'warning'],
+    ]);
+    expect(failed[0].body).toContain('db blip');
+  });
+
+  it('raises nothing when every sweep succeeds', async () => {
+    const alerts = new FakeAlertAdapter();
+    const app = createApp({ adminApiKey: KEY, auth, alerts, alertLog: new InMemoryAlertLogRepo(), quotes: new InMemoryQuoteRepo() });
+    await app.request('/admin/jobs/notifications', { method: 'POST', headers: { 'x-admin-key': KEY } });
+    expect(alerts.sent.map((a) => a.kind)).not.toContain('job_sweep_failed');
   });
 });
 

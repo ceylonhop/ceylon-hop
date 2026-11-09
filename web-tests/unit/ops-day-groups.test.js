@@ -46,13 +46,15 @@ const YESTERDAY = iso(-1);
 const NEXT_MONTH = iso(20);
 
 // eslint-disable-next-line no-new-func
-const { dayGroup, inGroup } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
+const { dayGroup, inGroup, anchorDate, legNote } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
+  const anchorDate=${extractConst('anchorDate')};
+  const legNote=${extractConst('legNote')};
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
   const dayGroup=${extractConst('dayGroup')};
   ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
   const inGroup=${extractConst('inGroup')};
-  return { dayGroup, inGroup };
+  return { dayGroup, inGroup, anchorDate, legNote };
 `)(CLOSED, TODAY, TOMORROW);
 
 const t = (over) => ({ stage: 'paid', date: NEXT_MONTH, source: 'web', ...over });
@@ -166,5 +168,66 @@ describe('bookings queue filter chips', () => {
     // A founder's badge also adds the refunds waiting on them (closed bookings included); the
     // open-work half is still scoped to "All open", so the count never reaches back into old rows.
     expect(html).toContain("const attn=tickets.filter(t=>!t.test&&((inGroup(t,'all')&&isAttn(t))||(isFounderUi()&&inGroup(t,'refunds')))).length;");
+  });
+});
+
+// Owner 2026-11-05 (spec 2026-11-06-ops-multistop-next-leg-design.md): a multi-stop trip filed
+// under its FIRST date moved to "Needs closing" the day after it started — out of All open and On
+// trip, and inside the bulk close-out's reach — while leg 3 tomorrow never showed under Tomorrow.
+// A trip now files under its next leg still to run, and only reaches Needs closing once its LAST
+// leg has passed.
+describe('a multi-stop trip files under its next leg', () => {
+  const leg = (date, from = 'A', to = 'B') => ({ date, from, to });
+  const midTrip = (over) => t({
+    stage: 'on_trip', date: iso(-3),
+    legs: [leg(iso(-3), 'Colombo', 'Kandy'), leg(YESTERDAY, 'Kandy', 'Ella'), leg(TOMORROW, 'Ella', 'Yala'), leg(iso(4), 'Yala', 'Galle')],
+    ...over,
+  });
+
+  it('anchors on the next leg today or later, else the last leg, else the booking date', () => {
+    expect(anchorDate(midTrip())).toBe(TOMORROW);
+    expect(anchorDate(midTrip({ legs: [leg(YESTERDAY), leg(TODAY)] }))).toBe(TODAY);
+    expect(anchorDate(midTrip({ legs: [leg(iso(-5)), leg(YESTERDAY)] }))).toBe(YESTERDAY);
+    expect(anchorDate(t({ date: NEXT_MONTH }))).toBe(NEXT_MONTH); // a transfer has no legs
+    expect(anchorDate(t({ date: NEXT_MONTH, legs: [] }))).toBe(NEXT_MONTH);
+  });
+
+  it('never anchors on an undated leg', () => {
+    expect(anchorDate(midTrip({ legs: [leg(YESTERDAY), leg(null), leg(NEXT_MONTH)] }))).toBe(NEXT_MONTH);
+  });
+
+  it('files a trip that started days ago under the day of its next leg', () => {
+    expect(dayGroup(midTrip())).toBe('Tomorrow');
+    expect(dayGroup(midTrip({ legs: [leg(YESTERDAY), leg(TODAY)] }))).toBe('Today');
+    expect(dayGroup(midTrip({ legs: [leg(YESTERDAY), leg(NEXT_MONTH)] }))).toBe('Upcoming');
+  });
+
+  it('keeps a trip under way in All open and the On trip chip, out of Needs closing', () => {
+    expect(inGroup(midTrip(), 'all')).toBe(true);
+    expect(inGroup(midTrip(), 'trip')).toBe(true);
+    expect(inGroup(midTrip(), 'closing')).toBe(false);
+    // …which is what keeps it out of the bulk close-out: that handler only actions Needs closing.
+    expect(dayGroup(midTrip())).not.toBe('Needs closing');
+  });
+
+  it('reaches Needs closing only once its last leg has passed', () => {
+    const over = midTrip({ legs: [leg(iso(-5)), leg(iso(-3)), leg(YESTERDAY)] });
+    expect(dayGroup(over)).toBe('Needs closing');
+    expect(inGroup(over, 'closing')).toBe(true);
+  });
+
+  it('an unpaid trip whose first day has gone is still Expired, whatever its later legs say', () => {
+    expect(dayGroup(midTrip({ stage: 'awaiting_payment' }))).toBe('Expired');
+  });
+
+  it('names the next leg on a trip already under way, and nothing before it starts', () => {
+    expect(legNote(midTrip())).toBe('Leg 3 of 4 · Ella → Yala');
+    expect(legNote(midTrip({ legs: [leg(TOMORROW, 'Colombo', 'Kandy'), leg(NEXT_MONTH)] }))).toBe('');
+    expect(legNote(t({ date: TOMORROW }))).toBe('');
+    expect(legNote(midTrip({ legs: [leg(iso(-5)), leg(YESTERDAY)] }))).toBe(''); // trip over
+  });
+
+  it('sorts each day group by the anchor, so a trip resuming tomorrow sits among tomorrow\'s rows', () => {
+    expect(html).toContain("const tkey=t=>(anchorDate(t)||'9999-99-99')");
   });
 });

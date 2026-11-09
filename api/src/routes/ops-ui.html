@@ -202,6 +202,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .tk-meta{display:flex;align-items:center;gap:9px;margin-top:9px;color:var(--ink-faint);font-size:.8rem;flex-wrap:wrap}
   .tk-meta .sep{width:3px;height:3px;border-radius:50%;background:var(--cream-deep)}
   .tk-meta .tk-phone{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .tk-meta .tk-next{white-space:nowrap;color:var(--ink-soft);font-weight:700}
   .tk-meta .tk-paid.late{color:var(--wait);font-weight:700}
   .tk-meta .reason{display:inline-flex;align-items:center;gap:6px;background:var(--alert-bg);color:var(--alert);font-weight:700;font-size:.73rem;padding:3px 10px 3px 8px;border-radius:999px}
   .tk-meta .reason::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--alert)}
@@ -511,6 +512,10 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
   .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
+  .legs .leg-done .r{color:var(--ink-faint);text-decoration:line-through}
+  .legs .leg-done .r::before{content:"✓ ";text-decoration:none;display:inline-block;margin-right:4px}
+  .legs .leg-next .r{font-weight:700}
+  .legs .leg-next .r::after{content:"Next";display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--cream-deep);color:var(--ink);font-size:.72rem;font-weight:700;vertical-align:1px}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -2095,8 +2100,27 @@ const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}
      Expired       — unpaid and the date is gone. The money can never arrive; there is no trip
                      to close. Action: none. It is display-only — no status is written here,
                      because auto-expiring a booking is a lifecycle change and its own step. */
+/* A multi-stop trip files under its NEXT leg still to run, not its first (owner 2026-11-05, spec
+   2026-11-06-ops-multistop-next-leg-design.md): filed by day one, a trip went to Needs closing the
+   morning after it started while leg 3 tomorrow never showed under Tomorrow. Once every leg has
+   passed it is the last leg's date, so the trip reaches Needs closing only when it is over. A
+   transfer has no legs, so this is its own date. t.date stays the START: the reversal window,
+   "travels today" and the When line all mean the start, and Expired stays on it too — an unpaid
+   trip whose first day has gone is dead money whatever its later legs say. */
+const anchorDate=t=>{
+  const dated=(t.legs||[]).map(l=>l.date).filter(Boolean).sort();
+  if(!dated.length)return t.date;
+  return dated.find(d=>d>=TODAY)||dated[dated.length-1];
+};
+/* "Leg 3 of 4 · Ella → Yala" on a trip already under way, so the row reads as a trip resuming,
+   not a new booking. Nothing before the first leg (the row's date says it) or after the last. */
+const legNote=t=>{
+  const legs=t.legs||[],a=anchorDate(t),i=legs.findIndex(l=>l.date===a);
+  if(i<1||a<TODAY||!legs.some(l=>l.date&&l.date<TODAY))return '';
+  return `Leg ${i+1} of ${legs.length} · ${legs[i].from} → ${legs[i].to}`;
+};
 const isExpired=t=>{ return t.stage==='awaiting_payment'&&!!t.date&&t.date<TODAY; };
-const isOverdue=t=>{ return !CLOSED.includes(t.stage)&&t.stage!=='awaiting_payment'&&!!t.date&&t.date<TODAY; };
+const isOverdue=t=>{ const d=anchorDate(t); return !CLOSED.includes(t.stage)&&t.stage!=='awaiting_payment'&&!!d&&d<TODAY; };
 
 const DAYGROUPS=['Today','Tomorrow','Upcoming','No date yet','Needs closing','Expired','Closed'];
 const dayGroup=t=>{
@@ -2113,13 +2137,14 @@ const dayGroup=t=>{
   /* Undated is its own state, not a payment state. 9 of these were PAID bookings with no travel
      date, filed under a heading that read "awaiting payment · undated" — the money was in and
      what was missing was a date, which is a different phone call. */
-  if(!t.date)return 'No date yet';
+  const d=anchorDate(t);
+  if(!d)return 'No date yet';
   /* Everything still to come files by ITS OWN DATE, paid or not. A dated unpaid booking is a
      trip that is coming: the two most urgent rows in the real queue were exactly that (trip
      inside the week, money not in) and the old "Pending" block put them as far from their date
      as the layout allowed. The row's stage pill already says it is unpaid. */
-  if(t.date===TODAY)return 'Today';
-  if(t.date===TOMORROW)return 'Tomorrow';
+  if(d===TODAY)return 'Today';
+  if(d===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
 };
 const groupNote={Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead','No date yet':'trip date not set — confirm with the customer','Needs closing':'date passed — mark completed or no-show',Expired:'unpaid and the date has passed — no trip to run',Closed:'done · cancelled · refunded'};
@@ -2202,7 +2227,8 @@ const reason=t=>{
   /* A closed booking has no outstanding action, whatever it looked like on the way out. */
   if(CLOSED.includes(t.stage))return '';
   if(t.stage==='awaiting_payment')return 'Payment not received — follow up';
-  if(t.date&&t.date<TODAY)return 'Trip date passed — mark completed or no-show';
+  /* Over means its LAST leg has passed on a multi-stop trip (spec 2026-11-06), as in Needs closing. */
+  if(isOverdue(t))return 'Trip date passed — mark completed or no-show';
   /* Pay on the day: the team collects the cash at today's first pickup. On any other day the
      vehicle nag still wins — the car is arranged first. */
   if(cashDue(t)&&t.date===TODAY)return `Collect ${money({amount:t.cashDue,currency:t.currency})} cash · travels today`;
@@ -2321,6 +2347,8 @@ function rowToTicket(row){
   return {
     id:row.id, ref:row.reference, chan:row.channel, cust:row.customerName, first:row.customerFirstName, phone:row.customerPhone||'',
     mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
+    /* A trip's driven legs (date/from/to); [] on a transfer, absent on an older or mocked row. */
+    legs:row.legs||[],
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     /* A deposit booking: what has landed and what is still owed (the ledger's figures, never
        derived here). balance>0 on a paid row means the customer owes the rest. */
@@ -2607,9 +2635,11 @@ function ticketRow(t,i){
   const lead=board
     ?`<div class="chan board" title="Ride board van">${ICON.van}</div>`
     :`<div class="chan ${chanClass(t.chan)}" title="${chanLabel(t.chan)}">${chanIcon(t.chan)}</div>`;
+  /* A trip under way names its next leg first (spec 2026-11-06): the row is filed by that leg. */
+  const nl=board?'':legNote(t);
   const meta=board
     ?`${esc(boardSeats(t))}`
-    :`${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
+    :`${nl?`<span class="tk-next">${esc(nl)}</span><span class="sep"></span>`:''}${t.guests} guests${t.phone?`<span class="sep"></span><span class="tk-phone">${esc(t.phone)}</span>`:''}${pa?`<span class="sep"></span><span class="tk-paid${pa.late?' late':''}">${pa.txt}</span>`:''}${attn?`<span class="sep"></span><span class="reason">${esc(rs)}</span>`:''}`;
   const booked=state.view==='recent'&&t.created?`<span class="sep"></span>${esc(fmtBooked(t.created))}`:'';
   /* Bulk close-out (2026-08-07): only rows in Needs closing get a tick box — a trip whose date
      has passed while its stage stayed live. Board vans are excluded: they carry no ops stage to
@@ -2628,7 +2658,7 @@ function ticketRow(t,i){
     <div class="tk-side">
       <span class="pill${t.stage==='paid'&&cashDue(t)?' pill-bal':''}"><span class="pd"></span>${esc(stageLabel(t))}</span>
       ${t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`:''}${cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''}
-      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${t.date?fmtDate(t.date):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
+      <div class="tk-right"><div class="val">${money(t)}</div><div class="when">${anchorDate(t)?fmtDate(anchorDate(t)):'flexible'}${t.time?' · '+esc(t.time):''}${timeTbc(t)?' · <span class="tk-tbc">time to confirm</span>':''}</div></div>
     </div>
   </div>`;
 }
@@ -2681,7 +2711,7 @@ function viewTickets(){
     if(q&&!`${t.cust} ${t.ref} ${t.route}`.toLowerCase().includes(q))return false;
     return true;
   });
-  const tkey=t=>(t.date||'9999-99-99')+'T'+(t.time||'99:99');
+  const tkey=t=>(anchorDate(t)||'9999-99-99')+'T'+(t.time||'99:99');
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
   list.forEach(t=>buckets[dayGroup(t)].push(t));
   let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
@@ -2788,6 +2818,11 @@ function isApprover(){return !!(state.caps&&state.caps.includes('quote:approve')
 function quoteUsd(cents){return '$'+((cents||0)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 // List surfaces show a glance value — whole dollars; detail views keep exact cents.
 function quoteUsdWhole(cents){return '$'+Math.round((cents||0)/100).toLocaleString('en-US');}
+// A booked row shows what was sold, which a part-of-trip link makes less than the quote. Only once
+// booked: an open quote's soldCents is a link still out, and nothing has sold yet.
+function quoteRowCents(q) {
+  return q.status==='won'&&q.soldCents!=null?q.soldCents:q.totalCents;
+}
 /* ── Quotes queue search (spec 2026-07-25) ───────────────────────────────────
    Both helpers are deliberately self-contained — no DOM, no module state — so
    web-tests/unit can extract and eval them straight out of this file. */
@@ -2956,11 +2991,13 @@ function quoteRowHtml(q,query){
   const prodHtml=route
     ? esc(route)
     : `${esc(q.product||'')}${q.vehicle?' · '+esc(q.vehicle):''}`;
-  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(quoteUsd(q.totalCents))}${route?', '+esc(route):''}">
+  const rowCents=quoteRowCents(q);
+  const rowTitle=rowCents!==q.totalCents?`Sold ${quoteUsd(rowCents)} · quoted ${quoteUsd(q.totalCents)}`:quoteUsd(rowCents);
+  return `<div class="qrow${route?' qrow-searching':''}" data-qopen="${esc(q.id)}" role="button" tabindex="0" aria-label="Quote ${esc(q.reference||q.id)} — ${esc(q.customerName||'Untitled')}, ${esc((QSTATUS[q.status]||{}).label||q.status||'')}, ${q.unpriced?'not priced yet':esc(rowTitle)}${route?', '+esc(route):''}">
     <span class="qref">${esc(q.reference||q.id)}</span>
     <span class="qcust">${esc(q.customerName||'Untitled')}</span>
     <span class="qprod">${prodHtml}</span>
-    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(quoteUsd(q.totalCents))}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(q.totalCents))}</span>
+    <span class="qtotal${q.unpriced?' qtotal-unpriced':''}" title="${q.unpriced?'Started but never priced':esc(rowTitle)}">${q.unpriced?'Not priced yet':esc(quoteUsdWhole(rowCents))}</span>
     <span class="qstat">${q.assignedTo?assigneeChip(q.assignedTo):unassignedChip()}${quoteAgeChip(q)}${statusPill(q.status)}</span>
   </div>`;
 }
@@ -3824,20 +3861,34 @@ function legsHtmlFor(d){
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
   if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[];
-    let rows='';
-    for(let i=0;i<stops.length-1;i++){
+    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[],through=b.input.through||[];
+    const lastWire=stops.length-2;
+    /* Progress through a trip under way (spec 2026-11-06 §3): a leg dated before today has run and
+       is struck out; the first driven leg today or later is next. Styling only — the words stay. */
+    let next=false,rows='',n=0;
+    for(let i=0;i<=lastWire;){
+      n++;
       /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
          pay link left out. Never brief a driver for it. */
       if(gaps.includes(i)){
         rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
+        i++;
         continue;
       }
-      const when=dates[i]?fmtDate(dates[i]):`Leg ${i+1}`;
+      /* Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1,
+         so the run is ONE leg — one pickup, one driver. Same grouping as bookingLegs.ts privateLegs. */
+      let end=i;
+      while(end<lastWire&&through.includes(end)&&!gaps.includes(end+1))end++;
+      const via=stops.slice(i+1,end+1);
+      const when=dates[i]?fmtDate(dates[i]):`Leg ${n}`;
       /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
          leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
-      const road=(b.input.routeVariants||[])[i]==='no_tolls'?' · local road':'';
-      rows+=`<div class="leg"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[i+1])}${road}</span></div>`;
+      const road=(b.input.routeVariants||[]).slice(i,end+1).includes('no_tolls')?' · local road':'';
+      const isNext=!next&&!!dates[i]&&dates[i]>=TODAY;
+      if(isNext)next=true;
+      const st=dates[i]&&dates[i]<TODAY?' leg-done':isNext?' leg-next':'';
+      rows+=`<div class="leg${st}"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[end+1])}${via.length?` · via ${via.map(esc).join(', ')}`:''}${road}</span></div>`;
+      i=end+1;
     }
     return cov+`<div class="legs">${rows}</div>`;
   }
@@ -6808,6 +6859,7 @@ function resetToNew() {
     payOptions: null, // server's {primary, alternative, linkedService} for a "both" quote with a stored chauffeur price
     balancePayLink: null, // the customer's own pay link while the booking still owes a balance (server-built), else null
     balanceCents: null, // what is still owed on it, for the copy toast
+    partSale: null, // server's {soldLegs, totalLegs, soldCents, quotedCents, bookingReference} when only some legs sold
     // May THIS viewer approve THIS quote (plan 2026-08-11)? Server-computed, per quote — a
     // founder always may; ops may only on a single-leg standard transfer. Never derive it from
     // caps: the capability alone is true on every quote, including the ones the server refuses.
@@ -7157,6 +7209,7 @@ async function transition(toStatus, opts) {
   state.status = toStatus;
   state.payOptions = null; // priced for the previous status; the next open of the quote re-reads it
   state.balancePayLink = null; state.balanceCents = null; // same rule: read with the quote, never carried across a status change
+  state.partSale = null;
   // Per-quote, not per-open (owner, 2026-08-22): a failed pull-back on THIS quote must not survive
   // a successful transition on it. Without this, submit(fails)->Reopen to edit->fix->resubmit
   // lands back on pending_review with the stale flag still set, and isEditableNow() re-locks an
@@ -7597,6 +7650,18 @@ function renderPayPartialChip() {
     + _payPartial.totalLegs + ' legs \u2014 ' + fmtUsd(_payPartial.amountCents)
     + ' \u00b7 sending a full payment link will replace it</div>';
 }
+
+/* Once a part-of-trip link has settled the quote is Booked, but the builder still shows every leg
+   and the full total. This says what actually sold. */
+function partSaleText(sale) {
+  var unsold = sale.totalLegs - sale.soldLegs;
+  return 'Sold ' + sale.soldLegs + ' of ' + sale.totalLegs + ' legs: ' + fmtUsd(sale.soldCents)
+    + ' of the ' + fmtUsd(sale.quotedCents) + ' quoted \u00b7 ' + unsold + (unsold === 1 ? ' leg' : ' legs')
+    + ' not sold \u00b7 ' + sale.bookingReference;
+}
+function renderPartSaleChip() {
+  return state.partSale ? '<div class="ch-paypartial-chip">' + esc(partSaleText(state.partSale)) + '</div>' : '';
+}
 function renderPayLinkRow() {
   // Only when copying failed. The happy path never shows this — the link goes straight to the
   // clipboard and the toast says so.
@@ -7962,6 +8027,7 @@ async function reopenQuote(id) {
   state.payOptions = q.payOptions || null; // the pay-link chooser's two options (sell-side only), or none
   state.balancePayLink = q.balancePayLink || null; // open balance on the booking: the link the customer pays it on
   state.balanceCents = (q.balanceCents == null) ? null : Number(q.balanceCents);
+  state.partSale = q.partSale || null;
 
   /* Rehydrate the founder's stored discount, so the estimate below reprices WITH it.
      state.discount is client state and starts null on every page load; without this the pane
@@ -11516,6 +11582,7 @@ const STATUS_PILL_TONE = {
 };
 function renderStatusPill() {
   var label = STATUS_LABELS[state.status] || state.status || 'Draft';
+  if (state.partSale) label += ' \u00b7 ' + state.partSale.soldLegs + ' of ' + state.partSale.totalLegs + ' legs';
   return '<span class="ch-status-pill tone-' + (STATUS_PILL_TONE[state.status] || 'slate') + '">' + esc(label) + '</span>';
 }
 
@@ -12283,6 +12350,7 @@ function render() {
     renderPayPicker(),
     renderPayChooser(),
     renderPayPartialChip(),
+    renderPartSaleChip(),
     renderPayLinkOut(),
     '</header>',
 

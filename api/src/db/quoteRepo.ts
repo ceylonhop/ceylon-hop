@@ -136,6 +136,9 @@ export interface QuoteSummary {
   customerName: string | null;
   customerContact: string | null;
   totalCents: number;
+  // What a pay link sold when it wasn't the quote total (a part-of-trip link, or the chooser's
+  // chauffeur option). The queue shows it on a booked row instead of the total.
+  soldCents: number | null;
   currency: string;
   // The queue renders an assignee chip on every row (and floats your rows to the top of each
   // status section) off this, so it must survive the narrow projection. Sell-side only — this
@@ -375,6 +378,7 @@ function toSummary(q: SavedQuote): QuoteSummary {
     customerName: q.customerName,
     customerContact: q.customerContact,
     totalCents: q.totalCents,
+    soldCents: q.soldCents,
     currency: q.currency,
     assignedTo: q.assignedTo,
     routeText: quoteRouteText(requestLegs(q.request)),
