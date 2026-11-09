@@ -451,6 +451,45 @@ describe('POST /board/:code/scratch', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).removed).toBe(true);
   });
+
+  // An empty ride is not an offer: the last name off closes it, so the board stops showing a
+  // ride nobody is on (it used to sit there, "3 seats to go", until its cutoff).
+  it('closes the ride and takes it off the board when the last name is scratched', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails }));
+    const res = await app.request(`/board/${l.code}/scratch`, json(cookie));
+    expect(res.status).toBe(200);
+    expect((await res.json()).list.status).toBe('cancelled');
+    const board = await (await app.request('/board')).json();
+    expect(board.lists.map((x: { code: string }) => x.code)).not.toContain(l.code);
+  });
+
+  it('keeps the ride open while someone else is still on it', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.addMember(l.id, { sub: 'a', firstName: 'Ada', country: 'US', email: 'a@x.com', seats: 1 });
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails }));
+    const res = await app.request(`/board/${l.code}/scratch`, json(cookie));
+    expect((await res.json()).list.status).toBe('gathering');
+  });
+
+  // Closing under a traveller who is mid card-approval would let their approval land as a held
+  // card on a ride that is gone — so a pending approval keeps the ride open.
+  it('keeps the ride open while another traveller is still approving their card', async () => {
+    const { app, rideLists } = makeApp();
+    const l = await rideLists.createList(listArgs());
+    await rideLists.beginMemberPreapproval(
+      l.id, { sub: 'b', firstName: 'Bo', country: 'GB', email: 'b@x.com', seats: 1 },
+      'order-bo', new Date(Date.now() + 3_600_000),
+    );
+    const cookie = await loginCookie(app);
+    await app.request(`/board/${l.code}/join`, json(cookie, { payment: paymentDetails }));
+    const res = await app.request(`/board/${l.code}/scratch`, json(cookie));
+    expect((await res.json()).list.status).toBe('gathering');
+  });
 });
 
 // A pooled van and a scheduled seat on the SAME leg must cost the same, or the search page
