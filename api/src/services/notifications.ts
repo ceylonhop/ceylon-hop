@@ -401,6 +401,30 @@ function dot(color: string): string {
   return `<div style="width:11px;height:11px;border-radius:50%;background:${color}"></div>`;
 }
 
+// A vertical timeline: dot, then the line down to the next dot, beside each stop's text. Built from
+// plain table cells — Gmail strips negative margins, so a dot can't be pulled onto a cell border,
+// and clients share out rowspan height unpredictably, so nothing spans rows. Each stop is two rows:
+// the 12px dot beside the label (a 14px line), then a 5px spacer and a 7px cell whose left border
+// runs under the dot's centre for the full height of the place/details text. Last stop: no line.
+function railRows(stops: { color: string; dashed?: boolean; label: string; body: string }[]): string {
+  const rows = stops
+    .map((s, i) => {
+      const last = i === stops.length - 1;
+      const line = last ? '' : `border-left:2px ${s.dashed ? 'dashed' : 'solid'} ${ROUTE_LINE};`;
+      return `<tr>
+            <td colspan="2" width="12" valign="middle" style="width:12px;font-size:0;line-height:0"><div style="width:12px;height:12px;border-radius:50%;background:${s.color}"></div></td>
+            <td valign="middle" style="padding-left:14px;${EYEBROW};line-height:14px">${s.label}</td>
+          </tr>
+          <tr>
+            <td width="5" style="width:5px;font-size:0;line-height:0">&nbsp;</td>
+            <td width="7" style="width:7px;${line}font-size:0;line-height:0">&nbsp;</td>
+            <td valign="top" style="padding:0 0 ${last ? '0' : '18px'} 14px">${s.body}</td>
+          </tr>`;
+    })
+    .join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>`;
+}
+
 // The reference chip + status pill row.
 function metaRow(booking: Booking, badge: Badge): string {
   return `<tr><td style="padding:18px 34px 0">
@@ -442,16 +466,14 @@ function routeRow(booking: Booking): string {
       </td></tr>
     </table>`;
   } else {
-    const rows = stops
-      .map(
-        (s, i) =>
-          `<tr>
-            <td valign="top" style="width:20px;border-left:2px ${s.gapAfter ? 'dashed' : 'solid'} ${ROUTE_LINE};padding:0 0 ${i === stops.length - 1 ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${s.color};margin-left:-7px"></div></td>
-            <td style="padding:0 0 ${i === stops.length - 1 ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label)}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}</td>
-          </tr>`,
-      )
-      .join('');
-    inner = `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>`;
+    inner = railRows(
+      stops.map((s) => ({
+        color: s.color,
+        dashed: s.gapAfter,
+        label: esc(s.label),
+        body: `<div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${s.sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(s.sub)}</div>` : ''}`,
+      })),
+    );
   }
   return `<tr><td style="padding:24px 34px 0">
     <div style="border-top:1px solid ${HAIR};padding-top:22px">${inner}</div>
@@ -1333,21 +1355,21 @@ function quoteMetaRow(view: CustomerQuoteView): string {
 }
 
 function quoteTimeline(stops: CustomerQuoteView['stops']): string {
-  const rows = stops
-    .map((s, i) => {
+  const rail = railRows(
+    stops.map((s, i) => {
       const last = i === stops.length - 1;
-      const color = i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL;
       const parts: string[] = [];
       if (s.nights) parts.push(`${s.nights} night${s.nights > 1 ? 's' : ''}`);
       if (s.date) parts.push(fmtDate(s.date));
       const sub = parts.join(' · ');
-      return `<tr>
-        <td valign="top" style="width:20px;border-left:2px solid ${ROUTE_LINE};padding:0 0 ${last ? '0' : '18px'}"><div style="width:11px;height:11px;border-radius:50%;background:${color};margin-left:-7px"></div></td>
-        <td style="padding:0 0 ${last ? '0' : '18px'} 14px"><div style="${EYEBROW}">${esc(s.label ?? (i === 0 ? 'Start' : last ? 'End' : 'Stop'))}</div><div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(sub)}</div>` : ''}</td>
-      </tr>`;
-    })
-    .join('');
-  return `<tr><td style="padding:24px 34px 0"><div style="border-top:1px solid ${HAIR};padding-top:22px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table></div></td></tr>`;
+      return {
+        color: i === 0 ? TEAL_DEEP : last ? TOMATO : TEAL,
+        label: esc(s.label ?? (i === 0 ? 'Start' : last ? 'End' : 'Stop')),
+        body: `<div style="font-family:${SERIF};font-size:17px;font-weight:600;color:${INK};margin-top:1px">${esc(s.place)}</div>${sub ? `<div style="font-size:12px;color:${FAINT};margin-top:3px">${esc(sub)}</div>` : ''}`,
+      };
+    }),
+  );
+  return `<tr><td style="padding:24px 34px 0"><div style="border-top:1px solid ${HAIR};padding-top:22px">${rail}</div></td></tr>`;
 }
 
 function quoteDetails(view: CustomerQuoteView): string {

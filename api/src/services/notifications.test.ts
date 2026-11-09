@@ -185,6 +185,18 @@ describe('sendBookingConfirmation — trip with a self-arranged stretch', () => 
     expect(html).not.toContain('Your own travel');
     expect(html).not.toContain('dashed');
   });
+
+  // Gmail strips negative margins, so a dot pulled onto the line with margin-left:-7px lands
+  // beside it. The rail must sit dots and line in the same column with no negative offsets, and
+  // the line stops at the last dot instead of running on under the final stop.
+  it('draws the timeline rail without negative margins, ending at the last dot', async () => {
+    const email = new FakeEmailAdapter();
+    await sendBookingConfirmation(gapped, email);
+    const html = email.sent[0].html;
+    expect(html).not.toMatch(/margin[^;"]*:\s*-/);
+    // 4 stops → 3 stretches between dots, so 3 line segments (one dashed for the gap).
+    expect(html.match(/border-left:2px (solid|dashed)/g)).toHaveLength(3);
+  });
 });
 
 // Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1, so
@@ -783,6 +795,14 @@ describe('sendCustomerQuote', () => {
     expect(m.html).not.toMatch(/subtotal|per km|day rate|line ?item/i); // no internal breakdown
     expect(m.text).toContain('https://ceylonhop.com/quote.html?q=abc');
     expect(m.text).not.toContain('<');
+  });
+
+  it('draws the itinerary rail without negative margins, ending at the last dot', async () => {
+    const email = new FakeEmailAdapter();
+    await sendCustomerQuote(quote, email, { book: 'https://ceylonhop.com/quote.html?q=abc' });
+    const html = email.sent[0].html;
+    expect(html).not.toMatch(/margin[^;"]*:\s*-/);
+    expect(html.match(/border-left:2px solid/g)).toHaveLength(2); // 3 stops → 2 segments
   });
 });
 
