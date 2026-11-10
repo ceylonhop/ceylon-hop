@@ -24,7 +24,8 @@ export function installStubs() {
   // getZoom()/addListener(). Without them the whole pin pass threw into its "markers are
   // non-essential" catch and every marker assertion silently saw an EMPTY list — map-expand's
   // and ops-map-pin-numbers' pin tests had been dark ever since.
-  MapCls.prototype.getZoom = function () { return 10; };
+  // A spec can set window.__E2E_ZOOM to render the map at a given zoom (e.g. 7 = whole island).
+  MapCls.prototype.getZoom = function () { return typeof window.__E2E_ZOOM === 'number' ? window.__E2E_ZOOM : 10; };
   MapCls.prototype.addListener = function () { return { remove() {} }; };
   function Marker(opts) { (window.__chMarkers = window.__chMarkers || []).push(opts || {}); }
   Marker.prototype.setMap = function () {};

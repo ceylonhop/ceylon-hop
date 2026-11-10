@@ -269,12 +269,6 @@
     return { top: Math.max(base, pinHeadroom(greedy)), right: base, bottom: base, left: base };
   }
 
-  function pinLabelsVisible(zoom) {
-    // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
-    // the story anyway — the expanded map's legend still carries the full numbered order.
-    return typeof zoom !== 'number' || zoom >= 9;
-  }
-
   // avoidTolls is PART of the key. A quote pinned to the local road in ops and one over the
   // same stops on the expressway are two different lines; sharing a cache entry would draw
   // whichever was asked for first, for both.
@@ -505,19 +499,17 @@
           drawn.forEach((m) => m.setMap(null));
           drawn = [];
           const z = map.getZoom();
-          const showText = pinLabelsVisible(z);
           mapPins(stopLocs, z).forEach((p) => {
             drawn.push(new libs.Marker({
               map, position: { lat: p.lat, lng: p.lng }, zIndex: 5,
               icon: pin(p.isFirst ? '#24758A' : p.isLast ? '#EC3A24' : '#0AB9B6'),
               // The number ties each pin to the stops legend — without it the pins are
-              // anonymous and "is stop 3 the right place?" can't be answered. Hidden at country
-              // zoom, where a long itinerary is an unreadable wall of digits and the legend
-              // carries the order anyway.
-              label: showText
-                ? { text: p.text, color: '#ffffff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
-                : undefined,
-              // The title is the full truth even when the label is hidden.
+              // anonymous and "is stop 3 the right place?" can't be answered. Shown at EVERY
+              // zoom (owner, 2026-11-10): it used to hide below zoom 9, which left a quote's
+              // whole-island map with bare pins; mapPins() already merges pins that would
+              // overlap on screen, so country zoom no longer means a wall of digits.
+              label: { text: p.text, color: '#ffffff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' },
+              // The title spells out merged pins ("Stops 1, 7") in full.
               title: p.stops.length > 1
                 ? 'Stops ' + p.stops.join(', ')
                 : (p.isFirst ? 'Pick-up' : p.isLast ? 'Drop-off' : 'Stop ' + p.stops[0]),
