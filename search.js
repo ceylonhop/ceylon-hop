@@ -56,6 +56,13 @@ const ICONS = {
 const params = new URLSearchParams(location.search);
 let fromId = params.get('from'), toId = params.get('to');
 let date = params.get('date') || '';
+// A scheduled shared seat needs a week's notice, on the Colombo calendar. Mirrors booking.js
+// earliestSharedDate() and api/src/domain/dateRules.ts SHARED_MIN_LEAD_DAYS (the API refuses
+// anything sooner), so this card never sells a date the booking calendar has greyed out.
+const SHARED_MIN_LEAD_DAYS = 7;
+function plusDaysIso(iso, n) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+function earliestSharedIso() { return plusDaysIso(new Date(Date.now() + 5.5 * 3600000).toISOString().slice(0, 10), SHARED_MIN_LEAD_DAYS); }
+function sharedTooSoon(iso) { return /^\d{4}-\d{2}-\d{2}$/.test(iso || '') && iso < earliestSharedIso(); }
 /* The party size is the ONE thing that decides which product is cheaper here: shared is
    per seat, private is per vehicle. The homepage hero deliberately asks a single question
    (from + to) and nothing on the site links here with `pax`, so on a normal landing we have
@@ -454,14 +461,22 @@ if (shared) {
        <ul class="pickup-list">${stops.map(s => `<li${s.time === shared.times[0] ? ' class="is-yours"' : ''}><b>${fmtTime(s.time)}</b> ${s.point ? ptLink(s.point) : s.place}</li>`).join('')}</ul>`
     : `<div class="sm">${ICONS.departs} <span>${daysStr ? `Runs ${daysStr} · departs` : 'Departs'} ${timeStr}${stops[0] && stops[0].point ? ` from ${ptLink(stops[0].point)}` : ''}</span></div>`)
     + (shared.dropoff ? `<div class="sm">${ICONS.pin} <span>Drop-off at ${ptLink(shared.dropoff)}</span></div>` : '');
-  if (runs === false) {
+  // A running day inside the notice window can't be sold either: same card as an off-day, with
+  // the first bookable departure as the date to switch to.
+  const tooSoon = runs === true && sharedTooSoon(date);
+  if (runs === false || tooSoon) {
+    const earliest = earliestSharedIso();
     const around = SD.serviceDatesAround(date, shared.days, todayIso);
+    let altDates = [around.before, around.after].filter(iso => iso && iso >= earliest);
+    if (!altDates.length) {
+      for (let i = 0; i < 7 && !altDates.length; i++) if (SD.runsOn(plusDaysIso(earliest, i), shared.days)) altDates = [plusDaysIso(earliest, i)];
+    }
     const LONG = ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
     const daysLong = (shared.days || []).map(d => LONG[d]).filter(Boolean).join(' and ');
     const keepDay = new Date(date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'long' });
     // Guaranteed dates FIRST: a guarantee sells better than a maybe, and many travellers can
     // move a day. Nothing is bookable on this date, so "Book a seat" is replaced — not disabled.
-    const alts = [around.before, around.after].filter(Boolean).map(iso =>
+    const alts = altDates.map(iso =>
       `<a class="sb-alt" href="${switchUrl(iso)}"><span><b>${fmtDay(iso)}</b><small>${ICONS.ck} guaranteed<span class="pab"> · pay at booking</span></small></span><span class="go">Switch date ${ICON.arrow}</span></a>`).join('');
     sharedCard = `
   <article class="opt opt-shared is-offday" id="shared-option">
@@ -471,7 +486,7 @@ if (shared) {
       <div><h2>Shared ride</h2><div class="o-sub">One vehicle, shared between you</div></div>
     </div>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
-    <div class="sb-off"><b>No shared ride on ${dateText}</b><span>This van runs ${daysLong}. ${alts ? 'Two ways to still share:' : 'You can still share:'}</span></div>
+    <div class="sb-off"><b>${tooSoon ? `Too soon for a shared seat on ${dateText}` : `No shared ride on ${dateText}`}</b><span>${tooSoon ? `Shared seats are booked at least ${SHARED_MIN_LEAD_DAYS} days ahead.` : `This van runs ${daysLong}.`} ${alts ? 'Two ways to still share:' : 'You can still share:'}</span></div>
     ${alts ? `<div class="sb-alts">${alts}</div><div class="sb-or">or keep ${keepDay}</div>` : ''}
     <div class="sb-start-wrap" id="sb-start-wrap">
       <h3>Start a ride for ${dateText}</h3>
@@ -548,7 +563,8 @@ function renderResults(state) {
   /* On a phone the grid is one column, so the shared seat sits under two private cards — a solo
      traveller saw $55 and $75 and never scrolled to $22.99. The jump link is phone-only (CSS). */
   // On an off-day the link carries the key fact, so a phone user learns "Wed & Sat" without scrolling.
-  const offDay = shared && window.CHSharedDay && CHSharedDay.runsOn(date, shared.days) === false;
+  const runsOnDate = shared && window.CHSharedDay ? CHSharedDay.runsOn(date, shared.days) : null;
+  const offDay = runsOnDate === false || (runsOnDate === true && sharedTooSoon(date));
   const DAY3 = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const jump = !shared ? ''
     : offDay ? `<a class="shared-jump" href="#shared-option">${ICONS.share} Shared ride: ${(shared.days || []).map(d => DAY3[d]).join(' & ')} · from <b>$${shared.seat}</b> ↓</a>`

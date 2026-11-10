@@ -30,12 +30,13 @@ export function firstPastDate(values: Array<string | null | undefined>, today: s
 // A private transfer needs 12 hours so a vehicle and driver can actually be assigned. A
 // chauffeur-guide needs 7 days, because it commits one driver and car for the whole journey —
 // a booking three days out cannot be staffed without pulling the driver off another trip.
-// Both are measured in Asia/Colombo, like the past-date rule above. Shared seats are
-// deliberately NOT covered: they run on scheduled departures with their own service-day and
-// seat-hold guards, and a same-week seat is exactly what that product is for.
+// Both are measured in Asia/Colombo, like the past-date rule above. A scheduled shared seat
+// needs 7 days too (owner, 2026-11-09) — it used to need none. The ride board is a separate
+// product and is not covered.
 
 export const PRIVATE_MIN_LEAD_HOURS = 12;
 export const CHAUFFEUR_MIN_LEAD_DAYS = 7;
+export const SHARED_MIN_LEAD_DAYS = 7;
 
 const HHMM = /^\d{2}:\d{2}$/;
 // Sri Lanka is a fixed UTC+05:30 with no DST, so a literal offset is exact — same approach as
@@ -75,6 +76,13 @@ export function isTooSoonPrivate(
 /** The earliest date a chauffeur-guide trip may start. */
 export function earliestChauffeurDate(now: Date = new Date()): string {
   return addIsoDays(isoToday('Asia/Colombo', now), CHAUFFEUR_MIN_LEAD_DAYS);
+}
+
+/** Is this scheduled shared seat inside the 7-day notice window? Absent or non-ISO dates are
+ *  never "too soon" — the schema and past-date checks deal with those. */
+export function isTooSoonShared(date: string | null | undefined, now: Date = new Date()): boolean {
+  if (!date || !ISO.test(date)) return false;
+  return date < addIsoDays(isoToday('Asia/Colombo', now), SHARED_MIN_LEAD_DAYS);
 }
 
 /** Does this chauffeur trip start inside the 7-day window? Judged on the EARLIEST leg date —

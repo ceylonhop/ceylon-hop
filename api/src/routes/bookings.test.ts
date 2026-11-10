@@ -575,33 +575,31 @@ describe('POST /bookings — minimum notice', () => {
     expect(res.status).toBe(201);
   });
 
-  it('shared seats are deliberately untouched — the next departure is still bookable', async () => {
+  it('shared seats need 7 days — the next service day inside the week is refused, the first one after it books', async () => {
     const app = createApp();
-    // Shared runs Wed & Sat, so there is always a service day within the next 6 days — well
-    // inside both notice windows. It must still book.
-    let date: string | null = null;
-    for (let i = 1; i <= 6 && !date; i++) {
-      const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
-      const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
-      if (wd === 3 || wd === 6) date = iso;
-    }
-    // The fixture must name a real catalogue product. It was `hill-line` with no from/to,
-    // which #535 broke twice over: hill-line is no longer a catalogued shared route, and the
-    // endpoint now resolves the product from from/to rather than corridorId (one corridor
-    // holds several products at different prices). Either fault alone returns
-    // not_a_shared_route BEFORE any notice rule is consulted -- so this assertion would have
-    // passed for the wrong reason, proving nothing about shared seats being exempt.
-    const res = await jpost(app, '/bookings/shared', {
+    // Shared runs Wed & Sat. Walk the Colombo calendar: the first service day 1–6 days out is
+    // inside the window; the first one 7+ days out is not.
+    const serviceDay = (from: number, to: number): string => {
+      for (let i = from; i <= to; i++) {
+        const iso = isoToday('Asia/Colombo', new Date(Date.now() + i * 86_400_000));
+        const wd = new Date(`${iso}T00:00:00Z`).getUTCDay();
+        if (wd === 3 || wd === 6) return iso;
+      }
+      throw new Error('no service day in range');
+    };
+    // A real catalogue product (Ella -> Yala on ella-east), so nothing but the notice rule can refuse it.
+    const book = (date: string) => jpost(app, '/bookings/shared', {
       corridorId: 'ella-east', from: 'Ella', to: 'Yala',
       date, time: '09:00', seats: 2, customer: valid.customer,
     });
-    // Assert the CLAIM, not just the happy path: whatever else may refuse a shared booking,
-    // the notice rules must never be what does it. A bare toBe(201) would go quiet the day an
-    // unrelated gate starts returning 400, and the date picked above is only sometimes inside
-    // the 12h window, so the 201 alone does not pin this down.
-    expect(res.status).toBe(201);
-    const body = await res.json();
-    expect(body.error).not.toBe('lead_time_too_short');
+    const near = await book(serviceDay(1, 6));
+    expect(near.status).toBe(400);
+    const body = await near.json();
+    expect(body.error).toBe('lead_time_too_short');
+    expect(body.message).toContain('7 days');
+
+    const far = await book(serviceDay(7, 13));
+    expect(far.status).toBe(201);
   });
 });
 

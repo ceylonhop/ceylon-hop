@@ -288,6 +288,13 @@ function parseServiceDays(s){
 }
 const sharedDays = isShared ? parseServiceDays(params.get('days')) : null;
 const sharedDaysLabel = sharedDays ? sharedDays.map(d=>DOW_LABEL[d]).join(' & ') : '';
+// A shared seat needs a week's notice, counted on the Colombo calendar. Mirrors
+// api/src/domain/dateRules.ts SHARED_MIN_LEAD_DAYS — the API refuses anything sooner.
+const SHARED_MIN_LEAD_DAYS = 7;
+function earliestSharedDate(){
+  const c = new Date(Date.now() + 5.5*3600000); // Colombo wall clock, read through UTC fields
+  return new Date(c.getUTCFullYear(), c.getUTCMonth(), c.getUTCDate() + SHARED_MIN_LEAD_DAYS);
+}
 
 // trip start date (chauffeur day count)
 const startParam = params.get('start') || params.get('date');
@@ -940,7 +947,7 @@ if(!isTrip && r.type==='shared'){
   if(calEl && !document.getElementById('shared-cal-note')){
     const cnote=document.createElement('p'); cnote.id='shared-cal-note'; cnote.className='shared-cal-note';
     // Naming the alternative without linking it left the customer to re-navigate by hand.
-    cnote.innerHTML='<b>'+sharedDaysLabel+' only.</b> Our shared seats run on these days \u2014 <a href="'+backToSearchUrl()+'">book a private transfer</a> for any other day.';
+    cnote.innerHTML='<b>'+sharedDaysLabel+' only, booked at least '+SHARED_MIN_LEAD_DAYS+' days ahead.</b> Need another day, or sooner? <a href="'+backToSearchUrl()+'">Book a private transfer</a>.';
     calEl.after(cnote);
   }
   const depLabel=document.getElementById('dep-label'); if(depLabel) depLabel.textContent='Departure';
@@ -980,7 +987,7 @@ document.title='Book '+r.name+' — Ceylon Hop';
 
 // ---- Calendar ----
 const today=new Date();today.setHours(0,0,0,0);
-const minBookDate=new Date(today);minBookDate.setDate(minBookDate.getDate()+1);
+const minBookDate = isShared ? earliestSharedDate() : new Date(today.getFullYear(),today.getMonth(),today.getDate()+1);
 const maxBookDate=new Date(today.getFullYear(),today.getMonth()+12,today.getDate());
 // A date arriving via the URL (?date= / ?start=, e.g. a stale search result or a shared/
 // hand-edited link) must still satisfy the booking window. An unparseable, past, same-day,

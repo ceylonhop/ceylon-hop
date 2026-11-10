@@ -40,6 +40,27 @@ test('shared calendar only offers the service weekdays (Wed & Sat)', async ({ pa
   }
 });
 
+// A shared seat needs 7 days' notice on the Colombo calendar (owner, 2026-11-09), mirroring
+// POST /bookings/shared's lead_time_too_short.
+test('service days inside the 7-day notice window are greyed; the first one after it is offered', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2099-08-10T06:00:00Z')); // Mon 10 Aug (11:30 in Colombo)
+  await gotoBooking(page, { query: SHARED_QUERY });
+  const pickable = await page.evaluate(() => Object.fromEntries(
+    [...document.querySelectorAll('#cal .cal-day')].map((c) => [c.textContent.trim(), !!c.getAttribute('onclick')]),
+  ));
+  expect(pickable['12']).toBe(false); // Wed, 2 days out
+  expect(pickable['15']).toBe(false); // Sat, 5 days out
+  expect(pickable['19']).toBe(true);  // Wed, 9 days out — first bookable run
+  expect(pickable['22']).toBe(true);  // Sat
+  await expect(page.locator('#shared-cal-note')).toContainText('at least 7 days ahead');
+});
+
+test('a too-soon shared date in the link is dropped, not pre-selected', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2099-08-10T06:00:00Z'));
+  await gotoBooking(page, { query: SHARED_QUERY + '&date=2099-08-15' });
+  await expect(page.locator('#cal .cal-day.sel')).toHaveCount(0);
+});
+
 test('a non-service weekday cannot be picked on a shared ride', async ({ page }) => {
   await gotoBooking(page, { query: SHARED_QUERY });
 

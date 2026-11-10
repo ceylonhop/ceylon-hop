@@ -3,10 +3,11 @@ import { createApp } from '../app';
 import { InMemoryConciergeTaskRepo } from '../db/conciergeTaskRepo';
 import { isoToday, isoWeekday } from '../domain/dateRules';
 
-// The next shared service day (Wed/Sat) a few days out — dodges both the past-date guard and
-// the not-a-service-day guard whenever the suite runs. Computed, so it never rots.
+// The next shared service day (Wed/Sat) past the 7-day notice window (8+ UTC days out is 7+ in
+// Colombo) — dodges the past-date, notice and not-a-service-day guards whenever the suite runs.
+// Computed, so it never rots.
 const SOON = (() => {
-  for (let i = 1; i <= 14; i++) {
+  for (let i = 8; i <= 21; i++) {
     const iso = isoToday('UTC', new Date(Date.now() + i * 86_400_000));
     if ([3, 6].includes(isoWeekday(iso)!)) return iso;
   }
