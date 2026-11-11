@@ -6,7 +6,8 @@ import { EXTRA_CODES, RATE_CARD } from '../quote/rateCard';
 import { rateLockUntil } from '../quote/rateLock';
 import type { QuoteRepo } from '../db/quoteRepo';
 import type { MapsAdapter } from '../adapters/maps';
-import { isCatalogTown } from '../adapters/maps';
+import { isCatalogTown, knownCoords } from '../adapters/maps';
+import { logEvent } from '../observability/events';
 import { memoizeDistance } from './bookings';
 import type { RateCard } from '../quote/rateCard';
 import { InMemoryZonesRepo, type ZonesRepo } from '../db/zonesRepo';
@@ -81,6 +82,41 @@ async function measureChain(
     estimated: segments.some((s) => s!.estimated === true),
   };
 }
+
+// Which stops made an estimate unpriceable (analytics review 2026-11-10: the 422 named none, so
+// the page always said "one of your stops" and we could not tell why customers failed). Re-asks
+// each pair through the request's memoized adapter, so it never bills a lookup the estimate didn't.
+// A stop is named only when it is the ONE unknown end of a pair that failed — with free text at
+// both ends we cannot tell which one Google missed, so neither is named and the page keeps its
+// generic copy. Exported for its test.
+export async function unresolvedStops(
+  intent: WebQuoteIntent,
+  maps: MapsAdapter,
+): Promise<{ names: string[]; failedPairs: Array<[string, string]>; unknownEnds: string[] }> {
+  const rows = intent.product === 'private' ? intent.legs : intent.travelDays;
+  const pairs = rows.flatMap((l) => {
+    const chain = [l.from, ...(l.via ?? []), l.to];
+    return chain.slice(1).map((to, i): [string, string] => [chain[i]!, to]);
+  });
+  const failedPairs: Array<[string, string]> = [];
+  for (const pair of pairs) {
+    if (!(await maps.distance(pair[0], pair[1]).catch(() => null))) failedPairs.push(pair);
+  }
+  const unknown = (s: string) => knownCoords(s) === null;
+  const names = new Set<string>();
+  const unknownEnds = new Set<string>();
+  for (const [a, b] of failedPairs) {
+    if (unknown(a)) unknownEnds.add(a);
+    if (unknown(b)) unknownEnds.add(b);
+    if (unknown(a) !== unknown(b)) names.add(unknown(a) ? a : b);
+  }
+  return { names: [...names], failedPairs, unknownEnds: [...unknownEnds] };
+}
+
+// Google's own suggestion text ends ", Sri Lanka" (the autocomplete is restricted to LK); a
+// customer typing a hotel almost never adds it. Shape only — events.ts lines never carry what a
+// customer typed, which may be a home address.
+const GOOGLE_STYLE = /,\s*sri lanka\s*$/i;
 
 export async function engineRequestFor(
   intent: WebQuoteIntent,
@@ -352,8 +388,22 @@ export function quoteRoutes(deps: {
     if (lifted.compare && (parsed.data.product !== 'private' || parsed.data.legs.length !== 1)) {
       return c.json({ error: 'invalid_request' }, 400);
     }
-    const resolved = await engineRequestFor(parsed.data, deps.maps);
-    if (!resolved) return c.json({ error: 'quote_unpriced' }, 422);
+    // Memoized per request, so naming the failed stop below re-reads these lookups for free.
+    const maps = memoizeDistance(deps.maps);
+    const resolved = await engineRequestFor(parsed.data, maps);
+    if (!resolved) {
+      const u = await unresolvedStops(parsed.data, maps);
+      const googleStyle = u.unknownEnds.filter((s) => GOOGLE_STYLE.test(s)).length;
+      logEvent('quote.unpriced', {
+        surface: 'estimate',
+        product: parsed.data.product,
+        failed_pairs: u.failedPairs.length,
+        named: u.names.length,
+        google_style: googleStyle,
+        typed: u.unknownEnds.length - googleStyle,
+      });
+      return c.json({ error: 'quote_unpriced', unresolved: u.names }, 422);
+    }
     try {
       const card = await liveCard();
       const result = quote(resolved.request, card);
