@@ -113,8 +113,16 @@ test('an "estimated" engine total shows the ~ approx treatment and refuses payme
 
   await fillContact(page);
   await expect(page.locator('#pay-btn')).toBeDisabled();
-  await expect(page.locator('#details-error')).toContainText('confirmed at checkout');
+  // Pay is refused, so the copy must not promise a checkout the customer can never reach — and it
+  // must offer the one way forward that works (analytics review 2026-11-10).
+  await expect(page.locator('#details-error')).toContainText('can’t confirm this trip’s exact price right now');
+  await expect(page.locator('#details-error')).not.toContainText('confirmed at checkout');
+  await expect(page.locator('#details-error a', { hasText: 'WhatsApp' })).toHaveAttribute('href', /^https:\/\/wa\.me\//);
+  await expect(page.locator('#details-error button', { hasText: 'Change pickup or drop-off' })).toHaveCount(0);
   await expect(page.locator('#ph-overlay')).toBeHidden();
+  // Untracked until now: reported once, on the event the "can't estimate" path already uses.
+  const evs = await page.evaluate(() => (window.dataLayer || []).filter((e) => e && e.event === 'route_estimate_unavailable' && e.reason === 'estimated'));
+  expect(evs).toHaveLength(1);
 });
 
 test('a booking-create total more than $1 from the shown engine total gates before checkout', async ({ page }) => {
