@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
 import { quoteRoutes, engineRequestFor } from './quote';
@@ -1059,5 +1059,81 @@ describe('route choice (v2)', () => {
     const body = await (await send(appWith(maps), '/quote/v2/estimate-batch', { intents })).json();
     expect(body.results.every((r: { routeChoice?: unknown }) => !!r.routeChoice)).toBe(true);
     expect(maps.variantCalls).toBe(1);
+  });
+});
+
+// 2026-11-10 analytics review: 46 customers in 28 days were told "we couldn't find one of your
+// stops", but the estimate never said WHICH stop, so neither the page (ch-pricing.js reads
+// body.unresolved) nor we could tell. The 422 now names the stop it could not place.
+describe('unpriced estimate names the stop it could not place', () => {
+  const NOWHERE = 'Qwzx Banana Leaf Homestay';
+  const GOOGLE_STYLE = 'Qwzx Villa, Ella, Sri Lanka';
+  function countingApp() {
+    const inner = new FakeMapsAdapter();
+    let distanceCalls = 0;
+    const maps: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: async (a: string, b: string) => { distanceCalls++; return inner.distance(a, b); },
+    });
+    const app = new Hono();
+    app.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps, v2Enabled: true, now: () => new Date('2026-07-28T12:00:00.000Z') }));
+    return { app, calls: () => distanceCalls };
+  }
+  const est = (app: Hono, body: unknown) =>
+    app.request('/quote/v2/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const privateLegs = (legs: unknown[]) => ({ ...V2_PRIVATE, routeId: undefined, legs });
+
+  it('names the unplaceable end of a single transfer', async () => {
+    const { app } = countingApp();
+    const res = await est(app, privateLegs([{ from: 'Kandy', to: NOWHERE }]));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ error: 'quote_unpriced', unresolved: [NOWHERE] });
+  });
+
+  it('names only the failing stop of a multi-leg trip, never the places that priced', async () => {
+    const { app } = countingApp();
+    const res = await est(app, privateLegs([{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: NOWHERE }]));
+    expect((await res.json()).unresolved).toEqual([NOWHERE]);
+  });
+
+  it('names a stop on the way once, though both its segments failed', async () => {
+    const { app } = countingApp();
+    const res = await est(app, privateLegs([{ from: 'Kandy', to: 'Ella', via: [NOWHERE] }]));
+    expect((await res.json()).unresolved).toEqual([NOWHERE]);
+  });
+
+  it('names a chauffeur day stop', async () => {
+    const { app } = countingApp();
+    const res = await est(app, {
+      product: 'chauffeur', vehicle: 'car', pax: 2, bags: 2, firstDate: '2026-12-01', lastDate: '2026-12-01',
+      travelDays: [{ date: '2026-12-01', from: 'Kandy', to: NOWHERE }], extras: [],
+    });
+    expect((await res.json()).unresolved).toEqual([NOWHERE]);
+  });
+
+  it('names neither end when both are free text — it cannot know which one Google missed', async () => {
+    const { app } = countingApp();
+    const res = await est(app, privateLegs([{ from: NOWHERE, to: GOOGLE_STYLE }]));
+    expect(await res.json()).toEqual({ error: 'quote_unpriced', unresolved: [] });
+  });
+
+  it('bills no extra lookup to work out which stop failed', async () => {
+    const { app, calls } = countingApp();
+    await est(app, privateLegs([{ from: 'Kandy', to: 'Ella' }, { from: 'Ella', to: NOWHERE }]));
+    expect(calls()).toBe(2);
+  });
+
+  it('logs one quote.unpriced line with the stop SHAPE (Google-picked vs typed), never its text', async () => {
+    const { app } = countingApp();
+    const lines: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((s: unknown) => { lines.push(String(s)); });
+    try {
+      await est(app, privateLegs([{ from: 'Kandy', to: NOWHERE }, { from: 'Ella', to: GOOGLE_STYLE }]));
+    } finally {
+      spy.mockRestore();
+    }
+    const events = lines.map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((e) => e?.event === 'quote.unpriced');
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ surface: 'estimate', product: 'private', failed_pairs: 2, named: 2, google_style: 1, typed: 1 });
+    expect(JSON.stringify(events[0])).not.toContain('Qwzx');
   });
 });
