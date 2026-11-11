@@ -692,6 +692,9 @@
         address: place.formattedAddress || '',
         lat: loc ? loc.lat() : null,
         lng: loc ? loc.lng() : null,
+        // Google's id for the place itself: the API measures the road by it, rather than re-finding
+        // the place from its name (analytics review 2026-11-10). Absent on an older Places object.
+        placeId: place.id || null,
       };
     } catch (e) {
       sessionToken = null;

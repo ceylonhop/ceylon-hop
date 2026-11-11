@@ -388,6 +388,20 @@ let userSetLocation=false; // true once the customer actively picks a pickup/dro
 function scheduleRouteMap(){ clearTimeout(_rmTimer); _rmTimer=setTimeout(renderRouteMap, 450); }
 const acEsc = s => (s||'').replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function setGeo(which, geo){ if(which==='from') state.locFromGeo=geo; else state.locToGeo=geo; }
+// The Google place ID of a stop the customer PICKED (typing over a pick clears its geo, so the ID
+// can never describe other words). The API measures the road by it; the name is still what's stored.
+function pickedPlaceIds(){
+  const id=(g)=> (g && typeof g.placeId==='string' && g.placeId) ? g.placeId : undefined;
+  return { fromPlaceId: id(state.locFromGeo), toPlaceId: id(state.locToGeo) };
+}
+// Only the keys that carry an ID: the estimate intent is .strict() and fingerprinted, so an absent
+// pick must add nothing at all.
+function placeIdFields(){
+  const p=pickedPlaceIds(), out={};
+  if(p.fromPlaceId) out.fromPlaceId=p.fromPlaceId;
+  if(p.toPlaceId) out.toPlaceId=p.toPlaceId;
+  return out;
+}
 function hasExactRouteInputs(){
   return !isTrip && !isShared && (state.locFrom!==AREA_FROM || state.locTo!==AREA_TO);
 }
@@ -1877,7 +1891,7 @@ function itineraryIntent(){
   // Single transfer: the same place strings the booking payload sends (createApiBooking,
   // :1808-1809) — including the exact-spot-refined string once the customer has pinned one.
   const legs = [Object.assign({ from: state.locFrom || r.stops[0], to: state.locTo || r.stops[r.stops.length-1] },
-    bookRoad==='no_tolls' ? { routeVariant:'no_tolls' } : {})];
+    placeIdFields(), bookRoad==='no_tolls' ? { routeVariant:'no_tolls' } : {})];
   const date = (state.flexDate || !state.date) ? undefined : fmtISO(state.date);
   const time = (state.flexTime || !state.dep) ? undefined : state.dep;
   return { product:'private', vehicle, pax, bags, legs, extras, date, time };
@@ -3522,6 +3536,7 @@ async function createApiBooking(){
       // selected add-ons use the engine's ExtraCode values, priced server-side (GL-4)
       extras: state.addons.size ? Array.from(state.addons) : undefined,
       routeVariant: bookRoad==='no_tolls' ? 'no_tolls' : undefined,
+      ...pickedPlaceIds(),
       promoCode: sendablePromoCode()
     };
   }
