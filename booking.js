@@ -2928,7 +2928,10 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
         email=document.getElementById('f-email'), phone=document.getElementById('f-phone');
   [first,last,email,phone].forEach(el=>el.classList.remove('inp-bad'));
   if(derr) derr.hidden=true;
-  const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} el.focus(); };
+  // A refused press used to leave no trace, so form trouble looked like people leaving (analytics
+  // review 2026-11-10). Report WHICH box — its id, never what was typed.
+  const reportInvalid=(el)=>{ if(typeof window.chTrack==='function') window.chTrack('checkout_field_invalid',{ field: String(el.id||'').replace(/^f-/,'') }); };
+  const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} el.focus(); reportInvalid(el); };
   const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if(!first.value.trim()) return fail(first,'Please add the lead traveller’s first name.');
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
@@ -2959,6 +2962,7 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
     agree.closest('.addon').style.borderColor='var(--tomato)';
     if(derr){ derr.textContent='Please tick the box to agree to the Terms & cancellation policy.'; derr.hidden=false; }
     agree.focus();
+    reportInvalid(agree);
     return;
   }
 
