@@ -1137,3 +1137,38 @@ describe('unpriced estimate names the stop it could not place', () => {
     expect(JSON.stringify(events[0])).not.toContain('Qwzx');
   });
 });
+
+describe('a Google pick is priced by its place ID', () => {
+  const PICK = 'Casa Selvita, Kandy, Sri Lanka';
+  const PID = 'ChIJtestplace0001';
+  function app() {
+    const inner = new FakeMapsAdapter();
+    const maps: MapsAdapter = Object.assign(Object.create(inner), {
+      distance: async (a: string, b: string) => (b === `place_id:${PID}` ? { km: 120, durationMin: 150 } : inner.distance(a, b)),
+    });
+    const a = new Hono();
+    a.route('/quote', quoteRoutes({ quotes: new InMemoryQuoteRepo(), maps, v2Enabled: true, now: () => new Date('2026-07-28T12:00:00.000Z') }));
+    return a;
+  }
+  const est = (a: Hono, body: unknown) =>
+    a.request('/quote/v2/estimate', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const intent = (leg: Record<string, unknown>) => ({ ...V2_PRIVATE, routeId: undefined, legs: [leg] });
+
+  it('prices a stop the name alone cannot place, and echoes the NAME, never the ID', async () => {
+    const res = await est(app(), intent({ from: 'Ella', to: PICK, toPlaceId: PID }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.legs[0]).toMatchObject({ from: 'Ella', to: PICK, distanceKm: 120 });
+    expect(JSON.stringify(body)).not.toContain('place_id:');
+  });
+
+  it('without the ID the same stop stays unpriced, exactly as before', async () => {
+    const res = await est(app(), intent({ from: 'Ella', to: PICK }));
+    expect(res.status).toBe(422);
+  });
+
+  it('refuses a malformed place ID rather than sending it to Google', async () => {
+    const res = await est(app(), intent({ from: 'Ella', to: PICK, toPlaceId: 'x y&key=z' }));
+    expect(res.status).toBe(400);
+  });
+});
