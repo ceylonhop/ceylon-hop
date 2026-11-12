@@ -1075,3 +1075,33 @@ describe('POST /bookings/trip — through (stops on the way)', () => {
     expect((await res.json()).message).toMatch(/^through: /);
   });
 });
+
+describe('single booking priced by the Google place ID of a picked stop', () => {
+  const PICK = 'Casa Selvita, Kandy, Sri Lanka';
+  const PID = 'ChIJtestplace0001';
+  function placeAwareMaps(): MapsAdapter {
+    const fake = new FakeMapsAdapter();
+    const known = (a: string, b: string) => (b === `place_id:${PID}` ? { km: 120, durationMin: 150 } : null);
+    return {
+      provider: 'place-aware',
+      places: (q) => fake.places(q),
+      distance: async (a, b) => known(a, b) ?? fake.distance(a, b),
+      distanceVariants: async (a, b) => { const k = known(a, b); return k ? { fastest: k, noTolls: null, hasChoice: false } : fake.distanceVariants(a, b); },
+    };
+  }
+
+  it('prices and measures the stop by its ID, and keeps the NAME on the booking', async () => {
+    const app = createApp({ maps: placeAwareMaps() });
+    const res = await post(app, { ...valid, from: 'Ella', to: PICK, toPlaceId: PID });
+    expect(res.status).toBe(201);
+    const b = await res.json();
+    expect(b.distanceKm).toBe(120);
+    expect(JSON.stringify(b)).not.toContain('place_id:');
+  });
+
+  it('without the ID the same stop is unpriced, exactly as before', async () => {
+    const app = createApp({ maps: placeAwareMaps() });
+    const b = await (await post(app, { ...valid, from: 'Ella', to: PICK })).json();
+    expect(b.distanceKm).toBeNull();
+  });
+});

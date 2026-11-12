@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { z } from 'zod';
 import { EXTRA_CODES } from './rateCard';
 import { ROUTE_VARIANTS } from './routeChoice';
+import { PlaceIdSchema } from '../adapters/placeIdMaps';
 
 const Identity = {
   routeId: z.string().trim().min(1).max(120).optional(),
@@ -28,6 +29,10 @@ const PrivateLegIntent = z
     via: Via.optional(),
     // Customer route choice (spec 2026-09-26 §4.1): ASK for a road, never send a distance.
     routeVariant: z.enum(ROUTE_VARIANTS).optional(),
+    // Google's place ID for an end the customer picked from the list (see adapters/placeIdMaps.ts).
+    // Optional and never defaulted, so every stored intent's fingerprint is unchanged.
+    fromPlaceId: PlaceIdSchema.optional(),
+    toPlaceId: PlaceIdSchema.optional(),
   })
   .strict();
 
@@ -76,6 +81,17 @@ const IntentUnion = z.discriminatedUnion('product', [
 ]);
 
 export type WebQuoteIntent = z.infer<typeof IntentUnion>;
+
+/** The place IDs an intent carries, keyed by the stop name they identify. */
+export function intentPlaceIds(intent: WebQuoteIntent): Record<string, string> {
+  const ids: Record<string, string> = {};
+  if (intent.product !== 'private') return ids;
+  for (const l of intent.legs) {
+    if (l.fromPlaceId && !(l.from in ids)) ids[l.from] = l.fromPlaceId;
+    if (l.toPlaceId && !(l.to in ids)) ids[l.to] = l.toPlaceId;
+  }
+  return ids;
+}
 
 /** Billed segments in an intent: one per consecutive pair of each leg's chain. */
 export function intentSegments(intent: WebQuoteIntent): number {
