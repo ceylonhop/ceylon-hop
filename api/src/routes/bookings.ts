@@ -1,5 +1,6 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { z, type ZodError } from 'zod';
+import { withPlaceIds } from '../adapters/placeIdMaps';
 import { SingleTransferInput, BillingInput } from '../domain/singleTransfer';
 import { TripInput } from '../domain/trip';
 import { SharedBookingRequest } from '../domain/shared';
@@ -693,7 +694,10 @@ function invalidRequest(error: ZodError) {
 
     // The engine is the pricing truth; a client quotedTotal is never adopted — an unpriced
     // booking takes the server placeholder and is flagged for ops.
-    const legMaps = memoizeDistance(maps);
+    const legMaps = withPlaceIds(memoizeDistance(maps), {
+      [parsed.data.from]: parsed.data.fromPlaceId,
+      [parsed.data.to]: parsed.data.toPlaceId,
+    });
     const rateCard = await bookingRateCard(parsed.data.quoteId);
     let outcome;
     try {

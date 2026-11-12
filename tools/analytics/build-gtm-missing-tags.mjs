@@ -72,6 +72,8 @@ const EVENTS = [
     why: 'The engine did not answer and the customer saw a fallback price.' },
   { name: 'quote_unpriced_shown', params: ['surface', 'mode', 'named'],
     why: 'The server could not place a stop, so Pay was withheld (CH-E7EE8, 2026-10-18). Counts customers who hit it, including those who never book.' },
+  { name: 'checkout_field_invalid', params: ['field'],
+    why: 'A Pay press the form refused, and which box stopped it (field id only, never the value). Splits form trouble from people simply leaving the payment screen (analytics review 2026-11-10).' },
   { name: 'route_choice', params: ['choice', 'source', 'page', 'saving_usd'],
     why: 'Which road customers pick when the local road is cheaper (fastest / no_tolls / dismissed), from the popup or the card switch — the take-up of the cheaper road.' },
 
