@@ -1344,7 +1344,7 @@ window.dismissReprice=function(){
 })();
 function checkWhere(){
   const haveWhere = isTrip ? true : (state.locFrom && state.locTo);
-  document.getElementById('n1').disabled = !haveWhere || !!state.pendingReprice || !!state.locTooFar;
+  document.getElementById('n1').disabled = !haveWhere || !!state.pendingReprice || !!state.locTooFar || !!currentUnpriced();
 }
 // For shared rides a date is required before continuing — there's only one
 // departure per day so we need to know which day. Private transfers can
@@ -2015,6 +2015,11 @@ let lastRequestedSig = null;
 // refuse it (awaiting_price), so Pay must not be offered (CH-E7EE8, 2026-10-18). Keyed by intent
 // signature, so changing any stop clears it.
 let engineUnpriced = null; // { sig, names:[] } | null
+const UNPRICED_LABEL = 'Price needed';
+// The engine measured this route only roughly (Google couldn't). Pay is refused, so the old "will be
+// confirmed at checkout" promised a checkout the customer could never reach.
+const ESTIMATED_COPY = 'We can’t confirm this trip’s exact price right now, so we can’t take payment online. '+
+  'Try again in a few minutes, or send us the trip on WhatsApp and we’ll price it by hand.';
 function currentUnpriced(){ return (engineUnpriced && engineUnpriced.sig===currentIntentSig()) ? engineUnpriced : null; }
 function unpricedCopy(u){
   const n=u.names;
@@ -2028,10 +2033,12 @@ function unpricedCopy(u){
 function waUnpricedText(){
   return waTripSummary().replace(/\nQuoted [^\n]*$/, '')+'\n\nThe website couldn’t price it automatically.';
 }
-function renderUnpricedActions(note){
+function renderUnpricedActions(note, opts){
   const row=document.createElement('span');
   row.className='unpriced-actions';
-  if(isTrip){
+  if(opts && opts.waOnly){
+    // Changing a stop doesn't help when it's the road measurement that failed — only a person can.
+  } else if(isTrip){
     const edit=document.createElement('a');
     edit.href=buildTripEditUrl(false); edit.textContent='Change stops';
     row.appendChild(edit);
@@ -2041,7 +2048,7 @@ function renderUnpricedActions(note){
     change.addEventListener('click',()=>{ window.goStep(2); const el=document.getElementById('loc-to'); if(el) el.focus(); });
     row.appendChild(change);
   }
-  row.appendChild(document.createTextNode(' · '));
+  if(row.childNodes.length) row.appendChild(document.createTextNode(' · '));
   const wa=document.createElement('a');
   wa.href=waHrefFor(waUnpricedText()); wa.target='_blank'; wa.rel='noopener'; wa.textContent='Send it on WhatsApp';
   row.appendChild(wa);
@@ -2744,7 +2751,8 @@ function render(){
   // "Calculating…" in a nowrap display face at 1.35rem would otherwise crush its CTA.
   const busy = repricing();
   const totalEl = document.getElementById('sum-total');
-  setNum(totalEl, busy ? PRICING_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
+  // An itinerary the server refused has no price — the local figure behind it is often $0.
+  setNum(totalEl, busy ? PRICING_LABEL : currentUnpriced() ? UNPRICED_LABEL : (curEst && curEst.estimated ? '~' : '') + money(payableTotal()));
   if(totalEl){
     totalEl.classList.toggle('is-pricing', busy);
     if(busy) totalEl.setAttribute('aria-busy','true'); else totalEl.removeAttribute('aria-busy');
@@ -2828,7 +2836,7 @@ function render(){
     : state.pendingReprice
       ? 'Please review the updated price above before continuing.'
       : (curEst && curEst.estimated)
-        ? 'This trip’s exact price will be confirmed at checkout — nothing is charged until then.'
+        ? ESTIMATED_COPY
         : null;
   if(payBtn) payBtn.disabled = !!payGateReason;
   const gateNote=document.getElementById('details-error');
@@ -2836,8 +2844,54 @@ function render(){
     if(payGateReason){
       gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1';
       if(unpriced) renderUnpricedActions(gateNote);
+      else if(payGateReason===ESTIMATED_COPY) renderUnpricedActions(gateNote, { waOnly:true });
     }
     else if(gateNote.dataset.gate){ gateNote.hidden=true; gateNote.textContent=''; delete gateNote.dataset.gate; }
+  }
+  syncUnpricedEarly(unpriced);
+  // The "estimated" refusal was untracked (analytics review 2026-11-10): report it once per
+  // itinerary on the event the "can't estimate" path already uses, so no new GTM tag is needed.
+  if(!unpriced && !estimatePending && curEst && curEst.estimated){
+    const s=currentIntentSig();
+    if(s!==estimatedTrackedSig){
+      estimatedTrackedSig=s;
+      if(typeof window.chTrack==='function') window.chTrack('route_estimate_unavailable',{
+        surface:'booking', reason:'estimated', route_fingerprint:routeFingerprint(currentRouteInputSig())
+      });
+    }
+  }
+}
+let estimatedTrackedSig=null;
+// The unpriced refusal, said on the screens BEFORE payment too (analytics review 2026-11-10: 46
+// customers in 28 days were let through the pick-up and Travellers screens — the first said "Your
+// route's confirmed", the second showed $0 — and met only a disabled Pay, its reason below the
+// billing form). Continue is refused where the stop can still be changed; #details-error stays as
+// the last line of defence for a refusal that lands after the customer has moved on.
+function syncUnpricedEarly(u){
+  const n4=document.getElementById('n4');
+  [document.getElementById('nav1'), n4 && n4.parentElement].forEach(function(nav){
+    if(!nav || !nav.parentNode) return;
+    let note=nav.parentNode.querySelector(':scope > .unpriced-early');
+    if(!u){ if(note) note.remove(); return; }
+    if(!note){
+      note=document.createElement('p'); note.className='form-error unpriced-early'; note.setAttribute('role','status');
+      nav.parentNode.insertBefore(note, nav);
+    }
+    const copy=unpricedCopy(u);
+    if(note.dataset.copy===copy) return; // render() runs often; rebuild only when the copy moves
+    note.dataset.copy=copy; note.textContent=copy;
+    renderUnpricedActions(note);
+  });
+  // Single transfer: checkWhere owns #n1 and now counts the refusal. A trip's #n1 is set by render()
+  // above (the chauffeur gate), so the refusal is added on top. #n4 is recomputed every render().
+  if(isTrip){ const n1=document.getElementById('n1'); if(n1 && u) n1.disabled=true; }
+  else checkWhere();
+  if(n4 && u) n4.disabled=true;
+  // "Your route's confirmed" is the private-transfer subtitle; a trip and a shared seat write their own.
+  const s1=document.getElementById('s1-sub');
+  if(s1 && !isTrip && !isShared){
+    if(s1.dataset.base==null) s1.dataset.base=s1.textContent;
+    s1.textContent = u ? s1.dataset.base.replace(/^Your route’s confirmed\.\s*/, '') : s1.dataset.base;
   }
 }
 
@@ -2927,7 +2981,7 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   }
   const activeEst=currentEngineEst();
   if(activeEst && activeEst.estimated){
-    if(derr){ derr.textContent='This trip’s exact price will be confirmed at checkout — nothing is charged until then.'; derr.hidden=false; }
+    if(derr){ derr.textContent=ESTIMATED_COPY; derr.hidden=false; renderUnpricedActions(derr, { waOnly:true }); }
     return;
   }
   // validate the lead traveller's contact details before payment
