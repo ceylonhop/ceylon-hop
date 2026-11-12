@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PlaceIdSchema } from '../adapters/placeIdMaps';
 import { digitsOf, DIAL_CODE, NATIONAL_NUMBER, INTERNATIONAL_NUMBER } from './phone';
 import { ROUTE_VARIANTS } from '../quote/routeChoice';
 
@@ -102,6 +103,10 @@ export const SingleTransferInput = z.object({
   // existed — server-side (measureLeg) confirms it still exists at booking time; a fork that
   // vanished refuses to charge rather than silently switching road.
   routeVariant: z.enum(ROUTE_VARIANTS).optional(),
+  // Google's place ID for an end the customer picked from the list: the road is measured by it, the
+  // name is what's stored and shown (adapters/placeIdMaps.ts). Used at pricing time only.
+  fromPlaceId: PlaceIdSchema.optional(),
+  toPlaceId: PlaceIdSchema.optional(),
 });
 
 export type SingleTransferInput = z.infer<typeof SingleTransferInput>;
