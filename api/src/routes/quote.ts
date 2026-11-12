@@ -19,9 +19,11 @@ import {
   WebQuoteIntentSchema,
   digestAccessToken,
   fingerprintIntent,
+  intentPlaceIds,
   safeDigestEqual,
   type WebQuoteIntent,
 } from '../quote/webQuoteV2';
+import { withPlaceIds } from '../adapters/placeIdMaps';
 import { cheaperRouteChoice, measureLeg, MAX_COMPARE_PER_BATCH, type RouteChoice, type RouteVariant } from '../quote/routeChoice';
 import { randomBytes } from 'node:crypto';
 import type { BookingRepo } from '../db/bookingRepo';
@@ -388,8 +390,10 @@ export function quoteRoutes(deps: {
     if (lifted.compare && (parsed.data.product !== 'private' || parsed.data.legs.length !== 1)) {
       return c.json({ error: 'invalid_request' }, 400);
     }
-    // Memoized per request, so naming the failed stop below re-reads these lookups for free.
-    const maps = memoizeDistance(deps.maps);
+    // Memoized per request, so naming the failed stop below re-reads these lookups for free. A
+    // picked stop is measured by its Google place ID (adapters/placeIdMaps.ts).
+    const placeIds = intentPlaceIds(parsed.data);
+    const maps = withPlaceIds(memoizeDistance(deps.maps), placeIds);
     const resolved = await engineRequestFor(parsed.data, maps);
     if (!resolved) {
       const u = await unresolvedStops(parsed.data, maps);
@@ -407,7 +411,7 @@ export function quoteRoutes(deps: {
     try {
       const card = await liveCard();
       const result = quote(resolved.request, card);
-      const routeChoice = lifted.compare ? await routeChoiceFor(parsed.data, resolved, deps.maps, card) : null;
+      const routeChoice = lifted.compare ? await routeChoiceFor(parsed.data, resolved, withPlaceIds(deps.maps, placeIds), card) : null;
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { marginEstimateCents, ...pub } = result;
       let promoCode: Record<string, unknown> | undefined;
@@ -503,7 +507,7 @@ export function quoteRoutes(deps: {
     }
     // A locked quote converts to a booking through quoteToBooking, which has no road field.
     if (carriesRoad(parsed.data) || viaWithRoad(parsed.data)) return c.json({ error: 'route_choice_not_supported' }, 400);
-    const resolved = await engineRequestFor(parsed.data, deps.maps);
+    const resolved = await engineRequestFor(parsed.data, withPlaceIds(deps.maps, intentPlaceIds(parsed.data)));
     // A LOCK is a commitment, so it still refuses an estimated distance — only /estimate may show one.
     if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
     const engineRequest = resolved.request;
@@ -569,7 +573,7 @@ export function quoteRoutes(deps: {
     }
     // A locked quote converts to a booking through quoteToBooking, which has no road field.
     if (carriesRoad(parsed.data.intent)) return c.json({ error: 'route_choice_not_supported' }, 400);
-    const resolved = await engineRequestFor(parsed.data.intent, deps.maps);
+    const resolved = await engineRequestFor(parsed.data.intent, withPlaceIds(deps.maps, intentPlaceIds(parsed.data.intent)));
     // An UPDATE re-prices a locked quote, so it stays a commitment too — refuse an estimated distance.
     if (!resolved || resolved.estimated) return c.json({ error: 'quote_unpriced' }, 422);
     const engineRequest = resolved.request;
