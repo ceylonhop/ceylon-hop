@@ -76,7 +76,7 @@ function rangeLabel(first: Date, last: Date): string {
   return `${first.getUTCDate()} ${m1} – ${last.getUTCDate()} ${m2}`;
 }
 
-function vehicleLabel(tier: string | null | undefined): string {
+export function vehicleLabel(tier: string | null | undefined): string {
   if (!tier) return 'Vehicle';
   if (tier === 'car') return 'Car';
   if (tier.startsWith('van')) return 'Van';

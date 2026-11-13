@@ -273,6 +273,23 @@ describe('what each option says is included', () => {
     expect(inc.items.some((i) => /Everything in/.test(i))).toBe(false);
   });
 
+  // Q-KBRPF (owner, 2026-11-11): a 9-seat van quote told the customer "Air-conditioned car".
+  it('names the vehicle that was actually quoted — van, not car', () => {
+    for (const vehicle of ['van', 'van9', 'van14']) {
+      const [priv, chauf] = customerQuoteView(quote({ requestedService: 'both', vehicle }), both).options;
+      expect(priv.included.items).toContain('Air-conditioned van with driver');
+      expect(chauf.included.items).toContain('Your van and driver stays for the whole trip');
+      expect(JSON.stringify([priv.included, priv.includedText, chauf.included, chauf.includedText])).not.toMatch(/\bcar\b/);
+    }
+  });
+
+  it('says "vehicle" when the quote is for neither a car nor a van', () => {
+    for (const vehicle of ['custom', null]) {
+      const [priv] = customerQuoteView(quote({ vehicle }), p2pOnly).options;
+      expect(priv.included.items).toContain('Air-conditioned vehicle with driver');
+    }
+  });
+
   // A quote.html cached before the bullets shipped still reads includedText, so it has to keep
   // saying the same thing the bullets do rather than going blank.
   it('keeps the legacy one-line sentence in step with the items', () => {
