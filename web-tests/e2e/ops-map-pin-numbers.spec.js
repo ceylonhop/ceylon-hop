@@ -16,15 +16,15 @@ const RATE_CARD = {
 };
 
 // `legCount` controls how many legs the stubbed route returns → legCount + 1 pins.
-async function stub(page, legCount = 3) {
-  await page.addInitScript((n) => {
+async function stub(page, legCount = 3, zoom = 10) {
+  await page.addInitScript(({ n, zoom }) => {
     window.OPS_MAPS_KEY = 'test-key';
     function Map(el) { this.__el = el; if (el) el.setAttribute('data-map', 'ready'); }
     Map.prototype.fitBounds = function () {};
     // Required since pins became zoom-aware (2026-08-07): without getZoom/addListener the pin
     // pass throws into its "markers are non-essential" catch and every assertion below sees an
     // empty marker list — these tests were passing vacuously until they weren't.
-    Map.prototype.getZoom = function () { return 10; };
+    Map.prototype.getZoom = function () { return zoom; };
     Map.prototype.addListener = function () { return { remove() {} }; };
     function Marker(opts) { (window.__markers = window.__markers || []).push(opts); }
     Marker.prototype.setMap = function () {};
@@ -46,7 +46,7 @@ async function stub(page, legCount = 3) {
       accounts: { id: { initialize() {}, renderButton() {}, prompt() {} } },
       maps: { importLibrary: async (name) => libs[name] || {}, event: { trigger() {} } },
     };
-  }, legCount);
+  }, { n: legCount, zoom });
   await page.route('**/admin/**', (r) => r.fulfill(json({})));
   await page.route('**/admin/quote/rate-card', (r) => r.fulfill(json(RATE_CARD)));
   await page.route('**/admin/quote/estimate', (r) => r.fulfill(json({ product: 'private', total: { cents: 12100, lkr: 'x' }, lineItems: [], breakdown: { km: {} }, services: { pointToPoint: { total: { cents: 12100 } }, chauffeur: { error: 'x' } }, warnings: [] })));
@@ -74,6 +74,18 @@ const markers = (page) => page.evaluate(() => window.__markers || []);
 test('every map pin carries its stop number, in journey order', async ({ page }) => {
   test.slow();
   await stub(page, 3); // 3 legs → 4 pins
+  await buildRoute(page);
+
+  await expect.poll(async () => (await markers(page)).length, { timeout: 15000 }).toBe(4);
+  const opts = await markers(page);
+  expect(opts.map((m) => m.label && m.label.text)).toEqual(['1', '2', '3', '4']);
+});
+
+// Owner, 2026-11-10: numbers were hidden below zoom 9. On-screen merging already stops them
+// overlapping, so a whole-island view keeps them too.
+test('pins stay numbered at whole-island zoom', async ({ page }) => {
+  test.slow();
+  await stub(page, 3, 7); // 3 legs → 4 pins, ~1° apart: separate pins even at zoom 7
   await buildRoute(page);
 
   await expect.poll(async () => (await markers(page)).length, { timeout: 15000 }).toBe(4);

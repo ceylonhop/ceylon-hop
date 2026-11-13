@@ -21,6 +21,18 @@ test('map pins are numbered so they can be matched to stops', async ({ page }) =
   expect(labels).toEqual(['1', '2']);
 });
 
+// Owner, 2026-11-10: a quote's whole-island map showed bare pins. Numbers used to be hidden below
+// zoom 9; on-screen pin merging already stops them overlapping, so they show at every zoom.
+test('map pins stay numbered at whole-island zoom', async ({ page }) => {
+  await page.addInitScript(() => { window.__E2E_ZOOM = 7; });
+  await gotoPlanner(page);
+  await expect(page.locator('#trip-map .ch-map-wrap.ready')).toBeVisible();
+
+  const labels = await page.evaluate(() =>
+    (window.__chMarkers || []).map((m) => m.label && m.label.text));
+  expect(labels).toEqual(['1', '2']);
+});
+
 test('the expand button opens a modal map and closes cleanly', async ({ page }) => {
   await gotoPlanner(page);
 

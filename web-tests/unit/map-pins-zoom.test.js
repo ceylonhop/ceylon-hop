@@ -19,10 +19,6 @@ const copies = {
   website: extract('ch-map.js', 'mapPins(pts, zoom)'),
   ops: extract('api/src/routes/ops-ui.html', 'mapPins(pts, zoom)'),
 };
-const labels = {
-  website: extract('ch-map.js', 'pinLabelsVisible(zoom)'),
-  ops: extract('api/src/routes/ops-ui.html', 'pinLabelsVisible(zoom)'),
-};
 
 const P = (lat, lng) => ({ lat, lng });
 // Real Sri Lankan stops from the reported 26-stop itinerary's crowded corner.
@@ -72,18 +68,6 @@ for (const [name, mapPins] of Object.entries(copies)) {
     it('never throws on empty or single input', () => {
       expect(mapPins([], 7)).toEqual([]);
       expect(mapPins([COLOMBO], 7).map((p) => p.text)).toEqual(['1']);
-    });
-  });
-
-  describe(`pinLabelsVisible (${name})`, () => {
-    it('hides numbers at country zoom, where 26 of them are unreadable', () => {
-      expect(labels[name](7)).toBe(false);
-    });
-    it('shows them once the map is zoomed into a region', () => {
-      expect(labels[name](10)).toBe(true);
-    });
-    it('shows them when zoom is unknown — never silently blank', () => {
-      expect(labels[name](undefined)).toBe(true);
     });
   });
 }
