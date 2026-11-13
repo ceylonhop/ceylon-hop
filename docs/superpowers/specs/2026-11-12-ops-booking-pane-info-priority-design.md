@@ -28,8 +28,8 @@ what to send. The pane is ordered for a different job:
 
 ## Decisions
 
-1. **Order by "what do I tell the coordinator?"** The job first, then what the customer asked for,
-   then the customer's own note, then the team's notes. Contact, payment and history fold away.
+1. **Order by "what do I tell the coordinator?"** The job in the header, then the customer's own
+   note (it often carries job facts: a surfboard, a pram), then the itinerary, then the team's notes. Contact, payment and history fold away.
 2. **Money only rises when there is something to do.** A paid-in-full booking shows no money near
    the top. Money owed or due goes under the name (see Exceptions).
 3. **Label every leg's road in ops' words** ("expressway or normal?"). Sri Lanka's tolled roads
@@ -42,7 +42,8 @@ what to send. The pane is ordered for a different job:
 7. **No information is lost.** Every fact stays reachable. Only duplicates (the Route row, repeated
    Amount/Status) and the stepper are dropped.
 8. **Wider pane.** 780px on screens at least 900px wide, with a two-column body: the job on the
-   left (itinerary, customer's note), and team notes plus the folded sections on the right.
+   left (itinerary), and the customer's note, team notes and the folded sections on the right, so
+   the note sits beside the itinerary rather than below a long trip.
    Narrower screens keep one column, and phones keep today's full-screen sheet. The width is CSS on
    `.sheet`; the `@media(max-width:700px)` phone rule is unchanged.
 9. **The ride-board pane is in scope** (state F). It gets the same treatment: departure and "will
@@ -54,9 +55,12 @@ what to send. The pane is ordered for a different job:
 
 11. **Colour means severity.** Amber marks an expected state that needs handling: balance due,
     cash on the day, flexible date, unpaid with more than 48 hours to travel, "May not fit". Red
-    marks only what blocks the trip: unpaid with travel within 48 hours (start date, plus pickup
-    time when set), or vehicle not on record. A booking with no date is amber; it has no travel
-    time to measure against. The vehicle highlight is neither colour.
+    marks only what blocks the trip: an unpaid **ops-quote** booking with travel within 48 hours
+    (start date, plus pickup time when set), or vehicle not on record. An unpaid **website**
+    booking is an abandoned or declined checkout, and the owner's rule is not to chase those
+    (2026-10-29, CH-NQ66B). So it stays amber whatever the date, and is worded as a fact:
+    "Checkout not completed". A booking with no date is amber; it has no travel time to measure
+    against. The vehicle cell uses neither colour (see the header table).
 
 ## Information order (website / ops bookings)
 
@@ -69,9 +73,13 @@ Stub row, four cells:
 | Cell | Value | Sub-line |
 |---|---|---|
 | When | start date, or "Flexible" in amber | pickup time, or "time not set" |
-| Vehicle (highlighted) | `VEHICLE_NAME[d.vehicle]` | "paid for", plus "May not fit" in amber when guests or bags exceed `vehicleCaps()` (only once the rate card is loaded; never for a custom vehicle) |
+| Vehicle (outlined) | `VEHICLE_NAME[d.vehicle]` | "paid for", plus "May not fit" in amber when guests or bags exceed `vehicleCaps()` (only once the rate card is loaded; never for a custom vehicle) |
 | Guests | total | "2 adults · 1 child" when the input has the split; "guests" otherwise |
 | Bags | `input.bags` | "—" with "not asked" where the type doesn't record bags (trip, chauffeur) |
+
+Cell text wraps; it is never cut short with "…" (today's `.stub .sv` has `text-overflow:ellipsis`).
+The Vehicle cell is marked by a heavy ink outline and larger type, not a teal fill, so it can't be
+mistaken for a button (the Map button and the primary button are teal).
 
 Per-type overrides:
 - **Mid-trip** (any leg dated before today, and at least one on or after today): When becomes "Next
@@ -91,7 +99,8 @@ Until the detail fetch lands, Vehicle and Bags show the skeleton shimmer.
 ### Exceptions line (under the name, only when it applies)
 
 One line, coloured by decision 11, and Payment opens by itself:
-- awaiting payment ("Not paid yet · $X"; the "Next up" block stays first in the body)
+- awaiting payment: ops quote → "Not paid · $X"; website → "Checkout not completed · $X". The
+  "Next up" block stays first in the body. Channel comes from `t.chan`, as the eyebrow uses it.
 - deposit paid, balance owed ("Balance due $X")
 - pay on the day ("Cash due $X at the first pickup")
 - closed (completed, cancelled, refunded, no-show): the outcome line, e.g. "Cancelled 14 Nov".
@@ -99,6 +108,8 @@ One line, coloured by decision 11, and Payment opens by itself:
 
 ### Body
 
+0. **Customer's note** comes first (after "Next up" when unpaid). See item 2 for its content. In the
+   wide layout it opens the right column instead.
 1. **Itinerary** (trips) or **Route** (single, shared), with a "Map" button on the heading.
    - One row per leg, using today's grouping (through-stops and gaps included): date · short
      from → short to · road chip · Next / Done.
@@ -113,7 +124,7 @@ One line, coloured by decision 11, and Payment opens by itself:
      by the customer) sit as tags under the legs. Omitted when there are none.
    - The Change / Set date & time button and its form sit under the itinerary.
    - Short place = text before the first comma, cut to one line, with the full text as the title.
-2. **Customer's note:** the free-form "Anything we should know?" box from website checkout
+2. **Customer's note** (placed first, see item 0): the free-form "Anything we should know?" box from website checkout
    (`booking.html` `#f-notes` → `bookings.customer_notes`, at most 1,000 characters). Their exact
    words in an amber callout: shown in full, `white-space:pre-line`, never truncated or folded,
    escaped like today. Empty → "No note left at checkout". A booking with no website checkout
@@ -130,7 +141,7 @@ One line, coloured by decision 11, and Payment opens by itself:
 
 ## Ride-board pane (`boardSheetHtml`)
 
-- **Stub:** Departs (date, time, locked or window start) · Will it run (yes/no, committed of min) ·
+- **Stub:** Departs (date, time, locked or window start) · Will it run ("Runs" / "Not yet", with "5 booked · 4 needed") ·
   Seats (committed / capacity, spare) · Names close (cutoff).
 - **Body:** Route with a Map button, then "Who's on it" (today's manifest rows), then Notes, then
   Money folded ("$X per seat · N of M charged").
@@ -163,6 +174,7 @@ One line, coloured by decision 11, and Payment opens by itself:
 | Ops-quote booking | No note box on that checkout; the note block says so instead of "no note" |
 | Long note | Shown in full with its line breaks; it pushes the right column down, never gets cut |
 | No date | "Flexible" in amber, with the Set date button |
+| Trip leg with no date (`trip.ts:17`, dates optional) | Never marked done; the next leg is the first dated leg on or after today; no dated leg at all → "Flexible" |
 | Vehicle unknown | Red "Not on record — check the quote" |
 | 9/14-seat or custom van | Full `VEHICLE_NAME` |
 | Over capacity | Amber "May not fit" (needs the rate card loaded; skipped for custom) |
@@ -210,8 +222,14 @@ One line, coloured by decision 11, and Payment opens by itself:
 
 ## Risks
 
-- **`ops-ui.html` is the hot file.** Small PRs, merged quickly. Consider two PRs: (1) the pane
-  order, width and folds; (2) the map dialog.
+- **`ops-ui.html` is the hot file, and this is bigger than maintenance mode's "one thing per
+  request".** Build it as four PRs, each shippable on its own:
+  1. **Header + itinerary facts:** the vehicle, guests and bags cells; road labels; addresses on
+     every leg still to run; the customer's note moved first. This fixes the van/car incident and
+     ops' road question.
+  2. Order, folded sections, the wider two-column pane, and the amber/red rules.
+  3. The map dialog.
+  4. The ride-board pane.
 - **morphdom and `<details>`:** a refresh must not snap a fold shut. Keep the open state in render
   state, or have `onBeforeElUpdated` preserve `open`.
 - **Maps billing:** press-only and `MAPS_LIVE_ON`-gated; e2e stubs `google.maps`.
