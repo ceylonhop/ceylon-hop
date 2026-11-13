@@ -127,7 +127,7 @@ One line, coloured by decision 11, and Payment opens by itself:
 2. **Customer's note** (placed first, see item 0): the free-form "Anything we should know?" box from website checkout
    (`booking.html` `#f-notes` → `bookings.customer_notes`, at most 1,000 characters). Their exact
    words in an amber callout: shown in full, `white-space:pre-line`, never truncated or folded,
-   escaped like today. Empty → "No note left at checkout". A booking with no website checkout
+   escaped like today. Empty → "No note from the customer." (not "left at checkout": ops-converted quotes are stored with channel 'website' but never showed a note box — postgresQuoteConversionRepo.ts defaults the channel). A booking with no website checkout
    (an ops quote's pay link, which has no note box) → "Booked through an ops quote. That checkout
    has no note box."
 3. **Team notes:** every `t.notes` entry, oldest first, with its time, plus the add-note box.
