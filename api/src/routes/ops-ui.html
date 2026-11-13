@@ -3952,6 +3952,32 @@ function jobFacts(b,vehicle,serviceType,legs){
     :{label:mode==='shared'?'Departs':'When',date:null,k:null,m:null,start:null};
   return {vehicle:veh,guests,bags,when};
 }
+/* The one line that must stand out under the name (spec 2026-11-12 decision 11). Amber marks an
+   expected state that needs handling; red marks only what blocks the trip. An unpaid WEBSITE
+   booking is an abandoned or declined checkout, and the owner's rule is not to chase those
+   (2026-10-29, CH-NQ66B), so it stays amber and is worded as a fact. `now` is ms since epoch. */
+function sheetException(t,isCashDue,now){
+  const closed={completed:'Completed',cancelled:'Cancelled',refunded:'Refunded',no_show:'No-show'}[t.stage];
+  if(closed)return {kind:'closed',tone:'grey',text:closed,amount:null,openPayment:false};
+  if(t.stage==='awaiting_payment'){
+    if(t.chan==='website')return {kind:'checkout',tone:'amber',text:'Checkout not completed',amount:t.amount,openPayment:true};
+    const hm=/^\d\d:\d\d$/.test(t.time||'')?t.time:'00:00';
+    const start=t.date?Date.parse(t.date+'T'+hm+':00'):NaN;
+    const soon=Number.isFinite(start)&&start-now<=48*3600e3;
+    return {kind:'unpaid',tone:soon?'red':'amber',text:soon?'Not paid · travels within 48 hours':'Not paid',amount:t.amount,openPayment:true};
+  }
+  if(t.paid&&t.balance>0)return {kind:'balance',tone:'amber',text:'Balance due',amount:t.balance,openPayment:true};
+  if(isCashDue)return {kind:'cash',tone:'amber',text:'Cash due at the first pickup',amount:t.cashDue,openPayment:true};
+  return null;
+}
+function paymentWord(t,isCashDue){
+  return t.paid?(t.balance>0?'Deposit paid':'Paid'):isCashDue?'Cash due on the day':'Awaiting payment';
+}
+/* Ops notes are stored one per line as "[YYYY-MM-DD HH:MM] text" (nowStamp). */
+function noteParts(line){
+  const m=/^\[(\d{4}-\d\d-\d\d \d\d:\d\d)\]\s*([\s\S]*)$/.exec(String(line??''));
+  return m?{at:m[1],text:m[2]}:{at:null,text:String(line??'')};
+}
 /* @sheet-job:end */
 
 /* trip legs (mode 'trip') from the booking input's stops/dates */
