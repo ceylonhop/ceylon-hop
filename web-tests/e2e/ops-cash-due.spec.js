@@ -60,8 +60,7 @@ test('a later stage keeps its label and carries a "Cash due $342" chip', async (
 test('the drawer: amber header pill, "Cash due" pipeline step, the pay-on-the-day note and status', async ({ page }) => {
   await boot(page);
   await expect(page.locator('#sheet .sheet-h .idrow .pill').first()).toHaveText('Confirmed · cash due');
-  await expect(page.locator('#sheet .pstep').nth(1)).toHaveText('Cash due');
-  await expect(page.locator('#sheet .pstep.done')).toHaveCount(1); // only "Awaiting" is behind it
+  await expect(page.locator('#sheet [data-testid="sheet-exception"]')).toContainText('Cash due at the first pickup');
   const pay = payBlock(page);
   await expect(pay).toContainText("Pay on the day — $342 in US dollars cash to the Ceylon Hop team, at the first pickup. Record it here when it's collected.");
   await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Cash due on the day');

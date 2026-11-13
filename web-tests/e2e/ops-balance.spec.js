@@ -69,7 +69,7 @@ test('a balance still open on the day of travel is an attention reason on the ro
 // balance is visible without scrolling.
 const payBlock = (page) => page.locator('#sheet .block', { has: page.locator('h4', { hasText: 'Payment' }) });
 const balCard = (page) => payBlock(page).locator('.followup.bal-card');
-const headTag = (page) => page.locator('#sheet .sheet-h .pill.pill-bal');
+const headTag = (page) => page.locator('#sheet .sheet-h [data-testid="sheet-exception"]');
 
 test('the drawer leads the Payment block with a Balance due card, above the ledger rows', async ({ page }) => {
   await boot(page);
@@ -95,9 +95,9 @@ test('the drawer leads the Payment block with a Balance due card, above the ledg
 
 test('the sheet header carries the same "Balance $169" tag as the list row', async ({ page }) => {
   await boot(page);
-  await expect(headTag(page)).toHaveText('Balance $169');
+  await expect(headTag(page)).toHaveText('Balance due · $169');
   // Beside the stage pill, which is still there.
-  await expect(page.locator('#sheet .sheet-h .idrow .pill')).toHaveCount(2);
+  await expect(page.locator('#sheet .sheet-h .idrow .pill')).toHaveCount(1);
 });
 
 test('Balance payment link copies the booking’s balancePayLink and says so', async ({ page, context }) => {
@@ -114,7 +114,7 @@ test('Balance payment link copies the booking’s balancePayLink and says so', a
 test('a balance with no link to resend: the card and the tag show, without the button', async ({ page }) => {
   await boot(page, { theDetail: detail({ balancePayLink: null }) });
   await expect(balCard(page).locator('b')).toHaveText('Balance due · $169');
-  await expect(headTag(page)).toHaveText('Balance $169');
+  await expect(headTag(page)).toHaveText('Balance due · $169');
   await expect(page.locator('[data-act="balancelink"]')).toHaveCount(0);
   await expect(balCard(page).locator('button')).toHaveCount(0);
   // No link to point at, so the card does not claim the customer holds one.
@@ -141,6 +141,7 @@ test('an unpaid booking gets neither the card nor the tag', async ({ page }) => 
   });
   await expect(payBlock(page)).toHaveCount(1);
   await expect(balCard(page)).toHaveCount(0);
-  await expect(headTag(page)).toHaveCount(0);
+  // An unpaid booking gets the "Not paid" line, never a balance one.
+  await expect(headTag(page).filter({ hasText: 'Balance' })).toHaveCount(0);
   await expect(payBlock(page).getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Awaiting payment');
 });

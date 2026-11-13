@@ -118,7 +118,7 @@ test('marking an awaiting-payment booking paid in cash unblocks the pipeline', a
 
   // Drawer opens on "Awaiting payment", with no advance button — that is the stranding.
   const sheet = page.locator('#sheet');
-  await expect(sheet.locator('.pstep.cur')).toHaveText('Awaiting');
+  await expect(sheet.locator('.sheet-h .idrow .pill').first()).toHaveText('Awaiting payment');
   await expect(sheet.locator('[data-act="advance"]')).toHaveCount(0);
 
   await sheet.locator('#paidmethod').selectOption('cash');
@@ -144,7 +144,7 @@ test('marking an awaiting-payment booking paid in cash unblocks the pipeline', a
 
   // ...and the pipeline is unblocked: PAID is now the current step, and the stage that had no
   // way forward has grown the advance button NEXT defines for 'paid'.
-  await expect(sheet.locator('.pstep.cur')).toHaveText('Paid', { timeout: BOOKINGS_TIMEOUT });
+  await expect(sheet.locator('.sheet-h .idrow .pill').first()).toHaveText('Paid', { timeout: BOOKINGS_TIMEOUT });
   const advance = sheet.locator('[data-act="advance"]');
   await expect(advance).toBeVisible();
   await expect(advance).toContainText('Confirm vehicle');

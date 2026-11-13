@@ -438,6 +438,11 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sheet-h h2{font-family:var(--display);font-size:1.55rem;font-weight:700;margin:9px 0 0;line-height:1.08;letter-spacing:0;overflow-wrap:anywhere}
   .sheet-h h2.sm{font-size:1.22rem}  /* long Google-profile names: wrap smaller, don't shout */
   .idrow{display:flex;align-items:center;gap:9px;margin-top:7px}
+  .sh-exc{margin-top:10px;padding:7px 11px;border-radius:10px;font-weight:700;font-size:.86rem;border:1px solid transparent}
+  .sh-exc.tone-amber{background:var(--wait-bg);color:var(--wait);border-color:color-mix(in srgb,var(--wait) 30%,transparent)}
+  .sh-exc.tone-red{background:var(--alert-bg);color:var(--alert);border-color:var(--alert-line)}
+  .sh-exc.tone-grey{background:var(--idle-bg);color:var(--idle)}
+  .stub .stub-flex{color:var(--wait)}
   .sheet-h .rf{font-family:var(--mono);font-size:.74rem;color:var(--ink-soft);font-weight:600;display:inline-flex;align-items:center;gap:5px;border:0;background:none;padding:3px 7px;margin-left:-7px;border-radius:7px;transition:.15s;cursor:pointer}
   .sheet-h .rf:hover{background:color-mix(in srgb,var(--ink) 6%,transparent);color:var(--ink)}
   .sheet-h .rf svg{width:11px;height:11px;opacity:.55}
@@ -4342,7 +4347,7 @@ function sheetHeadHtml(t,o){
       <div class="idrow"${o.tag?' style="flex-wrap:wrap"':''}>
         <button class="rf" data-act="copyref" data-id="${esc(t.id)}" title="Copy reference">${esc(t.ref)} ${ICON.copy}</button>
         <span class="pill${o.pillCls||''}"><span class="pd"></span>${esc(o.pill)}</span>${o.tag||''}
-      </div>${pipe}
+      </div>${o.alert||''}${pipe}
     </div>
     <div class="sheet-stub">${o.stub}</div>
     <div class="perf"><i></i><i></i></div>`;
@@ -4357,8 +4362,8 @@ function bookingStubHtml(t,d){
   const f=b?jobFacts(b,d.vehicle||null,t.serviceType,legRows(b,TODAY)):null;
   const plural=(n,one,many)=>`${n} ${n===1?one:many}`;
   const when=f&&f.when.label==='Next leg'
-    ?cell('','Next leg',f.when.date?esc(fmtDate(f.when.date)):'Flexible',`leg ${f.when.k} of ${f.when.m}${f.when.start?' · started '+esc(fmtDate(f.when.start)):''}`,'sheet-when')
-    :cell('',f?f.when.label:'When',t.date?esc(fmtDate(t.date)):'Flexible',b&&b.mode==='trip'?null:t.time?esc(t.time):'time not set','sheet-when');
+    ?cell('','Next leg',f.when.date?esc(fmtDate(f.when.date)):'<span class="stub-flex">Flexible</span>',`leg ${f.when.k} of ${f.when.m}${f.when.start?' · started '+esc(fmtDate(f.when.start)):''}`,'sheet-when')
+    :cell('',f?f.when.label:'When',t.date?esc(fmtDate(t.date)):'<span class="stub-flex">Flexible</span>',b&&b.mode==='trip'?null:t.time?esc(t.time):'time not set','sheet-when');
   const g=f?.guests, bg=f?.bags;
   const guestsSub=!g?null:g.adults!=null&&g.children!=null
     ?esc(plural(g.adults,'adult','adults')+(g.children>0?' · '+plural(g.children,'child','children'):''))
@@ -4516,14 +4521,15 @@ function renderSheet(){
   /* Opens this customer's WhatsApp chat, from the fixed header so it stays on screen while the
      body scrolls (owner, 2026-11-05). Same digits rule as memberPhoneHtml. */
   const waDigits=String(d?.booking?.input?.customer?.whatsapp||'').replace(/\D/g,'');
+  /* One line under the name when money or the outcome needs attention (spec 2026-11-12 decision
+     11); it replaces the old balance/cash tag. The six-step stepper is gone: ops don't press
+     status buttons, and the pill beside the ref still says where the booking is. */
+  const exc=sheetException(t,cashDue(t),Date.now());
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t,d),pipe:true,idx,
+    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t,d),pipe:false,idx,
     action:waDigits.length>=8?`<a class="sh-wa" href="https://wa.me/${waDigits}" target="_blank" rel="noopener" aria-label="Message on WhatsApp" title="Message on WhatsApp">${ICON.wa}</a>`:'',
-    /* The row's own balance tag, repeated in the header so an open balance is visible without
-       scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
-    tag:t.paid&&t.balance>0?`<span class="pill pill-bal" title="Deposit paid — the rest is still owed">Balance ${money({amount:t.balance,currency:t.currency})}</span>`
-      :cashDue(t)&&t.stage!=='paid'?`<span class="pill pill-bal" title="Pay on the day — cash still to collect">Cash due ${money({amount:t.cashDue,currency:t.currency})}</span>`:''});
+    alert:exc?`<div class="sh-exc tone-${exc.tone}" data-testid="sheet-exception">${esc(exc.text)}${exc.amount!=null?' · '+esc(money({amount:exc.amount,currency:t.currency})):''}</div>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
      print the Refunds block as confident $0.00s for a beat — a real balance read as zero. */
   if(!d){
