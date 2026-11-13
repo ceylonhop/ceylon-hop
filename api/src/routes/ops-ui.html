@@ -11405,21 +11405,29 @@ function chauffeurUpsellSummary() {
   return (chauf && chauf.total) ? chauf : null;
 }
 
+// The word the upsell uses for what the customer rides in: it said "car" on van quotes (owner,
+// 2026-11-11, Q-KBRPF). Same Car / Van / Vehicle split as the customer quote and pay pages.
+function upsellVehicleWord(vehicleType) {
+  if (vehicleType === 'car') return 'car';
+  return String(vehicleType || '').indexOf('van') === 0 ? 'van' : 'vehicle';
+}
+
 function appendChauffeurUpsell(lines, emailStyle) {
   var chauf = chauffeurUpsellSummary();
   if (!outputIncludeChauffeurUpsell || !chauf) return;
   var amount = M(chauf.total.cents);
+  var veh = upsellVehicleWord(state.vehicleType);
   if (emailStyle) {
     lines.push(
       '',
-      'If you would also like the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+      'If you would also like the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
       'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
     );
     return;
   }
   lines.push(
     '',
-    'If you\'d prefer the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+    'If you\'d prefer the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
     'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
   );
 }
@@ -13636,12 +13644,6 @@ function mapPins(pts, zoom) {
   });
 }
 
-function pinLabelsVisible(zoom) {
-  // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
-  // the story anyway — the expanded map's legend still carries the full numbered order.
-  return typeof zoom !== 'number' || zoom >= 9;
-}
-
 // The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
 // route map needs once. Resolves null when any import fails (e.g. routes library unavailable).
 var _mapsLibsPromise = null;
@@ -13917,7 +13919,6 @@ async function drawItinRoute(hostEl, runs) {
       _mapMarkers.forEach(function (m) { m.setMap(null); });
       _mapMarkers = [];
       var z = _mapMap.getZoom();
-      var showText = pinLabelsVisible(z);
       mapPins(locs, z).forEach(function (p) {
         var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
         _mapMarkers.push(new libs.Marker({
@@ -13925,10 +13926,9 @@ async function drawItinRoute(hostEl, runs) {
           zIndex: (p.isFirst || p.isLast) ? 6 : 5,
           // White on all three fills; the pin head is small, so bold and tight. A merged pin
           // reads "3–7" or "1·3" — both narrower than a comma list, and they fit the head.
-          label: showText
-            ? { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
-            : undefined,
-          // The title is always the full truth, even when the label is hidden.
+          // Shown at every zoom (owner, 2026-11-10) — see ch-map.js drawPins.
+          label: { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' },
+          // The title spells out merged pins in full.
           title: p.stops.length > 1
             ? 'Stops ' + p.stops.join(', ') + ' of ' + pts.length
             : 'Stop ' + p.stops[0] + ' of ' + pts.length,

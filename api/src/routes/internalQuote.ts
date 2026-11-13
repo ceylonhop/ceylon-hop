@@ -572,7 +572,9 @@ function serviceChooserData(body: ToolRequest, rateCard: RateCard, selected: 'pr
 // (distances already resolved — no maps round-trip) so opening a ready quote shows the APPROVED
 // price, never a live recompute on a card that may have moved since. null for a legacy row that
 // predates the { tool, engine } request shape. shape() strips margin for non-margin:view callers.
-function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: RateCard): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
+// `discount` is the quote's active founder discount: without it a reopened ready/sent quote showed
+// the undiscounted total while the customer's page showed the discounted one (Q-3QY8Y, 2026-11-12).
+function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: RateCard, discount?: DiscountRequest): (ReturnType<typeof shape> & { breakdown?: ReturnType<typeof quoteBreakdown>; services?: ServiceChooserData; displayPlaces?: Record<string, string> }) | null {
   const toolReq = (q.request as { tool?: ToolRequest } | null)?.tool;
   const engineReq = (q.request as { engine?: QuoteRequest } | null)?.engine;
   if (!engineReq) return null;
@@ -585,7 +587,7 @@ function lockedEstimate(q: SavedQuote, canMargin: boolean, now: Date, current: R
       now,
       current,
     );
-    const result = quote(engineReq, rateCard);
+    const result = quote(engineReq, rateCard, discount);
     const base = shape(result, canMargin, rateCard.fxUsdToLkr);
     // Legacy/minimal row without a usable tool payload → base total only (no per-leg / services).
     if (!toolReq || !toolReq.vehicle || !Array.isArray(toolReq.legs) || typeof toolReq.passengerCount !== 'number' || typeof toolReq.luggageCount !== 'number') {
@@ -1734,7 +1736,14 @@ export function internalQuoteRoutes(deps: {
     const canMargin = can(role, 'margin:view');
     // Ship the quote priced against its locked card so the tool renders the frozen (approved)
     // price for a ready/sent quote instead of live-recomputing. Reopen consumes this directly.
-    const estimate = lockedEstimate(q, canMargin, new Date(), await liveCard());
+    // Reading a discount is never gated (only writing one is), so no flag or capability check here.
+    const active = deps.discounts ? await deps.discounts.activeFor(q.id) : null;
+    const activeDiscount: DiscountRequest | undefined = !active
+      ? undefined
+      : active.method === 'fixed'
+        ? { source: 'manual', method: 'fixed', amountCents: active.value, reason: active.reason }
+        : { source: 'manual', method: 'percentage', basisPoints: active.value, reason: active.reason };
+    const estimate = lockedEstimate(q, canMargin, new Date(), await liveCard(), activeDiscount);
     const view = canMargin ? q : stripQuoteMargin(q);
     // May THIS viewer approve THIS quote (plan 2026-08-11)? The page knows the viewer's role but
     // not whether a given quote qualifies, so the answer has to travel with the quote — a UI

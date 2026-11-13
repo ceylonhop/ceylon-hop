@@ -24,7 +24,8 @@ export function installStubs() {
   // getZoom()/addListener(). Without them the whole pin pass threw into its "markers are
   // non-essential" catch and every marker assertion silently saw an EMPTY list — map-expand's
   // and ops-map-pin-numbers' pin tests had been dark ever since.
-  MapCls.prototype.getZoom = function () { return 10; };
+  // A spec can set window.__E2E_ZOOM to render the map at a given zoom (e.g. 7 = whole island).
+  MapCls.prototype.getZoom = function () { return typeof window.__E2E_ZOOM === 'number' ? window.__E2E_ZOOM : 10; };
   MapCls.prototype.addListener = function () { return { remove() {} }; };
   function Marker(opts) { (window.__chMarkers = window.__chMarkers || []).push(opts || {}); }
   Marker.prototype.setMap = function () {};
@@ -64,6 +65,9 @@ export function installStubs() {
             mainText: { text: `${input} Result ${n}` },
             secondaryText: { text: 'Sri Lanka' },
             toPlace: () => ({
+              // Google's place ID for the pick — what booking.js sends so the API measures the road
+              // to the place the customer chose, not to a re-search of its name.
+              id: `ChIJstubPlace${n}x${String(input).replace(/[^A-Za-z0-9]/g, '')}`.slice(0, 60),
               fetchFields: async () => {},
               // Default picks sit near Colombo. A test can pin picks inside a specific
               // drop-off area via window.__E2E_PICK_GEO so the booking page's
