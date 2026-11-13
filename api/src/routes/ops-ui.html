@@ -3853,6 +3853,77 @@ function buildActivity(t,d){
   return acts;
 }
 
+/* @sheet-job:start: pure helpers for the booking pane's header and leg list (spec
+   2026-11-12-ops-booking-pane-info-priority-design.md, PR 1). No DOM and no page globals, so
+   web-tests/unit/ops-sheet-job.test.js can load this block on its own. */
+function shortPlace(s){
+  const t=String(s??'').trim();
+  const i=t.indexOf(',');
+  return i>0?t.slice(0,i).trim():t;
+}
+/* Ops ask "expressway or normal?". Sri Lanka's tolled roads are its expressways, so the toll-free
+   road IS "no expressway"; Google's usual route may use one where it exists. */
+function roadOf(variant){
+  return variant==='no_tolls'?{text:'No expressway',cls:'road-local'}:{text:'Expressway OK',cls:'road'};
+}
+/* One row per leg a driver runs, in the same grouping as bookingLegs.ts privateLegs: a gap is the
+   customer's own travel, and through-stops continue one ride. A leg dated before `today` is done;
+   the first dated leg on or after it is next; an undated leg is neither. */
+function legRows(b,today){
+  const inp=b&&b.input;
+  if(!inp)return [];
+  const ran=(d)=>!!d&&d<today, ahead=(d)=>!!d&&d>=today;
+  if(b.mode==='trip'&&Array.isArray(inp.stops)&&inp.stops.length>1){
+    const stops=inp.stops,dates=inp.dates||[],gaps=inp.gaps||[],through=inp.through||[],rv=inp.routeVariants||[];
+    const lastWire=stops.length-2,rows=[];
+    let next=false,n=0;
+    for(let i=0;i<=lastWire;){
+      n++;
+      if(gaps.includes(i)){rows.push({kind:'gap',n,from:stops[i],to:stops[i+1]});i++;continue;}
+      let end=i;
+      while(end<lastWire&&through.includes(end)&&!gaps.includes(end+1))end++;
+      const date=dates[i]||null;
+      const isNext=!next&&ahead(date);
+      if(isNext)next=true;
+      rows.push({kind:'leg',n,date,time:null,from:stops[i],to:stops[end+1],via:stops.slice(i+1,end+1),
+        variant:rv.slice(i,end+1).includes('no_tolls')?'no_tolls':'fastest',done:ran(date),next:isNext});
+      i=end+1;
+    }
+    return rows;
+  }
+  if(b.mode==='single'&&inp.from&&inp.to){
+    const date=inp.date||null;
+    return [{kind:'leg',n:1,date,time:inp.time||null,from:inp.from,to:inp.to,via:[],
+      variant:inp.routeVariant==='no_tolls'?'no_tolls':'fastest',done:ran(date),next:ahead(date)}];
+  }
+  if(b.mode==='shared'&&inp.fromPlace&&inp.toPlace){
+    const date=inp.date||null;
+    return [{kind:'leg',n:1,date,time:inp.time||null,from:inp.fromPlace,to:inp.toPlace,via:[],
+      variant:null,done:ran(date),next:ahead(date)}];
+  }
+  return [];
+}
+/* What ops tell the vehicle coordinator, read off the booking. `vehicle` is the detail
+   response's priced tier (null for a shared seat, or when no quote/snapshot names one). */
+function jobFacts(b,vehicle,serviceType,legs){
+  const inp=(b&&b.input)||{}, mode=b&&b.mode;
+  const veh=mode==='shared'?{kind:'shared',seats:inp.seats||0}
+    :vehicle?{kind:'vehicle',code:vehicle,chauffeurDays:serviceType==='chauffeur'?(inp.days||null):null}
+    :{kind:'missing'};
+  const guests=mode==='single'?{total:(inp.adults||0)+(inp.children||0),adults:inp.adults??null,children:inp.children??null}
+    :mode==='trip'?{total:inp.pax??null,adults:null,children:null}
+    :mode==='shared'?{total:inp.seats??null,adults:null,children:null}
+    :{total:null,adults:null,children:null};
+  const bags=mode==='trip'?{asked:false,count:null}:{asked:true,count:typeof inp.bags==='number'?inp.bags:null};
+  const driven=(legs||[]).filter(l=>l.kind==='leg');
+  const nextLeg=driven.find(l=>l.next)||null;
+  const when=mode==='trip'&&nextLeg&&driven.some(l=>l.done)
+    ?{label:'Next leg',date:nextLeg.date,k:driven.indexOf(nextLeg)+1,m:driven.length,start:(driven.find(l=>l.date)||{}).date||null}
+    :{label:mode==='shared'?'Departs':'When',date:null,k:null,m:null,start:null};
+  return {vehicle:veh,guests,bags,when};
+}
+/* @sheet-job:end */
+
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
