@@ -29,7 +29,7 @@ what to send. The pane is ordered for a different job:
 ## Decisions
 
 1. **Order by "what do I tell the coordinator?"** The job first, then what the customer asked for,
-   then the team's own notes. Contact, payment and history fold away.
+   then the customer's own note, then the team's notes. Contact, payment and history fold away.
 2. **Money only rises when there is something to do.** A paid-in-full booking shows no money near
    the top. Money owed or due goes under the name (see Exceptions).
 3. **Label every leg's road.** `fastest` → "Fastest road", `no_tolls` → "Local road". Not
@@ -40,7 +40,7 @@ what to send. The pane is ordered for a different job:
 7. **No information is lost.** Every fact stays reachable. Only duplicates (the Route row, repeated
    Amount/Status) and the stepper are dropped.
 8. **Wider pane.** 780px on screens at least 900px wide, with a two-column body: the job on the
-   left (itinerary, customer asked for), and team notes plus the folded sections on the right.
+   left (itinerary, customer's note), and team notes plus the folded sections on the right.
    Narrower screens keep one column, and phones keep today's full-screen sheet. The width is CSS on
    `.sheet`; the `@media(max-width:700px)` phone rule is unchanged.
 9. **The ride-board pane is in scope** (state F). It gets the same treatment: departure and "will
@@ -99,10 +99,16 @@ One coloured line, and Payment opens by itself:
    - Gap legs: grey italics, "customer's own travel", no road chip.
    - Partial pay-link coverage line ("Covers 2 of 4 quoted legs") stays at the top.
    - Chauffeur: the day rows as today, plus "Driver stays N nights" (`input.driverNights`).
+   - **Add-ons** (`bookingAddOns`: fixed options such as waiting time or hotel pick-up, not typed
+     by the customer) sit as tags under the legs. Omitted when there are none.
    - The Change / Set date & time button and its form sit under the itinerary.
    - Short place = text before the first comma, cut to one line, with the full text as the title.
-2. **Customer asked for:** extras (`bookingAddOns`) as tags, and `customerNotes` in an amber
-   callout. Shows "No extras · no note" when both are empty.
+2. **Customer's note:** the free-form "Anything we should know?" box from website checkout
+   (`booking.html` `#f-notes` → `bookings.customer_notes`, at most 1,000 characters). Their exact
+   words in an amber callout: shown in full, `white-space:pre-line`, never truncated or folded,
+   escaped like today. Empty → "No note left at checkout". A booking with no website checkout
+   (an ops quote's pay link, which has no note box) → "Booked through an ops quote. That checkout
+   has no note box."
 3. **Team notes:** the latest `t.notes` entry with a count, plus the add-note box.
 4. **Interested in:** partner experiences, unchanged, when present.
 5. Folded sections (`<details>`), closed by default, each with a one-line summary:
@@ -142,6 +148,8 @@ One coloured line, and Payment opens by itself:
 | Gap leg | Grey italic, no road, not drawn on the map |
 | Through stops | One leg, "via …" |
 | Partial pay link | Coverage line, as today |
+| Ops-quote booking | No note box on that checkout; the note block says so instead of "no note" |
+| Long note | Shown in full with its line breaks; it pushes the right column down, never gets cut |
 | No date | "Flexible" in red, with the Set date button |
 | Vehicle unknown | Red "Not on record — check the quote" |
 | 9/14-seat or custom van | Full `VEHICLE_NAME` |
