@@ -93,7 +93,7 @@ test('the drawer leads the Payment block with a Balance due card, above the ledg
   await expect(pay.getByText('Channel', { exact: true })).toHaveCount(1);
 });
 
-test('the sheet header carries the same "Balance $169" tag as the list row', async ({ page }) => {
+test('the sheet shows the balance exception line under the name, as the list row does', async ({ page }) => {
   await boot(page);
   await expect(headTag(page)).toHaveText('Balance due · $169');
   // Beside the stage pill, which is still there.

@@ -216,6 +216,20 @@ describe('sheetException', () => {
     expect(sheetException(tk({ stage: 'completed' }), false, NOW).text).toBe('Completed');
     expect(sheetException(tk({ stage: 'refunded' }), false, NOW).text).toBe('Refunded');
   });
+
+  it('keeps money owed visible on a completed booking', () => {
+    expect(sheetException(tk({ stage: 'completed', paid: false, cashDue: 5000 }), true, NOW))
+      .toEqual({ kind: 'cash', tone: 'amber', text: 'Cash due at the first pickup', amount: 5000, openPayment: true });
+    expect(sheetException(tk({ stage: 'completed', balance: 16900 }), false, NOW))
+      .toEqual({ kind: 'balance', tone: 'amber', text: 'Balance due', amount: 16900, openPayment: true });
+    expect(sheetException(tk({ stage: 'completed' }), false, NOW))
+      .toEqual({ kind: 'closed', tone: 'grey', text: 'Completed', amount: null, openPayment: false });
+  });
+
+  it('says the travel date has passed for an unpaid quote that is already behind us', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, chan: 'whatsapp', date: futureIsoDate(-2) }), false, NOW))
+      .toEqual({ kind: 'unpaid', tone: 'red', text: 'Not paid · travel date has passed', amount: 3900, openPayment: true });
+  });
 });
 
 describe('paymentWord', () => {

@@ -176,7 +176,17 @@ test('"Nudge them" is for WhatsApp quotes only, and the Payment fold never says 
 test('on a large screen the pane is 780px with the itinerary left and notes right', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await boot(page);
-  await open(page, 'paid');
+  // Hold the detail response so the loading skeleton is on screen: the width must already be final.
+  await page.route('**/admin/ops/bookings/paid', async (route) => {
+    await new Promise((r) => setTimeout(r, 800));
+    await route.fulfill(json(CASES.paid[1]));
+  });
+  await page.locator('.tk[data-act="open"][data-id="paid"]').click();
+  await expect(page.locator('#sheet')).toHaveClass(/show/);
+  await expect(page.locator('#sheet .sheet-b.skel')).toHaveCount(1);
+  const w0 = await page.locator('#sheet').evaluate((el) => el.getBoundingClientRect().width);
+  expect(Math.round(w0)).toBe(780); // no 500 -> 780 snap when the body arrives
+  await page.waitForSelector('.sheet-b:not(.skel)', { timeout: 10000 });
   const w = await page.locator('#sheet').evaluate((el) => el.getBoundingClientRect().width);
   expect(Math.round(w)).toBe(780);
   const box = async (s) => page.locator('#sheet ' + s).boundingBox();
@@ -192,4 +202,13 @@ test('below 900px the pane keeps today’s width and one column', async ({ page 
   await open(page, 'paid');
   const w = await page.locator('#sheet').evaluate((el) => el.getBoundingClientRect().width);
   expect(Math.round(w)).toBe(500);
+});
+
+test('the booking body keeps its dividers between sections', async ({ page }) => {
+  await boot(page);
+  await open(page, 'paid');
+  for (const sel of ['[data-testid="sheet-itinerary"]', '[data-testid="sheet-team-notes"]']) {
+    const bw = await page.locator('#sheet ' + sel).evaluate((el) => parseFloat(getComputedStyle(el.closest('.block') || el).borderBottomWidth));
+    expect(bw, sel).toBeGreaterThan(0);
+  }
 });

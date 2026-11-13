@@ -461,6 +461,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   details.fold[open]>summary::after{transform:rotate(-135deg)}
   details.fold>summary:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:6px}
   details.fold[open]{padding-bottom:14px}
+  /* The .ord-* wrappers make each block its own last child, so restore the dividers in the booking body. */
+  .sb-cols .block,.sb-cols details.fold{border-bottom:1px solid var(--line-soft)}
   .tn{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;padding:4px 0;font-size:.88rem}
   .tn-at{color:var(--ink-faint);font-size:.76rem;font-variant-numeric:tabular-nums;padding-top:2px}
   .tn-text{overflow-wrap:anywhere;white-space:pre-line}
@@ -471,7 +473,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
      large screen the booking sheet (not the ride-board one, which has no .sb-cols) gets two
      columns: the job left, the note, team notes and folds right. */
   @media(min-width:900px){
-    .sheet:has(.sb-cols){width:780px}
+    .sheet.is-booking{width:780px}
     .sb-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 26px;align-items:start}
     .sb-main,.sb-side{display:block;min-width:0}
   }
@@ -3986,13 +3988,18 @@ function jobFacts(b,vehicle,serviceType,legs){
    (2026-10-29, CH-NQ66B), so it stays amber and is worded as a fact. `now` is ms since epoch. */
 function sheetException(t,isCashDue,now){
   const closed={completed:'Completed',cancelled:'Cancelled',refunded:'Refunded',no_show:'No-show'}[t.stage];
+  /* A completed trip can still be owed money: that must not hide behind the grey outcome. */
+  if(t.stage==='completed'){
+    if(t.paid&&t.balance>0)return {kind:'balance',tone:'amber',text:'Balance due',amount:t.balance,openPayment:true};
+    if(isCashDue)return {kind:'cash',tone:'amber',text:'Cash due at the first pickup',amount:t.cashDue,openPayment:true};
+  }
   if(closed)return {kind:'closed',tone:'grey',text:closed,amount:null,openPayment:false};
   if(t.stage==='awaiting_payment'){
     if(t.chan==='website')return {kind:'checkout',tone:'amber',text:'Checkout not completed',amount:t.amount,openPayment:true};
     const hm=/^\d\d:\d\d$/.test(t.time||'')?t.time:'00:00';
     const start=t.date?Date.parse(t.date+'T'+hm+':00'):NaN;
     const soon=Number.isFinite(start)&&start-now<=48*3600e3;
-    return {kind:'unpaid',tone:soon?'red':'amber',text:soon?'Not paid · travels within 48 hours':'Not paid',amount:t.amount,openPayment:true};
+    return {kind:'unpaid',tone:soon?'red':'amber',text:soon?(start<now?'Not paid · travel date has passed':'Not paid · travels within 48 hours'):'Not paid',amount:t.amount,openPayment:true};
   }
   if(t.paid&&t.balance>0)return {kind:'balance',tone:'amber',text:'Balance due',amount:t.balance,openPayment:true};
   if(isCashDue)return {kind:'cash',tone:'amber',text:'Cash due at the first pickup',amount:t.cashDue,openPayment:true};
@@ -4541,6 +4548,7 @@ function renderSheet(){
   sh.style.setProperty('--c',st.c);sh.style.setProperty('--cbg',st.cbg);
   /* Ride-board vans get their own read-only sheet: no pipeline, no flags, no
      notes — none of those exist for a list. Just the manifest ops needs to run it. */
+  sh.classList.toggle('is-booking',!isBoard(t));
   if(isBoard(t)){sh.innerHTML=boardSheetHtml(t,st);sc.classList.add('show');sh.classList.add('show');return;}
   /* Opens this customer's WhatsApp chat, from the fixed header so it stays on screen while the
      body scrolls (owner, 2026-11-05). Same digits rule as memberPhoneHtml. */
