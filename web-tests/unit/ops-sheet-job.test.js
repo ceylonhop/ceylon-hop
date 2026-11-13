@@ -88,6 +88,13 @@ describe('legRows: single and shared', () => {
     expect(legRows(b, TODAY)).toEqual([{ kind: 'leg', n: 1, date: on(4), time: '06:30', from: 'CMB Airport, Katunayake', to: 'Kandy, Earl’s', via: [], variant: 'no_tolls', done: false, next: true }]);
   });
 
+  it('treats a single transfer dated exactly today as next, not done', () => {
+    const b = { mode: 'single', input: { from: 'A, x', to: 'B, y', date: TODAY } };
+    const [r] = legRows(b, TODAY);
+    expect(r.next).toBe(true);
+    expect(r.done).toBe(false);
+  });
+
   it('gives a shared seat its catalogue leg and no road', () => {
     const b = { mode: 'shared', input: { corridorId: 'c1', fromPlace: 'Ella', toPlace: 'Mirissa', date: on(8), time: '07:30', seats: 2 } };
     expect(legRows(b, TODAY)[0]).toMatchObject({ from: 'Ella', to: 'Mirissa', time: '07:30', variant: null });
@@ -141,6 +148,22 @@ describe('jobFacts', () => {
   it('switches When to the next leg once a trip is under way', () => {
     const b = trip({ stops: ['A', 'B', 'C', 'D'], dates: [on(-3), on(-1), on(2)] });
     expect(jobFacts(b, 'car', 'private', legRows(b, TODAY)).when).toEqual({ label: 'Next leg', date: on(2), k: 3, m: 3, start: on(-3) });
+  });
+
+  it('says Flexible for the next leg when the rest of a started trip has no date', () => {
+    const b = trip({ stops: ['A', 'B', 'C', 'D'], dates: [on(-3), on(-1), ''] });
+    expect(jobFacts(b, 'car', 'private', legRows(b, TODAY)).when).toEqual({ label: 'Next leg', date: null, k: 3, m: 3, start: on(-3) });
+  });
+
+  it('points at the first undated leg that has not run, not a done one', () => {
+    const b = trip({ stops: ['A', 'B', 'C', 'D'], dates: [on(-3), '', ''] });
+    const w = jobFacts(b, 'car', 'private', legRows(b, TODAY)).when;
+    expect(w).toEqual({ label: 'Next leg', date: null, k: 2, m: 3, start: on(-3) });
+  });
+
+  it('keeps When and the start date on a trip whose legs have all run', () => {
+    const b = trip({ stops: ['A', 'B', 'C'], dates: [on(-3), on(-1)] });
+    expect(jobFacts(b, 'car', 'private', legRows(b, TODAY)).when.label).toBe('When');
   });
 
   it('keeps When on a trip that has not started', () => {

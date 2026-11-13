@@ -37,6 +37,11 @@ const BOOKINGS = {
     { stops: ['Colombo, X', 'Kandy, Y'], dates: [D(30)], pax: 2, vehicleType: 'car', serviceType: 'chauffeur', days: 6, driverNights: 5 }, 'car')],
   shared: [row('shared', 'CH-0005', 'shared'), detail('shared', 'CH-0005', 'shared',
     { corridorId: 'c1', fromPlace: 'Ella', toPlace: 'Mirissa', date: D(30), time: '07:30', seats: 2, bags: 2 }, null)],
+  markup: [row('markup', 'CH-0007', 'single'), detail('markup', 'CH-0007', 'single',
+    { from: '<b>x</b>, <i>y</i>', to: 'Kandy, z', date: D(30), time: '06:30', vehicleType: 'car', adults: 1, children: 0, note: '<b>x</b>' }, 'car')],
+  flex: [row('flex', 'CH-0008', 'trip', { serviceType: 'private', travelDate: D(-5), legs: [{ date: D(-5), from: 'Negombo', to: 'Ella' }, { date: D(-3), from: 'Ella', to: 'Panama' }, { date: D(3), from: 'Panama', to: 'Udawalawe' }] }), // The queue row still files the trip under a dated leg; the booking's own input has none for the last leg.
+  detail('flex', 'CH-0008', 'trip',
+    { stops: ['Negombo, A', 'Ella, B', 'Panama, C', 'Udawalawe, D'], dates: [D(-5), D(-3)], pax: 2, vehicleType: 'car', serviceType: 'private' }, 'car')],
   novehicle: [row('novehicle', 'CH-0006', 'single'), detail('novehicle', 'CH-0006', 'single',
     { from: 'A, x', to: 'B, y', date: D(30), time: '09:00', vehicleType: 'car', adults: 1, children: 0 }, null)],
 };
@@ -164,6 +169,30 @@ test('a shared seat gets its catalogue leg and no road label', async ({ page }) 
   await open(page, 'shared');
   await expect(page.locator('#sheet .legs .leg .lt')).toContainText('Ella → Mirissa');
   await expect(page.locator('#sheet .legs [data-testid="leg-road"]')).toHaveCount(0);
+});
+
+test('markup in a place name or note shows as text in the leg row', async ({ page }) => {
+  await boot(page);
+  await open(page, 'markup');
+  await expect(page.locator('#sheet .legs')).toContainText('<b>x</b>');
+  // The only <b> in a leg row are the app's own From/To labels; none may carry the injected text.
+  await expect(page.locator('#sheet .legs b', { hasText: 'x' })).toHaveCount(0);
+  await expect(page.locator('#sheet .legs i')).toHaveCount(0);
+});
+
+test('a trip header has no "time not set" sub-line (trips store no pickup time)', async ({ page }) => {
+  await boot(page);
+  await open(page, 'trip');
+  await expect(stub(page).locator('.stub', { has: page.getByTestId('sheet-when') }).locator('.ss')).toHaveCount(0);
+});
+
+test('a started trip with only undated legs left says Flexible', async ({ page }) => {
+  await boot(page);
+  await open(page, 'flex');
+  const when = stub(page).locator('.stub', { has: page.getByTestId('sheet-when') });
+  await expect(when.locator('.sl')).toHaveText('Next leg');
+  await expect(page.getByTestId('sheet-when')).toHaveText('Flexible');
+  await expect(when.locator('.ss')).toContainText('leg 3 of 3 · started');
 });
 
 test('the route is said once: no separate Route or Road row', async ({ page }) => {

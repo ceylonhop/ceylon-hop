@@ -472,7 +472,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .stub{padding:10px 12px;border-left:1px dashed var(--line);min-width:0}
   .stub:first-child{border-left:0;padding-left:22px}
   .stub .sl{font-size:.55rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
-  .stub .sv{font-family:var(--mono);font-weight:700;font-size:.84rem;margin-top:3px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+  .stub .sv{font-family:var(--mono);font-weight:700;font-size:.84rem;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+  .stub.stub-job .sv{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;flex-wrap:wrap;gap:0 6px}
   .stub .ss{font-size:.68rem;color:var(--ink-soft);margin-top:2px;line-height:1.3;overflow-wrap:anywhere}
   /* The vehicle paid for: an ink outline and bigger type, never a teal fill (teal = a button). */
   .stub.stub-veh{box-shadow:inset 0 0 0 2px var(--ink);background:var(--paper)}
@@ -3934,8 +3935,11 @@ function jobFacts(b,vehicle,serviceType,legs){
   const bags=mode==='trip'?{asked:false,count:null}:{asked:true,count:typeof inp.bags==='number'?inp.bags:null};
   const driven=(legs||[]).filter(l=>l.kind==='leg');
   const nextLeg=driven.find(l=>l.next)||null;
+  const startDate=(driven.find(l=>l.date)||{}).date||null;
+  const flexLeg=mode==='trip'&&!nextLeg&&driven.some(l=>l.done)?driven.find(l=>!l.date&&!l.done)||null:null;
   const when=mode==='trip'&&nextLeg&&driven.some(l=>l.done)
-    ?{label:'Next leg',date:nextLeg.date,k:driven.indexOf(nextLeg)+1,m:driven.length,start:(driven.find(l=>l.date)||{}).date||null}
+    ?{label:'Next leg',date:nextLeg.date,k:driven.indexOf(nextLeg)+1,m:driven.length,start:startDate}
+    :flexLeg?{label:'Next leg',date:null,k:driven.indexOf(flexLeg)+1,m:driven.length,start:startDate}
     :{label:mode==='shared'?'Departs':'When',date:null,k:null,m:null,start:null};
   return {vehicle:veh,guests,bags,when};
 }
@@ -4312,22 +4316,22 @@ function sheetHeadHtml(t,o){
    customer PAID for, the party, the bags. Money left the header; the Payment block carries it.
    `d` is null while the detail loads, so the cells it alone knows shimmer instead of guessing. */
 function bookingStubHtml(t,d){
-  const cell=(cls,label,value,sub,tid,extra='')=>`<div class="stub${cls}"><div class="sl">${label}</div><div class="sv"${tid?` data-testid="${tid}"`:''}>${value}</div>${sub!=null?`<div class="ss">${sub}</div>`:''}${extra}</div>`;
+  const cell=(cls,label,value,sub,tid,extra='')=>`<div class="stub stub-job${cls}"><div class="sl">${label}</div><div class="sv"${tid?` data-testid="${tid}"`:''}>${value}</div>${sub!=null?`<div class="ss">${sub}</div>`:''}${extra}</div>`;
   const sk='<span class="sk-inline" aria-hidden="true"></span>';
   const b=d?.booking||null;
   const f=b?jobFacts(b,d.vehicle||null,t.serviceType,legRows(b,TODAY)):null;
   const plural=(n,one,many)=>`${n} ${n===1?one:many}`;
   const when=f&&f.when.label==='Next leg'
-    ?cell('','Next leg',esc(fmtDate(f.when.date)),`leg ${f.when.k} of ${f.when.m}${f.when.start?' · started '+esc(fmtDate(f.when.start)):''}`,'sheet-when')
-    :cell('',f?f.when.label:'When',t.date?esc(fmtDate(t.date)):'Flexible',t.time?esc(t.time):'time not set','sheet-when');
+    ?cell('','Next leg',f.when.date?esc(fmtDate(f.when.date)):'Flexible',`leg ${f.when.k} of ${f.when.m}${f.when.start?' · started '+esc(fmtDate(f.when.start)):''}`,'sheet-when')
+    :cell('',f?f.when.label:'When',t.date?esc(fmtDate(t.date)):'Flexible',b&&b.mode==='trip'?null:t.time?esc(t.time):'time not set','sheet-when');
   const g=f?.guests, bg=f?.bags;
   const guestsSub=!g?null:g.adults!=null&&g.children!=null
-    ?plural(g.adults,'adult','adults')+(g.children>0?' · '+plural(g.children,'child','children'):'')
+    ?esc(plural(g.adults,'adult','adults')+(g.children>0?' · '+plural(g.children,'child','children'):''))
     :'guests';
   const guestsN=g?g.total:t.guests;
   const bagsSub=!bg?null:!bg.asked?'not asked':bg.count==null?'not recorded':bg.count===1?'bag':'bags';
   /* Phones keep two cells (When, Vehicle), so the party rides under the vehicle there. */
-  const narrow=f?`<div class="ss ss-narrow">${guestsN==null?'guests not recorded':plural(guestsN,'guest','guests')} · ${!bg.asked?'bags not asked':bg.count==null?'bags not recorded':plural(bg.count,'bag','bags')}</div>`:'';
+  const narrow=f?`<div class="ss ss-narrow">${guestsN==null?'guests not recorded':esc(plural(guestsN,'guest','guests'))} · ${!bg.asked?'bags not asked':bg.count==null?'bags not recorded':esc(plural(bg.count,'bag','bags'))}</div>`:'';
   let veh;
   if(!f)veh=cell(' stub-veh','Vehicle',sk,null);
   else if(f.vehicle.kind==='shared')veh=cell(' stub-veh','Seats',esc(plural(f.vehicle.seats,'shared seat','shared seats')),'no vehicle to choose','sheet-seats',narrow);
@@ -4534,7 +4538,7 @@ function renderSheet(){
   const custNote=d?.booking?.customerNotes;
   const noteBlock=`<div class="block" data-testid="sheet-customer-note"><h4>Customer’s note</h4>${custNote
     ?`<div class="cust-note">${esc(custNote)}</div>`
-    :`<p class="muted" style="padding:0;margin:0">${t.chan==='website'?'No note left at checkout.':'Booked from a WhatsApp quote. That checkout has no note box.'}</p>`}</div>`;
+    :`<p class="muted" style="padding:0;margin:0">${t.chan==='website'?'No note from the customer.':'Booked from a WhatsApp quote. That checkout has no note box.'}</p>`}</div>`;
   /* Partner experiences the customer tapped on the booking page (spec 2026-10-06 D15). Only
      bookings:operate may move a lead (the PATCH is gated on it; finance holds bookings:read and
      would get a 403), so everyone else reads the status as text. Double-quoted attributes only —

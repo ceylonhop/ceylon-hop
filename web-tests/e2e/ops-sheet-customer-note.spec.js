@@ -74,7 +74,7 @@ test('a website booking with no note says none was left', async ({ page }) => {
   await open(page, 'b2');
   const block = page.getByTestId('sheet-customer-note');
   await expect(block.locator('.cust-note')).toHaveCount(0);
-  await expect(block).toContainText('No note left at checkout.');
+  await expect(block).toContainText('No note from the customer.');
 });
 
 test('a WhatsApp-quote booking explains why there is no note', async ({ page }) => {

@@ -141,6 +141,10 @@ describe('drawer legs — progress through the trip', () => {
     expect(classes(html)).toEqual(['leg leg-done', 'leg leg-done']);
   });
 
+  it('says so when a shared booking recorded no leg', () => {
+    expect(legsHtmlFor({ booking: { mode: 'shared', input: {} } })).toContain('No leg breakdown on record for this booking.');
+  });
+
   it('ships the styles those states need', () => {
     expect(body).toMatch(/\.legs \.leg-done[^{]*\{[^}]*line-through/);
     expect(body).toMatch(/\.legs \.leg-next[^{]*::after\{[^}]*content:"Next"/);
