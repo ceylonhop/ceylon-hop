@@ -4630,6 +4630,10 @@ function renderSheet(){
   const contactSum=esc([phoneTxt||'No WhatsApp',cust?.country].filter(Boolean).join(' · '));
   const pickupSum=`${t.photo?'photo in':'photo not in'} · ${t.updated?'pickup confirmed':'pickup not confirmed'}`;
   const history=buildActivity(t,d);
+  /* Money only rises when there is something to do: a refund waiting for a founder, stuck at
+     PayHere, or failed opens the Refund fold and says so in its summary. */
+  const REFUND_ATTN=[['manual_pending','awaiting approval'],['api_processing','processing — check PayHere'],['api_failed','failed']];
+  const refundSum=REFUND_ATTN.map(([k,w])=>{const n=(d?.refunds||[]).filter(r=>r.status===k).length;return n?`${n} ${n===1?'refund':'refunds'} ${w}`:'';}).filter(Boolean).join(' · ');
   const isTrip=d?.booking?.mode==='trip';
   morphSheet(sh,head+`
     <div class="sheet-b">
@@ -4674,7 +4678,7 @@ function renderSheet(){
           </div>
         </div>
       </div>
-      ${fold('refund','Refund or cancel','',`${refundHtmlFor(t,d)}${reverseActionsFor(t,d)}`)}
+      ${fold('refund','Refund or cancel',refundSum,`${refundHtmlFor(t,d)}${reverseActionsFor(t,d)}`,!!refundSum)}
     </div>`+sheetFootHtml(t,nx));
   sc.classList.add('show');sh.classList.add('show');
 }
@@ -4699,6 +4703,8 @@ function closeDetail(mode){
 async function openDetail(id, opts){
   opts=opts||{};
   state.detail=id;state.detailData=null;state.routeBookingId=id;
+  /* Folds start fresh every time a booking is opened, not only when the id changes. */
+  state.folds={};state.foldsFor=id;
   if(!opts.fromUrl)syncUrl(state.route,state.routeQuoteId,id,'push');
   renderSheet();
   /* fresh booking → fresh scroll; morphdom otherwise preserves the previous booking's position */
