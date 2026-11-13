@@ -445,6 +445,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sheet-b{overflow-y:auto;padding:2px 22px 24px;flex:1;overscroll-behavior:contain}
   .sheet-b::-webkit-scrollbar{width:8px}.sheet-b::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
   .block{padding:15px 0 17px;border-bottom:1px solid var(--line-soft)}
+  .cust-note{white-space:pre-line;overflow-wrap:anywhere;padding:10px 13px;border-radius:10px;background:var(--wait-bg);color:var(--ink);font-size:.92rem;line-height:1.5}
   .block:last-child{border-bottom:0}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
@@ -4526,10 +4527,14 @@ function renderSheet(){
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
-  /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
-     public, so it is escaped like every other value here; pre-line keeps their line breaks. */
+  /* What the customer wrote in the booking page's free-form "Anything we should know?" box: often
+     a job fact (a surfboard, a pram, the hotel gate), so it opens the body (spec 2026-11-12). Typed
+     by the public, so it is escaped; pre-line keeps their line breaks; never cut short. Only the
+     website checkout has the box, so a WhatsApp-quote booking says why there is none. */
   const custNote=d?.booking?.customerNotes;
-  const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
+  const noteBlock=`<div class="block" data-testid="sheet-customer-note"><h4>Customer’s note</h4>${custNote
+    ?`<div class="cust-note">${esc(custNote)}</div>`
+    :`<p class="muted" style="padding:0;margin:0">${t.chan==='website'?'No note left at checkout.':'Booked from a WhatsApp quote. That checkout has no note box.'}</p>`}</div>`;
   /* Partner experiences the customer tapped on the booking page (spec 2026-10-06 D15). Only
      bookings:operate may move a lead (the PATCH is gated on it; finance holds bookings:read and
      would get a 403), so everyone else reads the status as text. Double-quoted attributes only —
@@ -4554,12 +4559,11 @@ function renderSheet(){
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
   morphSheet(sh,head+`
     <div class="sheet-b">
-      ${pendingBlock}
+      ${pendingBlock}${noteBlock}
       <div class="block"><h4>Customer</h4>
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${memberPhoneHtml(cust?.whatsapp)}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
-        ${noteRow}
       </div>
       <div class="block"><h4>Trip</h4>
         <div style="margin-bottom:6px">${legsHtmlFor(d)}</div>

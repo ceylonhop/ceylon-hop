@@ -39,7 +39,9 @@ async function boot(page) {
   await page.route('**/admin/bookings/*/refunds', (r) => r.fulfill(json([])));
   await page.route('**/admin/ops/bookings', (r) => r.fulfill(json([
     row('b1', 'CH-0001', 'Alpha Customer'), row('b2', 'CH-0002', 'Bravo Customer'),
+    { ...row('b3', 'CH-0003', 'Charlie Customer'), channel: 'whatsapp' },
   ])));
+  await page.route('**/admin/ops/bookings/b3', (r) => r.fulfill(json(detail('b3', null))));
   await page.route('**/admin/ops/bookings/b1', (r) => r.fulfill(json(detail('b1', NOTE))));
   await page.route('**/admin/ops/bookings/b2', (r) => r.fulfill(json(detail('b2', null))));
   await page.route('**/admin/ops/whoami', (r) => r.fulfill(json({
@@ -53,20 +55,30 @@ async function open(page, id) {
   await page.waitForSelector('.sheet-b:not(.skel)', { timeout: 10000 });
 }
 
-test("the booking sheet shows the customer's note as plain text", async ({ page }) => {
+test("the booking sheet shows the customer's note first, as plain text", async ({ page }) => {
   await boot(page);
   await open(page, 'b1');
-  const noteRow = page.locator('.sheet-b .kv', { has: page.locator('.k', { hasText: /^Note$/ }) });
-  await expect(noteRow).toHaveCount(1);
-  await expect(noteRow.locator('.v')).toHaveText(NOTE);
+  const block = page.getByTestId('sheet-customer-note');
+  await expect(block.locator('.cust-note')).toHaveText(NOTE);
   // The markup arrived as characters, not as an element that ran.
-  await expect(noteRow.locator('img')).toHaveCount(0);
+  await expect(block.locator('img')).toHaveCount(0);
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
+  // It opens the body, ahead of the trip and the customer's contact details.
+  await expect(page.locator('.sheet-b > .block').first()).toHaveAttribute('data-testid', 'sheet-customer-note');
+  // Said once: the old Note row in the Customer block is gone.
+  await expect(page.locator('.sheet-b .kv .k', { hasText: /^Note$/ })).toHaveCount(0);
 });
 
-test('a booking with no note has no Note row', async ({ page }) => {
+test('a website booking with no note says none was left', async ({ page }) => {
   await boot(page);
   await open(page, 'b2');
-  await expect(page.locator('.sheet-b')).toContainText('b2@example.com');
-  await expect(page.locator('.sheet-b .kv .k', { hasText: /^Note$/ })).toHaveCount(0);
+  const block = page.getByTestId('sheet-customer-note');
+  await expect(block.locator('.cust-note')).toHaveCount(0);
+  await expect(block).toContainText('No note left at checkout.');
+});
+
+test('a WhatsApp-quote booking explains why there is no note', async ({ page }) => {
+  await boot(page);
+  await open(page, 'b3');
+  await expect(page.getByTestId('sheet-customer-note')).toContainText('Booked from a WhatsApp quote. That checkout has no note box.');
 });
