@@ -467,6 +467,14 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sched-row{margin-top:8px}
   .sb-cols{display:flex;flex-direction:column}
   .sb-main,.sb-side{display:contents}
+  /* Spec 2026-11-12 decision 8: the scrim already covers the queue, so 500px saved nothing. On a
+     large screen the booking sheet (not the ride-board one, which has no .sb-cols) gets two
+     columns: the job left, the note, team notes and folds right. */
+  @media(min-width:900px){
+    .sheet:has(.sb-cols){width:780px}
+    .sb-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:0 26px;align-items:start}
+    .sb-main,.sb-side{display:block;min-width:0}
+  }
   .ord-0{order:0}.ord-1{order:1}.ord-2{order:2}.ord-3{order:3}.ord-4{order:4}.ord-5{order:5}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}

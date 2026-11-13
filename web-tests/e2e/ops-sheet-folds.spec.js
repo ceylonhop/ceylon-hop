@@ -172,3 +172,24 @@ test('"Nudge them" is for WhatsApp quotes only, and the Payment fold never says 
   await expect(page.locator('#sheet')).toContainText('Nudge them');
   await expect(fold(page, 'payment')).not.toContainText(/payment reminder/i);
 });
+
+test('on a large screen the pane is 780px with the itinerary left and notes right', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await boot(page);
+  await open(page, 'paid');
+  const w = await page.locator('#sheet').evaluate((el) => el.getBoundingClientRect().width);
+  expect(Math.round(w)).toBe(780);
+  const box = async (s) => page.locator('#sheet ' + s).boundingBox();
+  const itin = await box('[data-testid="sheet-itinerary"]');
+  const note = await box('[data-testid="sheet-customer-note"]');
+  expect(note.x).toBeGreaterThan(itin.x + itin.width - 1); // note sits in the right column
+  expect(Math.abs(note.y - itin.y)).toBeLessThan(40);       // side by side, not stacked
+});
+
+test('below 900px the pane keeps today’s width and one column', async ({ page }) => {
+  await page.setViewportSize({ width: 880, height: 900 });
+  await boot(page);
+  await open(page, 'paid');
+  const w = await page.locator('#sheet').evaluate((el) => el.getBoundingClientRect().width);
+  expect(Math.round(w)).toBe(500);
+});
