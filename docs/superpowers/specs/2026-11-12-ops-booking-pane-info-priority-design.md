@@ -32,8 +32,10 @@ what to send. The pane is ordered for a different job:
    then the customer's own note, then the team's notes. Contact, payment and history fold away.
 2. **Money only rises when there is something to do.** A paid-in-full booking shows no money near
    the top. Money owed or due goes under the name (see Exceptions).
-3. **Label every leg's road.** `fastest` → "Fastest road", `no_tolls` → "Local road". Not
-   "Expressway": `fastest` is Google's default route, and many legs have no expressway.
+3. **Label every leg's road in ops' words** ("expressway or normal?"). Sri Lanka's tolled roads
+   are its expressways, so `no_tolls` → **"No expressway"** (amber chip), and `fastest` →
+   **"Expressway OK"** (quiet grey text, no chip). "Expressway OK" means Google's usual route may
+   use one, not that it does; many legs have none.
 4. **The map opens in a dialog, only when ops press "Map".**
 5. **Keep the pill, drop the six-step bar.** The `.pipe` stepper goes; the stage pill stays.
 6. **The sticky foot is unchanged.** "Confirm vehicle" / "Mark no-show" / "Copy payment reminder".
@@ -50,6 +52,12 @@ what to send. The pane is ordered for a different job:
     (`ride_ops.driver_update_pending_since`, migration 0075) exists, but no code writes it, so there
     is nothing to show.
 
+11. **Colour means severity.** Amber marks an expected state that needs handling: balance due,
+    cash on the day, flexible date, unpaid with more than 48 hours to travel, "May not fit". Red
+    marks only what blocks the trip: unpaid with travel within 48 hours (start date, plus pickup
+    time when set), or vehicle not on record. A booking with no date is amber; it has no travel
+    time to measure against. The vehicle highlight is neither colour.
+
 ## Information order (website / ops bookings)
 
 ### Header (fixed)
@@ -60,7 +68,7 @@ Stub row, four cells:
 
 | Cell | Value | Sub-line |
 |---|---|---|
-| When | start date, or "Flexible" in red | pickup time, or "time not set" |
+| When | start date, or "Flexible" in amber | pickup time, or "time not set" |
 | Vehicle (highlighted) | `VEHICLE_NAME[d.vehicle]` | "paid for", plus "May not fit" in amber when guests or bags exceed `vehicleCaps()` (only once the rate card is loaded; never for a custom vehicle) |
 | Guests | total | "2 adults · 1 child" when the input has the split; "guests" otherwise |
 | Bags | `input.bags` | "—" with "not asked" where the type doesn't record bags (trip, chauffeur) |
@@ -74,13 +82,15 @@ Per-type overrides:
   the sub-line "no vehicle to choose".
 - **Vehicle unknown** (`d.vehicle` null on a non-shared booking): "Not on record — check the quote"
   in red, never blank.
-- On a phone the stub keeps its first two cells (When, Vehicle), as today's 700px rule does.
+- On a phone the stub keeps its first two cells (When, Vehicle), as today's 700px rule does, and
+  the Vehicle sub-line becomes "paid for · N guests · M bags" (or "bags not asked"), so the
+  vehicle and the party size are always seen together.
 
 Until the detail fetch lands, Vehicle and Bags show the skeleton shimmer.
 
 ### Exceptions line (under the name, only when it applies)
 
-One coloured line, and Payment opens by itself:
+One line, coloured by decision 11, and Payment opens by itself:
 - awaiting payment ("Not paid yet · $X"; the "Next up" block stays first in the body)
 - deposit paid, balance owed ("Balance due $X")
 - pay on the day ("Cash due $X at the first pickup")
@@ -92,8 +102,8 @@ One coloured line, and Payment opens by itself:
 1. **Itinerary** (trips) or **Route** (single, shared), with a "Map" button on the heading.
    - One row per leg, using today's grouping (through-stops and gaps included): date · short
      from → short to · road chip · Next / Done.
-   - Only the **next** leg shows its full From / To addresses (shared: Pick-up / Drop, from
-     `fromPlace`/`toPlace` when set).
+   - **Every leg still to run** shows its full From / To addresses (shared: Pick-up / Drop, from
+     `fromPlace`/`toPlace` when set), so a whole trip can be arranged with one coordinator in one go.
    - **Done legs** (dated before today) collapse to one struck-out line with a "✓ Done" chip and no
      addresses. The heading reads "Itinerary · K of M left".
    - Gap legs: grey italics, "customer's own travel", no road chip.
@@ -109,7 +119,9 @@ One coloured line, and Payment opens by itself:
    escaped like today. Empty → "No note left at checkout". A booking with no website checkout
    (an ops quote's pay link, which has no note box) → "Booked through an ops quote. That checkout
    has no note box."
-3. **Team notes:** the latest `t.notes` entry with a count, plus the add-note box.
+3. **Team notes:** every `t.notes` entry, oldest first, with its time, plus the add-note box.
+   Never only the latest: the note that matters ("child seat", "same driver") is often an older one.
+   More than five → the five most recent, with "Show all N" to expand. Never zero visible.
 4. **Interested in:** partner experiences, unchanged, when present.
 5. Folded sections (`<details>`), closed by default, each with a one-line summary:
    Contact (phone · country, or "No WhatsApp"), Payment (status word; opens by itself under an
@@ -150,7 +162,7 @@ One coloured line, and Payment opens by itself:
 | Partial pay link | Coverage line, as today |
 | Ops-quote booking | No note box on that checkout; the note block says so instead of "no note" |
 | Long note | Shown in full with its line breaks; it pushes the right column down, never gets cut |
-| No date | "Flexible" in red, with the Set date button |
+| No date | "Flexible" in amber, with the Set date button |
 | Vehicle unknown | Red "Not on record — check the quote" |
 | 9/14-seat or custom van | Full `VEHICLE_NAME` |
 | Over capacity | Amber "May not fit" (needs the rate card loaded; skipped for custom) |
