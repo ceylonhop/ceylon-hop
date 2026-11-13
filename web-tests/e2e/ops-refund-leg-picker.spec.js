@@ -59,6 +59,7 @@ async function boot(page, { detail, store }) {
   await page.waitForSelector('#approot:not([hidden]) #nav button', { timeout: 10000 });
   await page.locator('[data-act="open"][data-id="booking-1"]').dispatchEvent('click');
   await page.waitForSelector('#sheet.show .sheet-b', { timeout: 10000 });
+  await page.locator('#sheet details.fold[data-fold="refund"] > summary').click();
 }
 const tick = (page, label) => page.locator('.refund-lines label', { hasText: label }).locator('input').check();
 

@@ -452,6 +452,22 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .block{padding:15px 0 17px;border-bottom:1px solid var(--line-soft)}
   .cust-note{white-space:pre-line;overflow-wrap:anywhere;padding:10px 13px;border-radius:10px;background:var(--wait-bg);color:var(--ink);font-size:.92rem;line-height:1.5}
   .block:last-child{border-bottom:0}
+  details.fold{padding:0;border-bottom:1px solid var(--line-soft)}
+  details.fold>summary{list-style:none;cursor:pointer;display:flex;align-items:baseline;gap:10px;padding:13px 0}
+  details.fold>summary::-webkit-details-marker{display:none}
+  details.fold>summary h4{margin:0;flex:none}
+  details.fold>summary .fold-sum{flex:1;min-width:0;color:var(--ink-soft);font-size:.84rem;overflow-wrap:anywhere}
+  details.fold>summary::after{content:"";flex:none;width:8px;height:8px;border-right:2px solid var(--ink-faint);border-bottom:2px solid var(--ink-faint);transform:rotate(45deg);margin-right:4px;align-self:center}
+  details.fold[open]>summary::after{transform:rotate(-135deg)}
+  details.fold>summary:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:6px}
+  details.fold[open]{padding-bottom:14px}
+  .tn{display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 10px;padding:4px 0;font-size:.88rem}
+  .tn-at{color:var(--ink-faint);font-size:.76rem;font-variant-numeric:tabular-nums;padding-top:2px}
+  .tn-text{overflow-wrap:anywhere;white-space:pre-line}
+  .sched-row{margin-top:8px}
+  .sb-cols{display:flex;flex-direction:column}
+  .sb-main,.sb-side{display:contents}
+  .ord-0{order:0}.ord-1{order:1}.ord-2{order:2}.ord-3{order:3}.ord-4{order:4}.ord-5{order:5}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
   .block h4{font-size:.63rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 11px;display:flex;justify-content:space-between;align-items:center}
@@ -3881,7 +3897,6 @@ function buildActivity(t,d){
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${stageLabel(t)}”`]);
   (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
   (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
-  t.notes.forEach(n=>acts.push(['Note',n]));
   return acts;
 }
 
@@ -4513,6 +4528,7 @@ function renderSheet(){
   const t=tickets.find(x=>x.id===state.detail);const sc=$('#scrim'),sh=$('#sheet');
   if(!t){sc.classList.remove('show');sh.classList.remove('show');return;}
   const d=state.detailData;
+  if(state.foldsFor!==t.id){state.foldsFor=t.id;state.folds={};}
   const st=STAGE[t.stage],idx=STAGES.indexOf(t.stage),nx=NEXT[t.stage];
   sh.style.setProperty('--c',st.c);sh.style.setProperty('--cbg',st.cbg);
   /* Ride-board vans get their own read-only sheet: no pipeline, no flags, no
@@ -4536,7 +4552,6 @@ function renderSheet(){
     morphSheet(sh,head+sheetSkelHtml()+sheetFootHtml(t,nx));
     sc.classList.add('show');sh.classList.add('show');return;
   }
-  const acts=buildActivity(t,d).map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>';
   const cust=d?.booking?.input?.customer;
   const isPending=t.stage==='awaiting_payment';
   const canSchedule=d?.booking?.mode==='single'&&SCHED_STATUSES.includes(d.booking.status)&&!!state.caps&&state.caps.includes('bookings:operate');
@@ -4565,7 +4580,7 @@ function renderSheet(){
        only when one exists, and `recordedBy` names who can settle when the reader can't. */
     const arrive=link?`It can still arrive through the payment link, or be ${recordedBy}`:`It can be ${recordedBy}`;
     pendingBlock=`<div class="block"><h4>Next up</h4>
-      <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly. Nudge them if it's overdue.</div></div>
+      <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly.${t.chan==='website'?'':" Nudge them if it's overdue."}</div></div>
       ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
   }
   const extras=bookingAddOns(d?.booking);
@@ -4602,48 +4617,64 @@ function renderSheet(){
   /* Cancel and Refund live together at the FOOT of the sheet BODY (owner, 2026-08-02) — the
      two irreversible actions, side by side, below everything you'd want to read before
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
+  /* Folded sections (spec 2026-11-12): closed by default, open when the operator opened them, and
+     Payment opens by itself when the header's exception line asks for money. */
+  const isOpen=(k,dflt)=>(state.folds&&k in state.folds)?state.folds[k]:!!dflt;
+  const fold=(k,title,sum,body,dflt)=>`<details class="block fold" data-fold="${k}"${isOpen(k,dflt)?' open':''}><summary><h4>${title}</h4><span class="fold-sum">${sum}</span></summary>${body}</details>`;
+  /* Every team note, oldest first, with its time: the one that matters ("child seat", "same
+     driver") is often an older one, so never only the latest. */
+  const noteRows=t.notes.map(n=>{const p=noteParts(n);return `<div class="tn">${p.at?`<span class="tn-at">${esc(p.at)}</span>`:''}<span class="tn-text">${esc(p.text)}</span></div>`;}).join('');
+  const teamNotes=`<div class="block" data-testid="sheet-team-notes"><h4>Team notes${t.notes.length?' · '+t.notes.length:''}</h4>${noteRows||'<p class="muted" style="padding:0;margin:0">No notes yet.</p>'}
+        <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div></div>`;
+  const phoneTxt=String(cust?.whatsapp||'').trim();
+  const contactSum=esc([phoneTxt||'No WhatsApp',cust?.country].filter(Boolean).join(' · '));
+  const pickupSum=`${t.photo?'photo in':'photo not in'} · ${t.updated?'pickup confirmed':'pickup not confirmed'}`;
+  const history=buildActivity(t,d);
+  const isTrip=d?.booking?.mode==='trip';
   morphSheet(sh,head+`
     <div class="sheet-b">
-      ${pendingBlock}${noteBlock}
-      <div class="block"><h4>Customer</h4>
-        <div class="kv"><span class="k">WhatsApp</span><span class="v">${memberPhoneHtml(cust?.whatsapp)}</span></div>
-        <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
-        <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
+      <div class="sb-cols">
+        <div class="sb-main">
+          ${pendingBlock?`<div class="ord-0">${pendingBlock}</div>`:''}
+          <div class="block ord-2" data-testid="sheet-itinerary"><h4>${isTrip?'Itinerary':'Route'}</h4>
+            <div style="margin-bottom:6px">${legsHtmlFor(d)}</div>
+            ${extrasRow}
+            ${canSchedule?`<div class="sched-row"><button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change date &amp; time':'Set date &amp; time'}</button></div>`:''}
+            ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
+          </div>
+        </div>
+        <div class="sb-side">
+          <div class="ord-1">${noteBlock}</div>
+          <div class="ord-3">${teamNotes}</div>
+          ${interestBlock?`<div class="ord-4">${interestBlock}</div>`:''}
+          <div class="ord-5">
+            ${fold('contact','Contact',contactSum,`
+              <div class="kv"><span class="k">WhatsApp</span><span class="v">${memberPhoneHtml(cust?.whatsapp)}</span></div>
+              <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
+              <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>`)}
+            ${fold('payment','Payment',esc(paymentWord(t,cashDue(t))),`
+              ${t.paid&&t.balance>0?`<div class="followup bal-card"><div>
+                <b>Balance due · ${money({amount:t.balance,currency:t.currency})}</b>
+                <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}</div>
+                ${d.balancePayLink?`<div style="margin-top:10px"><button class="btn btn-go" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Balance payment link</button></div>`:''}
+              </div></div>`:''}
+              <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
+              ${promoRow}
+              ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
+              <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
+              ${cashDue(t)?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Pay on the day — ${money({amount:t.cashDue,currency:t.currency})} in US dollars cash to the Ceylon Hop team, at the first pickup. ${canSettle?"Record it here when it's collected.":"A founder or finance records it when it's collected."}</p>${settle?`<div class="sheet-actions">${settle}</div>`:''}`
+              :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}.</p>`:''}
+              ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
+              ${paymentAttemptsHtmlFor(d)}`,exc&&exc.openPayment)}
+            ${fold('pickup','Vehicle &amp; pickup',pickupSum,`
+              <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
+              <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
+              <div class="togg"><span>Customer contacted · pickup confirmed</span><button class="switch ${t.updated?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="updated"></button></div>`)}
+            ${fold('history','History',`${history.length} ${history.length===1?'entry':'entries'}`,history.map(a=>`<div class="act"><div class="at">${esc(a[0])}</div><div class="am">${esc(a[1])}</div></div>`).reverse().join('')||'<p class="muted" style="padding:0">No activity yet.</p>')}
+          </div>
+        </div>
       </div>
-      <div class="block"><h4>Trip</h4>
-        <div style="margin-bottom:6px">${legsHtmlFor(d)}</div>
-        <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
-        ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
-        <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
-        ${extrasRow}
-      </div>
-      ${interestBlock}
-      <div class="block"><h4>Payment</h4>
-        ${t.paid&&t.balance>0?`<div class="followup bal-card"><div>
-          <b>Balance due · ${money({amount:t.balance,currency:t.currency})}</b>
-          <div style="margin-top:3px;font-size:.82rem;color:var(--ink-soft)">Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}</div>
-          ${d.balancePayLink?`<div style="margin-top:10px"><button class="btn btn-go" data-act="balancelink" data-id="${esc(t.id)}" title="The customer's own pay link — it now shows the balance">${ICON.copy} Balance payment link</button></div>`:''}
-        </div></div>`:''}
-        <div class="kv"><span class="k">Amount</span><span class="v">${money(t)}</span></div>
-        ${promoRow}
-        ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
-        <div class="kv"><span class="k">Status</span><span class="v">${t.paid?(t.balance>0?'<span style="color:var(--wait);font-weight:700">Deposit paid</span>':'<span style="color:var(--ok);font-weight:700">Paid</span>'):`<span style="color:var(--wait);font-weight:700">${cashDue(t)?'Cash due on the day':'Awaiting payment'}</span>`}</span></div>
-        <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
-        ${cashDue(t)?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Pay on the day — ${money({amount:t.cashDue,currency:t.currency})} in US dollars cash to the Ceylon Hop team, at the first pickup. ${canSettle?"Record it here when it's collected.":"A founder or finance records it when it's collected."}</p>${settle?`<div class="sheet-actions">${settle}</div>`:''}`
-        :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}. Follow up with the customer using the <b>payment reminder</b>.</p>`:''}
-        ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
-      </div>
-      ${paymentAttemptsHtmlFor(d)}
-      <div class="block"><h4>Vehicle &amp; pickup</h4>
-        <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
-        <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
-        <div class="togg"><span>Customer contacted · pickup confirmed</span><button class="switch ${t.updated?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="updated"></button></div>
-      </div>
-      <div class="block"><h4>Activity</h4>${acts}
-        <div class="notebox"><input id="noteinput" placeholder="Add an internal note…"><button class="btn btn-go" data-act="addnote" data-id="${esc(t.id)}">Add</button></div>
-      </div>
-      ${refundHtmlFor(t,d)}
-      ${reverseActionsFor(t,d)}
+      ${fold('refund','Refund or cancel','',`${refundHtmlFor(t,d)}${reverseActionsFor(t,d)}`)}
     </div>`+sheetFootHtml(t,nx));
   sc.classList.add('show');sh.classList.add('show');
 }
@@ -5287,6 +5318,15 @@ document.addEventListener('click',async e=>{
     if(guarded){sheetBusy=false;if(el.isConnected){el.classList.remove('is-pending');el.removeAttribute('aria-busy');}}
   }
 });
+/* Folded sections remember what the operator opened or closed for as long as this booking stays
+   open; a refresh re-renders through morphSheet, which would otherwise reset `open` from the
+   template. `toggle` doesn't bubble, so listen in the capture phase. */
+document.addEventListener('toggle',e=>{
+  const el=e.target;
+  if(!(el instanceof HTMLDetailsElement)||!el.matches('#sheet details.fold[data-fold]'))return;
+  state.folds=state.folds||{};
+  state.folds[el.dataset.fold]=el.open;
+},true);
 /* Quotes search. Repaints only #view — never the topbar — so the input keeps focus and caret
    with no restoration hack (contrast the '#q' handler above). */
 document.addEventListener('input',e=>{

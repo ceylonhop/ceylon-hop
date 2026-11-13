@@ -63,6 +63,7 @@ async function boot(page, { role, row = baseRow, store }) {
 const openSheet = async (page) => {
   await page.locator('[data-act="open"][data-id="booking-1"]').dispatchEvent('click');
   await page.waitForSelector('#sheet.show .sheet-b', { timeout: 10000 });
+  await page.locator('#sheet details.fold[data-fold="refund"] > summary').click();
 };
 
 test('ops requests a partial refund; nothing that moves money is offered', async ({ page }) => {

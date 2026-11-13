@@ -53,7 +53,7 @@ async function open(page, id) {
 }
 const block = (page) => page.locator('.sheet-b .block', { has: page.locator('h4', { hasText: /^Interested in$/ }) });
 
-test('the sheet lists what the customer is interested in, after the Trip block', async ({ page }) => {
+test('the sheet lists what the customer is interested in, after the Team notes block', async ({ page }) => {
   await boot(page, ['bookings:operate', 'bookings:read'], [INTEREST]);
   await open(page, 'b1');
   await expect(block(page)).toHaveCount(1);
@@ -61,7 +61,7 @@ test('the sheet lists what the customer is interested in, after the Trip block',
   await expect(block(page)).toContainText('Sigiriya');
   await expect(block(page)).toContainText('$35 pp');
   const heads = await page.locator('.sheet-b .block h4').allTextContents();
-  expect(heads.indexOf('Interested in')).toBe(heads.indexOf('Trip') + 1);
+  expect(heads.indexOf('Interested in')).toBe(heads.indexOf('Team notes') + 1);
 });
 
 test('no interests, no block', async ({ page }) => {

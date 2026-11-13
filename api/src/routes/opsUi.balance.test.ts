@@ -129,7 +129,7 @@ describe('ops shell: balance wiring', () => {
     const sheet = body.slice(body.indexOf('function renderSheet('));
     const card = sheet.slice(sheet.indexOf('<div class="followup bal-card">'), sheet.indexOf('<div class="kv"><span class="k">Amount</span>'));
     expect(card.length).toBeGreaterThan(0); // the card sits between the heading and the Amount row
-    expect(sheet).toMatch(/<h4>Payment<\/h4>\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
+    expect(sheet).toMatch(/fold\('payment','Payment',esc\(paymentWord\(t,cashDue\(t\)\)\),`\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
     expect(card).toContain('Balance due · ${money({amount:t.balance,currency:t.currency})}');
     // The second sentence only when there IS a link — a booking with none must not claim the customer holds one.
     expect(card).toContain("Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}");

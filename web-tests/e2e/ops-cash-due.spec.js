@@ -63,7 +63,7 @@ test('the drawer: amber header pill, "Cash due" pipeline step, the pay-on-the-da
   await expect(page.locator('#sheet [data-testid="sheet-exception"]')).toContainText('Cash due at the first pickup');
   const pay = payBlock(page);
   await expect(pay).toContainText("Pay on the day — $342 in US dollars cash to the Ceylon Hop team, at the first pickup. Record it here when it's collected.");
-  await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Cash due on the day');
+  await expect(pay.locator('summary .fold-sum')).toHaveText('Cash due on the day');
   await expect(pay).not.toContainText('payment link');
   await expect(page.locator('[data-act="payreminder"]')).toHaveCount(0);
   await expect(page.locator('[data-act="paylink"]')).toHaveCount(0);
@@ -124,7 +124,7 @@ test('an arranged booking still awaiting payment gets ONE settle row, "Mark paid
   const pay = payBlock(page);
   await expect(pay).toContainText('Not received yet');
   await expect(pay).not.toContainText('Pay on the day');
-  await expect(pay.getByText('Status', { exact: true }).locator('..').locator('.v')).toHaveText('Awaiting payment');
+  await expect(pay.locator('summary .fold-sum')).toHaveText('Awaiting payment');
   await expect(page.locator('#sheet .sheet-h .pill.pill-bal')).toHaveCount(0);
   let said = '';
   page.on('dialog', (d) => { said = d.message(); d.dismiss(); });

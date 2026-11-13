@@ -178,6 +178,7 @@ async function boot(page, { role = 'finance', store, mobile = false, travelDate,
   await page.goto(OPS_FILE);
   await page.locator('[data-act="open"][data-id="booking-1"]').click();
   await expect(page.locator('#sheet')).toHaveClass(/show/);
+  await page.locator('#sheet details.fold[data-fold="refund"] > summary').click();
 }
 
 test('the founder requests, reloads, and confirms a refund exactly once with PayHere evidence', async ({ page }) => {
@@ -215,6 +216,7 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   // so the reload reopens this booking by itself. Re-clicking the queue row is not just redundant
   // now, it cannot work: the restored sheet's own scrim covers the row and swallows the click.
   await expect(page.locator('#sheet')).toHaveClass(/show/);
+  await page.locator('#sheet details.fold[data-fold="refund"] > summary').click();
   // The reason is the operator's own words now, and it survives a reload because it is stored
   // on the refund rather than being a label the button supplied.
   await expect(page.locator('.refund-status-manual_pending')).toContainText('Customer cancelled — airline strike');
@@ -227,7 +229,8 @@ test('the founder requests, reloads, and confirms a refund exactly once with Pay
   await page.locator('[data-act="refundconfirm"]').click();
   await expect(page.locator('.refund-status-manual_confirmed')).toContainText('PAYHERE-R-1001');
   await expect(page.locator('.refund-status-manual_confirmed')).toContainText('founder@e2e.test');
-  await expect(page.locator('.block', { hasText: 'Activity' })).toContainText('Refund confirmed · $100');
+  await page.locator('#sheet details.fold[data-fold="history"] > summary').click();
+  await expect(page.locator('#sheet details.fold[data-fold="history"]')).toContainText('Refund confirmed · $100');
 });
 
 test('founder can cancel a pending request and the balance becomes available again on mobile', async ({ page }) => {

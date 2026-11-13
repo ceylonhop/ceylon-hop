@@ -64,7 +64,7 @@ test("the booking sheet shows the customer's note first, as plain text", async (
   await expect(block.locator('img')).toHaveCount(0);
   expect(await page.evaluate(() => window.__pwned)).toBeUndefined();
   // It opens the body, ahead of the trip and the customer's contact details.
-  await expect(page.locator('.sheet-b > .block').first()).toHaveAttribute('data-testid', 'sheet-customer-note');
+  await expect(page.locator('.sheet-b .ord-1 > .block').first()).toHaveAttribute('data-testid', 'sheet-customer-note');
   // Said once: the old Note row in the Customer block is gone.
   await expect(page.locator('.sheet-b .kv .k', { hasText: /^Note$/ })).toHaveCount(0);
 });
