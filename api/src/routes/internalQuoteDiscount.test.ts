@@ -159,6 +159,25 @@ describe('Ops discount API', () => {
   });
 });
 
+describe('Reopening a discounted quote', () => {
+  // Owner report 2026-11-12 (Q-3QY8Y): $14 off, customer page said $79, but the ops pane of the
+  // approved quote showed $93 and no discount. GET /:id priced the locked estimate without it.
+  it('ships the estimate priced WITH the stored discount', async () => {
+    const { a } = wired();
+    const q = await seed(a);
+    const saved = await save(a, { ...BODY, id: q.id, discount: { method: 'fixed', amountCents: 1000, reason: 'closing' } });
+    const { totalCents } = (await saved.json()) as { totalCents: number };
+
+    const res = await a.request(`/admin/quote/${q.id}`, { headers: { cookie: FOUNDER } });
+    expect(res.status).toBe(200);
+    const { estimate } = (await res.json()) as {
+      estimate: { total: { cents: number }; discount?: { applied: { cents: number } } };
+    };
+    expect(estimate.discount?.applied.cents).toBe(1000);
+    expect(estimate.total.cents).toBe(totalCents);
+  });
+});
+
 describe('Discount history endpoint', () => {
   const get = (a: ReturnType<typeof app>, path: string, jar: string) =>
     a.request(path, { headers: { cookie: jar } });
