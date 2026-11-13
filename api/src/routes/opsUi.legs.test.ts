@@ -29,11 +29,15 @@ beforeAll(async () => {
   body = await (await createApp().request('/ops')).text();
   const esc = (s: string) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const fmtDate = (s: string) => `D(${s})`;
-  legsHtmlFor = new Function('esc', 'fmtDate', 'TODAY', `${liftFn('legsHtmlFor')}; return legsHtmlFor;`)(esc, fmtDate, TODAY);
+  // legsHtmlFor is built on the pure helper block (shortPlace / roadOf / legRows), so lift that too.
+  const helpers = body.slice(body.indexOf('/* @sheet-job:start'), body.indexOf('/* @sheet-job:end'));
+  expect(helpers, 'sheet-job helper block not found in the ops shell').not.toBe('');
+  legsHtmlFor = new Function('esc', 'fmtDate', 'TODAY', `${helpers}\n${liftFn('legsHtmlFor')}; return legsHtmlFor;`)(esc, fmtDate, TODAY);
 });
 
 const trip = (input: Record<string, unknown>): Detail => ({ booking: { mode: 'trip', input } });
-const rows = (html: string) => [...html.matchAll(/<div class="leg[^"]*">([\s\S]*?)<\/div>/g)].map((m) => m[1].replace(/<[^>]+>/g, ''));
+// One entry per leg line: the text of its `.r` (date · places · via), without the road label or addresses.
+const rows = (html: string) => [...html.matchAll(/<div class="lt"><span class="r">([\s\S]*?)<\/span>(?:<span class="road|<\/div>)/g)].map((m) => m[1].replace(/<[^>]+>/g, ''));
 
 describe('drawer legs', () => {
   it("shows a gap as the customer's own travel, not a leg we drive", () => {
@@ -66,7 +70,7 @@ describe('drawer legs — stops on the way', () => {
       dates: ['2026-11-12', '2026-11-12'],
       through: [0],
     })));
-    expect(r).toEqual(['D(2026-11-12) · Negombo → Anuradhapura · via Colombo city']);
+    expect(r).toEqual(['D(2026-11-12) · Negombo → Anuradhapura via Colombo city']);
   });
 
   it('names several stops on the way in order, and keeps the overnight legs around them', () => {
@@ -76,7 +80,7 @@ describe('drawer legs — stops on the way', () => {
       through: [0, 1],
     })));
     expect(r).toEqual([
-      'D(2026-11-12) · Colombo → Sigiriya · via Kandy, Dambulla',
+      'D(2026-11-12) · Colombo → Sigiriya via Kandy, Dambulla',
       'D(2026-11-15) · Sigiriya → Ella',
     ]);
   });
@@ -88,7 +92,7 @@ describe('drawer legs — stops on the way', () => {
       through: [0],
       gaps: [2],
     })));
-    expect(r).toEqual(['D(2026-11-12) · A → C · via B', 'C → D · customer’s own travel, not driven by us']);
+    expect(r).toEqual(['D(2026-11-12) · A → C via B', 'C → D · customer’s own travel, not driven by us']);
   });
 
   it('numbers undated legs by row, and flags a local road on any hop of the ride', () => {
@@ -97,11 +101,13 @@ describe('drawer legs — stops on the way', () => {
       through: [1],
       routeVariants: ['fastest', 'no_tolls', 'fastest'],
     })));
-    expect(r).toEqual(['Leg 1 · A → B', 'Leg 2 · B → D · via C · local road']);
+    expect(r).toEqual(['Leg 1 · A → B', 'Leg 2 · B → D via C']);
+    // The road is its own label, per leg: the ride with a toll-free hop says so, the other does not.
+    expect([...legsHtmlFor(trip({ stops: ['A', 'B', 'C', 'D'], through: [1], routeVariants: ['fastest', 'no_tolls', 'fastest'] })).matchAll(/data-testid="leg-road">([^<]*)</g)].map((m) => m[1])).toEqual(['Expressway OK', 'No expressway']);
   });
 
   it('strikes out or tags the whole ride, never its stop on the way', () => {
-    const classes = (html: string) => [...html.matchAll(/<div class="(leg(?: [^"]*)?)">/g)].map((m) => m[1]);
+    const classes = (html: string) => [...html.matchAll(/<div class="(leg(?: [^"]*)?)" data-leg="\d+">/g)].map((m) => m[1]);
     const html = legsHtmlFor(trip({ stops: ['A', 'B', 'C', 'D'], dates: [iso(-1), iso(2), iso(2)], through: [1] }));
     expect(classes(html)).toEqual(['leg leg-done', 'leg leg-next']);
   });
@@ -110,7 +116,7 @@ describe('drawer legs — stops on the way', () => {
 // Owner 2026-11-05 (spec 2026-11-06-ops-multistop-next-leg-design.md §3): on a trip under way, the
 // legs that have run are struck out and the next one is tagged, so ops sees where the customer is.
 describe('drawer legs — progress through the trip', () => {
-  const classes = (html: string) => [...html.matchAll(/<div class="(leg(?: [^"]*)?)">/g)].map((m) => m[1]);
+  const classes = (html: string) => [...html.matchAll(/<div class="(leg(?: [^"]*)?)" data-leg="\d+">/g)].map((m) => m[1]);
 
   it('strikes out the legs before today and tags the next one; later and undated legs stay plain', () => {
     const html = legsHtmlFor(trip({

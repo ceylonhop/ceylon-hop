@@ -125,3 +125,49 @@ test('on a phone the vehicle cell carries the party and bags', async ({ page }) 
   await expect(stub(page).locator('.stub-veh .ss-narrow')).toHaveText('3 guests · 4 bags');
   await expect(stub(page).getByTestId('sheet-guests')).toBeHidden();
 });
+
+test('a toll-free leg says "No expressway"', async ({ page }) => {
+  await boot(page);
+  await open(page, 'van');
+  await expect(page.locator('#sheet .legs [data-testid="leg-road"]')).toHaveText(['No expressway']);
+});
+
+test('every other leg says "Expressway OK"', async ({ page }) => {
+  await boot(page);
+  await open(page, 'trip');
+  await expect(page.locator('#sheet .legs [data-testid="leg-road"]')).toHaveText(['Expressway OK', 'Expressway OK']);
+});
+
+test('every leg still to run shows its full addresses; a leg that ran shrinks to one line', async ({ page }) => {
+  await boot(page);
+  await open(page, 'mid');
+  const legs = page.locator('#sheet .legs .leg');
+  await expect(legs).toHaveCount(3);
+  await expect(legs.nth(0)).toHaveClass(/leg-done/);
+  await expect(legs.nth(0).locator('.addr')).toHaveCount(0);
+  await expect(legs.nth(2)).toHaveClass(/leg-next/);
+  await expect(legs.nth(2).locator('.addr')).toContainText('Panama, C');
+  await expect(legs.nth(2).locator('.addr')).toContainText('Udawalawe, D');
+  await expect(legs.nth(2).locator('.lt')).toContainText('Panama → Udawalawe');
+});
+
+test('a single transfer gets a leg row with its time, not "no leg breakdown"', async ({ page }) => {
+  await boot(page);
+  await open(page, 'van');
+  await expect(page.locator('#sheet .legs .leg .lt')).toContainText('Colombo Airport (CMB) → Kandy');
+  await expect(page.locator('#sheet .legs .leg .lt')).toContainText('06:30');
+  await expect(page.locator('#sheet .sheet-b')).not.toContainText('no leg breakdown');
+});
+
+test('a shared seat gets its catalogue leg and no road label', async ({ page }) => {
+  await boot(page);
+  await open(page, 'shared');
+  await expect(page.locator('#sheet .legs .leg .lt')).toContainText('Ella → Mirissa');
+  await expect(page.locator('#sheet .legs [data-testid="leg-road"]')).toHaveCount(0);
+});
+
+test('the route is said once: no separate Route or Road row', async ({ page }) => {
+  await boot(page);
+  await open(page, 'van');
+  await expect(page.locator('#sheet .sheet-b .kv .k', { hasText: /^(Route|Road)$/ })).toHaveCount(0);
+});
