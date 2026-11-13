@@ -11,6 +11,9 @@ import { nextIsoWeekday } from '../testSupport/dates';
 const wednesday = nextIsoWeekday(3); // a shared service day
 const saturday = nextIsoWeekday(6); // the corridor's other service day
 const monday = nextIsoWeekday(1); // off-schedule (not a service day)
+// The first Wed or Sat from tomorrow: 1–4 days out in UTC, so 0–4 in Colombo — always a real
+// service day inside the 7-day notice window, and never in the past.
+const soonServiceDay = [nextIsoWeekday(3, 1), nextIsoWeekday(6, 1)].sort()[0];
 
 const valid = {
   // A leg we actually sell: Negombo → Sigiriya, $27.49/seat, boards 07:30.
@@ -159,6 +162,22 @@ describe('POST /bookings/shared', () => {
     const b = await res.json();
     expect(b.error).toBe('not_a_service_day');
     expect(b.message).toContain('Wed & Sat');
+  });
+
+  it('400 lead_time_too_short for a service day less than 7 days away', async () => {
+    const res = await postShared(createApp(), { ...valid, date: soonServiceDay });
+    expect(res.status).toBe(400);
+    const b = await res.json();
+    expect(b.error).toBe('lead_time_too_short');
+    expect(b.message).toContain('7 days');
+  });
+
+  it('rejects a too-soon date before holding a seat (no phantom hold)', async () => {
+    const departures = new InMemoryDepartureRepo();
+    const app = createApp({ departures });
+    await postShared(app, { ...valid, date: soonServiceDay, seats: 12 });
+    const held = await departures.holdSeats({ corridorId: 'airport-cultural', date: soonServiceDay, time: '07:30', seats: 12 });
+    expect(held?.seatsBooked).toBe(12);
   });
 
   it('accepts a Saturday departure (the corridor’s other service day)', async () => {

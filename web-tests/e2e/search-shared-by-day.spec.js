@@ -56,13 +56,41 @@ test('no date yet: running days up front, and one quiet way to the board for oth
   await expect(other).toHaveAttribute('href', 'board.html?from=Negombo&to=' + encodeURIComponent('Sigiriya / Dambulla') + '&start=1');
 });
 
-test('a running day that is today or already gone is never offered', async ({ page }) => {
+test('a running day that is today or inside the 7-day notice window is never offered', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2099-08-12T12:00:00Z')); // Wed 12 Aug, everywhere on earth
   await noDupe(page);
   await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=${THU}` });
   const alts = card(page).locator('a.sb-alt');
+  // Wed 12 is today and Sat 15 is only 3 days out; the first bookable run is Wed 19.
   await expect(alts).toHaveCount(1);
-  await expect(alts.first()).toContainText('Sat 15 Aug');
+  await expect(alts.first()).toContainText('Wed 19 Aug');
+});
+
+// A shared seat needs 7 days' notice on the Colombo calendar (owner, 2026-11-09); the API
+// refuses anything sooner, so the card must not sell it.
+test('a running day inside the notice window: no seat for sale, the first bookable run offered instead', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2099-08-10T06:00:00Z')); // Mon 10 Aug (11:30 in Colombo)
+  await noDupe(page);
+  await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=${SAT}` });
+  const c = card(page);
+  await expect(c).toContainText('Too soon for a shared seat on Sat 15 Aug');
+  await expect(c).toContainText('booked at least 7 days ahead');
+  await expect(c).not.toContainText('Book a seat');
+  const alts = c.locator('a.sb-alt');
+  await expect(alts).toHaveCount(1);
+  await expect(alts.first()).toContainText('Wed 19 Aug');
+  await expect(alts.first()).toHaveAttribute('href', `search.html?from=negombo&to=sigiriya&date=2099-08-19#shared-option`);
+  // the ride board is a separate product with no notice rule: keeping the date still works
+  await expect(c.locator('a.sb-start')).toHaveAttribute('href',
+    'board.html?from=Negombo&to=' + encodeURIComponent('Sigiriya / Dambulla') + `&date=${SAT}&start=1`);
+});
+
+test('a running day 7+ days out still sells the seat', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2099-08-10T06:00:00Z')); // Mon 10 Aug; first bookable day Mon 17
+  await gotoBooking(page, { path: '/search.html', query: `${ROUTE}&date=2099-08-19` });
+  const c = card(page);
+  await expect(c.getByRole('link', { name: /Book a seat/ })).toBeVisible();
+  await expect(c.locator('.sb-off')).toHaveCount(0);
 });
 
 test('someone already going that day: offer their ride instead of a fresh one', async ({ page }) => {
