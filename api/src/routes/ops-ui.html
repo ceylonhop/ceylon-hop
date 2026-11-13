@@ -11405,21 +11405,29 @@ function chauffeurUpsellSummary() {
   return (chauf && chauf.total) ? chauf : null;
 }
 
+// The word the upsell uses for what the customer rides in: it said "car" on van quotes (owner,
+// 2026-11-11, Q-KBRPF). Same Car / Van / Vehicle split as the customer quote and pay pages.
+function upsellVehicleWord(vehicleType) {
+  if (vehicleType === 'car') return 'car';
+  return String(vehicleType || '').indexOf('van') === 0 ? 'van' : 'vehicle';
+}
+
 function appendChauffeurUpsell(lines, emailStyle) {
   var chauf = chauffeurUpsellSummary();
   if (!outputIncludeChauffeurUpsell || !chauf) return;
   var amount = M(chauf.total.cents);
+  var veh = upsellVehicleWord(state.vehicleType);
   if (emailStyle) {
     lines.push(
       '',
-      'If you would also like the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+      'If you would also like the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
       'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
     );
     return;
   }
   lines.push(
     '',
-    'If you\'d prefer the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+    'If you\'d prefer the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
     'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
   );
 }

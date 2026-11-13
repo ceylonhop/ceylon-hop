@@ -65,6 +65,9 @@ export function installStubs() {
             mainText: { text: `${input} Result ${n}` },
             secondaryText: { text: 'Sri Lanka' },
             toPlace: () => ({
+              // Google's place ID for the pick — what booking.js sends so the API measures the road
+              // to the place the customer chose, not to a re-search of its name.
+              id: `ChIJstubPlace${n}x${String(input).replace(/[^A-Za-z0-9]/g, '')}`.slice(0, 60),
               fetchFields: async () => {},
               // Default picks sit near Colombo. A test can pin picks inside a specific
               // drop-off area via window.__E2E_PICK_GEO so the booking page's

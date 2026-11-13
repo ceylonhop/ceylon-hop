@@ -1640,3 +1640,45 @@ describe('ops UI — Health tab', () => {
     expect(body).toContain('data-hlrefresh'); // the Refresh control — the page is never cached
   });
 });
+
+// The chauffeur-guide upsell line of the customer message (WhatsApp + email). It said "the same
+// car and driver" whatever was quoted (owner, 2026-11-11 — Q-KBRPF was a 9-seat van). Lifted out
+// of the inlined shell script and run against stubbed state, like requestMismatch above.
+describe('chauffeur upsell names the quoted vehicle', () => {
+  let upsell: (vehicleType: string, emailStyle: boolean) => string;
+  beforeAll(async () => {
+    const body = await (await createApp().request('/ops')).text();
+    const lift = (name: string): string => {
+      const start = body.indexOf(`function ${name}(`);
+      if (start < 0) return '';
+      let depth = 0; let i = body.indexOf('{', start);
+      for (; i < body.length; i++) {
+        if (body[i] === '{') depth++;
+        else if (body[i] === '}' && --depth === 0) break;
+      }
+      return body.slice(start, i + 1);
+    };
+    const src = `${lift('upsellVehicleWord')}; ${lift('appendChauffeurUpsell')}`;
+    upsell = (vehicleType, emailStyle) => {
+      const lines: string[] = [];
+      new Function('state', 'outputIncludeChauffeurUpsell', 'chauffeurUpsellSummary', 'M', 'lines', 'emailStyle',
+        `${src}; appendChauffeurUpsell(lines, emailStyle);`)(
+        { vehicleType }, true, () => ({ total: { cents: 118_000 } }), (c: number) => `$${c / 100}`, lines, emailStyle,
+      );
+      return lines.join('\n');
+    };
+  });
+
+  it.each([false, true])('says van for every van tier (email=%s)', (email) => {
+    for (const v of ['van_6', 'van_9', 'van_14']) {
+      expect(upsell(v, email)).toContain('keep the same van and driver with you');
+      expect(upsell(v, email)).not.toMatch(/\bcar\b/);
+    }
+  });
+  it.each([false, true])('still says car for a car (email=%s)', (email) => {
+    expect(upsell('car', email)).toContain('keep the same car and driver with you');
+  });
+  it.each([false, true])('says vehicle for a custom vehicle (email=%s)', (email) => {
+    expect(upsell('custom', email)).toContain('keep the same vehicle and driver with you');
+  });
+});
