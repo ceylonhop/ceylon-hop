@@ -15,7 +15,14 @@ import { ROOT, generateAll, pairCopy } from '../../tools/generate-route-pages.mj
 // trip/ on disk also holds ~25 hand-built legacy directories (redirect stubs, old tour slugs), so
 // enumerate the GENERATED route pages the way route-page-unified.test.js does — never readdir.
 const slugs = [...generateAll().keys()].map(k => (k.match(/^trip\/(.+-to-.+)\/index\.html$/) || [])[1]).filter(Boolean);
-const dom = slug => new JSDOM(readFileSync(join(ROOT, 'trip', slug, 'index.html'), 'utf8')).window.document;
+// Parse each page ONCE. ~1,160 cases each built a fresh full-page JSDOM and never closed it,
+// and the worker passed V8's ~2 GB heap on CI and died ("Worker exited unexpectedly"). Every
+// case only reads the document (the one that edits works on a clone), so sharing is safe.
+const docs = new Map();
+const dom = slug => {
+  if (!docs.has(slug)) docs.set(slug, new JSDOM(readFileSync(join(ROOT, 'trip', slug, 'index.html'), 'utf8')).window.document);
+  return docs.get(slug);
+};
 const SHARED = slugs.filter(s => dom(s).querySelector('[data-shared-cta]'));
 const PRIVATE_ONLY = slugs.filter(s => !SHARED.includes(s));
 
