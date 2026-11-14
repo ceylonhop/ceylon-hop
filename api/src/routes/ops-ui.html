@@ -445,6 +445,7 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sheet-b{overflow-y:auto;padding:2px 22px 24px;flex:1;overscroll-behavior:contain}
   .sheet-b::-webkit-scrollbar{width:8px}.sheet-b::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:8px}
   .block{padding:15px 0 17px;border-bottom:1px solid var(--line-soft)}
+  .cust-note{white-space:pre-line;overflow-wrap:anywhere;padding:10px 13px;border-radius:10px;background:var(--wait-bg);color:var(--ink);font-size:.92rem;line-height:1.5}
   .block:last-child{border-bottom:0}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow-s);transition:transform .16s,box-shadow .16s}
   .card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
@@ -466,12 +467,22 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .pstep.cur::before{background:var(--c);box-shadow:0 0 0 1px var(--c),0 0 0 4px color-mix(in srgb,var(--c) 22%,transparent);animation:nodepulse 2.1s ease-in-out infinite}
   .pstep.cur::after{background:linear-gradient(90deg,var(--c),color-mix(in srgb,var(--c) 35%,var(--line)))}
   /* ticket stub — the vitals, readable before any scrolling */
-  .sheet-stub{display:grid;grid-template-columns:1.02fr 1.08fr .62fr .95fr;flex:none;background:color-mix(in srgb,var(--c) 5%,var(--paper));border-top:1px solid var(--line-soft)}
-  @media(max-width:700px){.sheet-stub{grid-template-columns:1.3fr 1fr}.stub:nth-child(3),.stub:nth-child(4){display:none}}
+  .sheet-stub{display:grid;grid-template-columns:1fr 1.3fr .7fr .7fr;flex:none;background:color-mix(in srgb,var(--c) 5%,var(--paper));border-top:1px solid var(--line-soft)}
+  @media(max-width:700px){.sheet-stub{grid-template-columns:1fr 1.3fr}.stub:nth-child(3),.stub:nth-child(4){display:none}.sheet-stub .stub .ss-narrow{display:block}}
   .stub{padding:10px 12px;border-left:1px dashed var(--line);min-width:0}
   .stub:first-child{border-left:0;padding-left:22px}
   .stub .sl{font-size:.55rem;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
   .stub .sv{font-family:var(--mono);font-weight:700;font-size:.84rem;margin-top:3px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
+  .stub.stub-job .sv{white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;flex-wrap:wrap;gap:0 6px}
+  .stub .ss{font-size:.68rem;color:var(--ink-soft);margin-top:2px;line-height:1.3;overflow-wrap:anywhere}
+  /* The vehicle paid for: an ink outline and bigger type, never a teal fill (teal = a button). */
+  .stub.stub-veh{box-shadow:inset 0 0 0 2px var(--ink);background:var(--paper)}
+  .stub.stub-veh .sl{color:var(--ink)}
+  .stub.stub-veh .sv{font-size:1rem}
+  .stub.stub-missing{box-shadow:inset 0 0 0 2px var(--alert)}
+  .stub.stub-missing .sl,.stub.stub-missing .sv{color:var(--alert)}
+  .stub .ss-narrow{display:none}
+  .stub .sk-inline{display:inline-block;width:70%;height:13px;border-radius:6px;background:var(--line-soft)}
   .stub .sv .paych{font-family:var(--body);font-size:.6rem;font-weight:800;border-radius:999px;padding:2px 6px;letter-spacing:.02em;flex:none}
   .stub .sv .paych.ok{color:var(--ok);background:var(--ok-bg)}
   .stub .sv .paych.due{color:var(--wait);background:var(--wait-bg)}
@@ -509,13 +520,20 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .mrow .mst.charged{color:var(--ok);background:var(--ok-bg)}
   .mrow .mst.charge_failed{color:var(--alert);background:var(--alert-bg)}
   .mrow .mst.scratched{color:var(--idle);background:var(--idle-bg)}
-  .legs{font-size:.88rem}.legs .leg{display:flex;justify-content:space-between;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
+  .legs{font-size:.88rem}.legs .leg{display:block;padding:7px 0;border-top:1px solid var(--line-soft)}.legs .leg:first-child{border-top:0}
   .legs .leg .r{color:var(--ink)}.legs .leg .p{font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
   .legs .leg-gap .r{color:var(--ink-faint);font-style:italic}
   .legs .leg-done .r{color:var(--ink-faint);text-decoration:line-through}
   .legs .leg-done .r::before{content:"✓ ";text-decoration:none;display:inline-block;margin-right:4px}
   .legs .leg-next .r{font-weight:700}
   .legs .leg-next .r::after{content:"Next";display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--cream-deep);color:var(--ink);font-size:.72rem;font-weight:700;vertical-align:1px}
+  .legs .lt{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .legs .lt .r{min-width:0}
+  .legs .via{color:var(--ink-soft);font-weight:400}
+  .legs .road{flex:none;font-size:.74rem;color:var(--ink-faint);white-space:nowrap}
+  .legs .road-local{flex:none;font-size:.7rem;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--wait-bg);color:var(--wait);white-space:nowrap}
+  .legs .addr{display:grid;grid-template-columns:auto minmax(0,1fr);gap:1px 8px;margin-top:4px;font-size:.8rem;color:var(--ink-soft);overflow-wrap:anywhere}
+  .legs .addr b{font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint);padding-top:2px}
   .togg{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-top:1px solid var(--line-soft);font-size:.9rem}
   .switch{width:44px;height:25px;border-radius:999px;background:var(--cream-deep);position:relative;transition:.2s;border:0}
   .switch::after{content:"";position:absolute;top:3px;left:3px;width:19px;height:19px;border-radius:50%;background:#fff;box-shadow:var(--shadow-s);transition:.2s cubic-bezier(.2,.7,.3,1)}
@@ -3862,6 +3880,80 @@ function buildActivity(t,d){
   return acts;
 }
 
+/* @sheet-job:start: pure helpers for the booking pane's header and leg list (spec
+   2026-11-12-ops-booking-pane-info-priority-design.md, PR 1). No DOM and no page globals, so
+   web-tests/unit/ops-sheet-job.test.js can load this block on its own. */
+function shortPlace(s){
+  const t=String(s??'').trim();
+  const i=t.indexOf(',');
+  return i>0?t.slice(0,i).trim():t;
+}
+/* Ops ask "expressway or normal?". Sri Lanka's tolled roads are its expressways, so the toll-free
+   road IS "no expressway"; Google's usual route may use one where it exists. */
+function roadOf(variant){
+  return variant==='no_tolls'?{text:'No expressway',cls:'road-local'}:{text:'Expressway OK',cls:'road'};
+}
+/* One row per leg a driver runs, in the same grouping as bookingLegs.ts privateLegs: a gap is the
+   customer's own travel, and through-stops continue one ride. A leg dated before `today` is done;
+   the first dated leg on or after it is next; an undated leg is neither. */
+function legRows(b,today){
+  const inp=b&&b.input;
+  if(!inp)return [];
+  const ran=(d)=>!!d&&d<today, ahead=(d)=>!!d&&d>=today;
+  if(b.mode==='trip'&&Array.isArray(inp.stops)&&inp.stops.length>1){
+    const stops=inp.stops,dates=inp.dates||[],gaps=inp.gaps||[],through=inp.through||[],rv=inp.routeVariants||[];
+    const lastWire=stops.length-2,rows=[];
+    let next=false,n=0;
+    for(let i=0;i<=lastWire;){
+      n++;
+      if(gaps.includes(i)){rows.push({kind:'gap',n,from:stops[i],to:stops[i+1]});i++;continue;}
+      let end=i;
+      while(end<lastWire&&through.includes(end)&&!gaps.includes(end+1))end++;
+      const date=dates[i]||null;
+      const isNext=!next&&ahead(date);
+      if(isNext)next=true;
+      rows.push({kind:'leg',n,date,time:null,from:stops[i],to:stops[end+1],via:stops.slice(i+1,end+1),
+        variant:rv.slice(i,end+1).includes('no_tolls')?'no_tolls':'fastest',done:ran(date),next:isNext});
+      i=end+1;
+    }
+    return rows;
+  }
+  if(b.mode==='single'&&inp.from&&inp.to){
+    const date=inp.date||null;
+    return [{kind:'leg',n:1,date,time:inp.time||null,from:inp.from,to:inp.to,via:[],
+      variant:inp.routeVariant==='no_tolls'?'no_tolls':'fastest',done:ran(date),next:ahead(date)}];
+  }
+  if(b.mode==='shared'&&inp.fromPlace&&inp.toPlace){
+    const date=inp.date||null;
+    return [{kind:'leg',n:1,date,time:inp.time||null,from:inp.fromPlace,to:inp.toPlace,via:[],
+      variant:null,done:ran(date),next:ahead(date)}];
+  }
+  return [];
+}
+/* What ops tell the vehicle coordinator, read off the booking. `vehicle` is the detail
+   response's priced tier (null for a shared seat, or when no quote/snapshot names one). */
+function jobFacts(b,vehicle,serviceType,legs){
+  const inp=(b&&b.input)||{}, mode=b&&b.mode;
+  const veh=mode==='shared'?{kind:'shared',seats:inp.seats||0}
+    :vehicle?{kind:'vehicle',code:vehicle,chauffeurDays:serviceType==='chauffeur'?(inp.days||null):null}
+    :{kind:'missing'};
+  const guests=mode==='single'?{total:(inp.adults||0)+(inp.children||0),adults:inp.adults??null,children:inp.children??null}
+    :mode==='trip'?{total:inp.pax??null,adults:null,children:null}
+    :mode==='shared'?{total:inp.seats??null,adults:null,children:null}
+    :{total:null,adults:null,children:null};
+  const bags=mode==='trip'?{asked:false,count:null}:{asked:true,count:typeof inp.bags==='number'?inp.bags:null};
+  const driven=(legs||[]).filter(l=>l.kind==='leg');
+  const nextLeg=driven.find(l=>l.next)||null;
+  const startDate=(driven.find(l=>l.date)||{}).date||null;
+  const flexLeg=mode==='trip'&&!nextLeg&&driven.some(l=>l.done)?driven.find(l=>!l.date&&!l.done)||null:null;
+  const when=mode==='trip'&&nextLeg&&driven.some(l=>l.done)
+    ?{label:'Next leg',date:nextLeg.date,k:driven.indexOf(nextLeg)+1,m:driven.length,start:startDate}
+    :flexLeg?{label:'Next leg',date:null,k:driven.indexOf(flexLeg)+1,m:driven.length,start:startDate}
+    :{label:mode==='shared'?'Departs':'When',date:null,k:null,m:null,start:null};
+  return {vehicle:veh,guests,bags,when};
+}
+/* @sheet-job:end */
+
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
   const b=d?.booking;
@@ -3869,39 +3961,22 @@ function legsHtmlFor(d){
   const cov=d?.coverage
     ? `<div class="legs-coverage">Covers ${d.coverage.soldLegs} of ${d.coverage.totalLegs} quoted legs — travel between them is the customer's own arrangement.</div>`
     : '';
-  if(b&&b.mode==='trip'&&Array.isArray(b.input?.stops)&&b.input.stops.length>1){
-    const stops=b.input.stops,dates=b.input.dates||[],gaps=b.input.gaps||[],through=b.input.through||[];
-    const lastWire=stops.length-2;
-    /* Progress through a trip under way (spec 2026-11-06 §3): a leg dated before today has run and
-       is struck out; the first driven leg today or later is next. Styling only — the words stay. */
-    let next=false,rows='',n=0;
-    for(let i=0;i<=lastWire;){
-      n++;
-      /* A self-arranged stretch (trip_request.gaps): the customer's own train, or the leg a partial
-         pay link left out. Never brief a driver for it. */
-      if(gaps.includes(i)){
-        rows+=`<div class="leg leg-gap"><span class="r">${esc(stops[i])} → ${esc(stops[i+1])} · customer’s own travel, not driven by us</span></div>`;
-        i++;
-        continue;
-      }
-      /* Stops on the way (trip_request.through, 0078): wire i continues the same ride onto wire i+1,
-         so the run is ONE leg — one pickup, one driver. Same grouping as bookingLegs.ts privateLegs. */
-      let end=i;
-      while(end<lastWire&&through.includes(end)&&!gaps.includes(end+1))end++;
-      const via=stops.slice(i+1,end+1);
-      const when=dates[i]?fmtDate(dates[i]):`Leg ${n}`;
-      /* Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.3): flag the
-         leg that was booked on the toll-free road, so a driver briefing doesn't have to guess. */
-      const road=(b.input.routeVariants||[]).slice(i,end+1).includes('no_tolls')?' · local road':'';
-      const isNext=!next&&!!dates[i]&&dates[i]>=TODAY;
-      if(isNext)next=true;
-      const st=dates[i]&&dates[i]<TODAY?' leg-done':isNext?' leg-next':'';
-      rows+=`<div class="leg${st}"><span class="r">${esc(when)} · ${esc(stops[i])} → ${esc(stops[end+1])}${via.length?` · via ${via.map(esc).join(', ')}`:''}${road}</span></div>`;
-      i=end+1;
-    }
-    return cov+`<div class="legs">${rows}</div>`;
-  }
-  return cov+'<div style="color:var(--ink-faint);font-size:.88rem">Single transfer — no leg breakdown.</div>';
+  const rows=b?legRows(b,TODAY):[];
+  if(!rows.length)return cov+'<div style="color:var(--ink-faint);font-size:.88rem">No leg breakdown on record for this booking.</div>';
+  /* One line per leg (spec 2026-11-12): date · short places · road. A leg still to run also
+     shows its full addresses, so a whole trip can be briefed to one coordinator in one go; a leg
+     that has run (dated before today) shrinks to its struck-out line. */
+  const html=rows.map(r=>{
+    const places=`<span title="${esc(r.from)} → ${esc(r.to)}">${esc(shortPlace(r.from))} → ${esc(shortPlace(r.to))}</span>`;
+    if(r.kind==='gap')return `<div class="leg leg-gap" data-leg="${r.n}"><div class="lt"><span class="r">${places} · customer’s own travel, not driven by us</span></div></div>`;
+    const when=r.date?fmtDate(r.date)+(r.time?' · '+r.time:''):(b.mode==='trip'?`Leg ${r.n}`:'Date not set');
+    const via=r.via.length?` <span class="via">via ${r.via.map(v=>esc(shortPlace(v))).join(', ')}</span>`:'';
+    const road=r.variant?roadOf(r.variant):null;
+    const st=r.done?' leg-done':r.next?' leg-next':'';
+    const addr=r.done?'':`<div class="addr"><b>From</b><span>${esc(r.from)}</span><b>To</b><span>${esc(r.to)}</span></div>`;
+    return `<div class="leg${st}" data-leg="${r.n}"><div class="lt"><span class="r">${esc(when)} · ${places}${via}</span>${road?`<span class="${road.cls}" data-testid="leg-road">${road.text}</span>`:''}</div>${addr}</div>`;
+  }).join('');
+  return cov+`<div class="legs">${html}</div>`;
 }
 
 /* ── refund statuses ────────────────────────────────────────────────────────────────────────
@@ -4246,11 +4321,35 @@ function sheetHeadHtml(t,o){
     <div class="sheet-stub">${o.stub}</div>
     <div class="perf"><i></i><i></i></div>`;
 }
-function bookingStubHtml(t){
-  return `<div class="stub"><div class="sl">Total</div><div class="sv">${money(t)} ${t.paid&&t.balance>0?'<span class="paych due">DEPOSIT</span>':t.paid?'<span class="paych ok">PAID</span>':'<span class="paych due">DUE</span>'}</div></div>`
-    +`<div class="stub"><div class="sl">Travel</div><div class="sv">${t.date?esc(fmtDate(t.date)):'Flexible'}${t.time?' · '+esc(t.time):''}</div></div>`
-    +`<div class="stub"><div class="sl">Guests</div><div class="sv">${t.guests==null?'—':esc(String(t.guests))}</div></div>`
-    +`<div class="stub"><div class="sl">Type</div><div class="sv">${esc(MODE[t.mode]||t.mode)}</div></div>`;
+/* The header answers "what do I tell the coordinator?" (spec 2026-11-12): when, the vehicle the
+   customer PAID for, the party, the bags. Money left the header; the Payment block carries it.
+   `d` is null while the detail loads, so the cells it alone knows shimmer instead of guessing. */
+function bookingStubHtml(t,d){
+  const cell=(cls,label,value,sub,tid,extra='')=>`<div class="stub stub-job${cls}"><div class="sl">${label}</div><div class="sv"${tid?` data-testid="${tid}"`:''}>${value}</div>${sub!=null?`<div class="ss">${sub}</div>`:''}${extra}</div>`;
+  const sk='<span class="sk-inline" aria-hidden="true"></span>';
+  const b=d?.booking||null;
+  const f=b?jobFacts(b,d.vehicle||null,t.serviceType,legRows(b,TODAY)):null;
+  const plural=(n,one,many)=>`${n} ${n===1?one:many}`;
+  const when=f&&f.when.label==='Next leg'
+    ?cell('','Next leg',f.when.date?esc(fmtDate(f.when.date)):'Flexible',`leg ${f.when.k} of ${f.when.m}${f.when.start?' · started '+esc(fmtDate(f.when.start)):''}`,'sheet-when')
+    :cell('',f?f.when.label:'When',t.date?esc(fmtDate(t.date)):'Flexible',b&&b.mode==='trip'?null:t.time?esc(t.time):'time not set','sheet-when');
+  const g=f?.guests, bg=f?.bags;
+  const guestsSub=!g?null:g.adults!=null&&g.children!=null
+    ?esc(plural(g.adults,'adult','adults')+(g.children>0?' · '+plural(g.children,'child','children'):''))
+    :'guests';
+  const guestsN=g?g.total:t.guests;
+  const bagsSub=!bg?null:!bg.asked?'not asked':bg.count==null?'not recorded':bg.count===1?'bag':'bags';
+  /* Phones keep two cells (When, Vehicle), so the party rides under the vehicle there. */
+  const narrow=f?`<div class="ss ss-narrow">${guestsN==null?'guests not recorded':esc(plural(guestsN,'guest','guests'))} · ${!bg.asked?'bags not asked':bg.count==null?'bags not recorded':esc(plural(bg.count,'bag','bags'))}</div>`:'';
+  let veh;
+  if(!f)veh=cell(' stub-veh','Vehicle',sk,null);
+  else if(f.vehicle.kind==='shared')veh=cell(' stub-veh','Seats',esc(plural(f.vehicle.seats,'shared seat','shared seats')),'no vehicle to choose','sheet-seats',narrow);
+  else if(f.vehicle.kind==='missing')veh=cell(' stub-veh stub-missing','Vehicle','Not on record','check the quote','sheet-vehicle-missing',narrow);
+  else veh=cell(' stub-veh','Vehicle',`<span data-testid="sheet-vehicle">${esc(VEHICLE_NAME[f.vehicle.code]||f.vehicle.code)}</span>${f.vehicle.chauffeurDays?' + driver':''}`,
+    f.vehicle.chauffeurDays?`paid for · ${esc(String(f.vehicle.chauffeurDays))} days`:'paid for',null,narrow);
+  const guests=cell('','Guests',guestsN==null?'—':esc(String(guestsN)),guestsSub,'sheet-guests');
+  const bags=f?cell('','Bags',bg.count==null?'—':esc(String(bg.count)),bagsSub,'sheet-bags'):cell('','Bags',sk,null);
+  return when+veh+guests+bags;
 }
 function boardStubHtml(t){
   const b=t.board||{};
@@ -4393,7 +4492,7 @@ function renderSheet(){
   const waDigits=String(d?.booking?.input?.customer?.whatsapp||'').replace(/\D/g,'');
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t),pipe:true,idx,
+    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t,d),pipe:true,idx,
     action:waDigits.length>=8?`<a class="sh-wa" href="https://wa.me/${waDigits}" target="_blank" rel="noopener" aria-label="Message on WhatsApp" title="Message on WhatsApp">${ICON.wa}</a>`:'',
     /* The row's own balance tag, repeated in the header so an open balance is visible without
        scrolling to Payment (owner, 2026-10-12). Opt-in: the ride-board sheet passes none. */
@@ -4439,15 +4538,16 @@ function renderSheet(){
   }
   const extras=bookingAddOns(d?.booking);
   const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
-  /* The vehicle the trip was priced on (the API reads the tier off the quote or the website's
-     snapshot — the booking alone only knows car|van). Absent for a shared seat. */
-  const vehicleRow=d?.vehicle?`<div class="kv"><span class="k">Vehicle</span><span class="v" data-testid="sheet-vehicle">${esc(VEHICLE_NAME[d.vehicle]||d.vehicle)}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
-  /* What the customer wrote in the booking page's "Anything we should know?" box. Typed by the
-     public, so it is escaped like every other value here; pre-line keeps their line breaks. */
+  /* What the customer wrote in the booking page's free-form "Anything we should know?" box: often
+     a job fact (a surfboard, a pram, the hotel gate), so it opens the body (spec 2026-11-12). Typed
+     by the public, so it is escaped; pre-line keeps their line breaks; never cut short. Only the
+     website checkout has the box, so a WhatsApp-quote booking says why there is none. */
   const custNote=d?.booking?.customerNotes;
-  const noteRow=custNote?`<div class="kv"><span class="k">Note</span><span class="v" style="white-space:pre-line">${esc(custNote)}</span></div>`:'';
+  const noteBlock=`<div class="block" data-testid="sheet-customer-note"><h4>Customer’s note</h4>${custNote
+    ?`<div class="cust-note">${esc(custNote)}</div>`
+    :`<p class="muted" style="padding:0;margin:0">${t.chan==='website'?'No note from the customer.':'Booked from a WhatsApp quote. That checkout has no note box.'}</p>`}</div>`;
   /* Partner experiences the customer tapped on the booking page (spec 2026-10-06 D15). Only
      bookings:operate may move a lead (the PATCH is gated on it; finance holds bookings:read and
      would get a 403), so everyone else reads the status as text. Double-quoted attributes only —
@@ -4472,22 +4572,18 @@ function renderSheet(){
      pressing either, and deliberately NOT in the sticky action foot. See reverseActionsFor(). */
   morphSheet(sh,head+`
     <div class="sheet-b">
-      ${pendingBlock}
+      ${pendingBlock}${noteBlock}
       <div class="block"><h4>Customer</h4>
         <div class="kv"><span class="k">WhatsApp</span><span class="v">${memberPhoneHtml(cust?.whatsapp)}</span></div>
         <div class="kv"><span class="k">Email</span><span class="v">${esc(cust?.email||'—')}</span></div>
         <div class="kv"><span class="k">Country</span><span class="v">${esc(cust?.country||'—')}</span></div>
-        ${noteRow}
       </div>
       <div class="block"><h4>Trip</h4>
-        <div class="kv"><span class="k">Route</span><span class="v">${esc(t.route)}</span></div>
-        ${d?.booking?.mode==='single'&&d.booking.input?.routeVariant==='no_tolls'?`<div class="kv"><span class="k">Road</span><span class="v">Local road, no expressway</span></div>`:''}
+        <div style="margin-bottom:6px">${legsHtmlFor(d)}</div>
         <div class="kv"><span class="k">When</span><span class="v">${t.date?fmtDate(t.date):'Flexible'}${t.time?' · '+esc(t.time):''}${canSchedule?` <button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change':'Set date &amp; time'}</button>`:''}</span></div>
         ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
         <div class="kv"><span class="k">Guests</span><span class="v">${t.guests}</span></div>
-        ${vehicleRow}
         ${extrasRow}
-        <div style="margin-top:10px">${legsHtmlFor(d)}</div>
       </div>
       ${interestBlock}
       <div class="block"><h4>Payment</h4>
