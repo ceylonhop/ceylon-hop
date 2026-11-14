@@ -46,15 +46,16 @@ const YESTERDAY = iso(-1);
 const NEXT_MONTH = iso(20);
 
 // eslint-disable-next-line no-new-func
-const { dayGroup, inGroup, anchorDate, legNote } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
+const { dayGroup, inGroup, anchorDate, legNote, alsoTomorrow } = new Function('CLOSED', 'TODAY', 'TOMORROW', `
   const anchorDate=${extractConst('anchorDate')};
   const legNote=${extractConst('legNote')};
   const isExpired=${extractConst('isExpired')};
   const isOverdue=${extractConst('isOverdue')};
   const dayGroup=${extractConst('dayGroup')};
+  const alsoTomorrow=${extractConst('alsoTomorrow')};
   ${html.slice(html.indexOf('const cashDue='), html.indexOf(';', html.indexOf('const cashDue=')) + 1)}
   const inGroup=${extractConst('inGroup')};
-  return { dayGroup, inGroup, anchorDate, legNote };
+  return { dayGroup, inGroup, anchorDate, legNote, alsoTomorrow };
 `)(CLOSED, TODAY, TOMORROW);
 
 const t = (over) => ({ stage: 'paid', date: NEXT_MONTH, source: 'web', ...over });
@@ -229,5 +230,46 @@ describe('a multi-stop trip files under its next leg', () => {
 
   it('sorts each day group by the anchor, so a trip resuming tomorrow sits among tomorrow\'s rows', () => {
     expect(html).toContain("const tkey=t=>(anchorDate(t)||'9999-99-99')");
+  });
+});
+
+// Ops report 2026-11-12 (CH-HA3PA): a trip with a leg today AND a leg tomorrow filed under Today
+// only, so tomorrow's leg was missing from the Tomorrow list the team plans vehicles from. Such a
+// trip now shows a second row under Tomorrow, dated and labelled for that leg.
+describe('a trip with legs today and tomorrow shows under both days', () => {
+  const leg = (date, from = 'A', to = 'B') => ({ date, from, to });
+  const backToBack = (over) => t({
+    id: 'b1', stage: 'paid', date: iso(-2),
+    legs: [leg(iso(-2), 'Negombo', 'Ella'), leg(TODAY, 'Ella', 'Udawalawe'), leg(TOMORROW, 'Udawalawe', 'Hiriketiya'), leg(iso(5), 'Hiriketiya', 'Galle')],
+    ...over,
+  });
+
+  it('gives a Today trip with a leg tomorrow a second row, filed under Tomorrow', () => {
+    const trip = backToBack();
+    expect(dayGroup(trip)).toBe('Today');
+    const copy = alsoTomorrow(trip);
+    expect(copy).toBeTruthy();
+    expect(copy.id).toBe('b1');
+    expect(dayGroup(copy)).toBe('Tomorrow');
+    expect(anchorDate(copy)).toBe(TOMORROW);
+    expect(legNote(copy)).toBe('Leg 3 of 4 · Udawalawe → Hiriketiya');
+  });
+
+  it('names the leg on the Tomorrow row even when the trip only starts today', () => {
+    const copy = alsoTomorrow(t({ date: TODAY, legs: [leg(TODAY, 'Colombo', 'Kandy'), leg(TOMORROW, 'Kandy', 'Ella')] }));
+    expect(legNote(copy)).toBe('Leg 2 of 2 · Kandy → Ella');
+  });
+
+  it('adds no second row otherwise', () => {
+    expect(alsoTomorrow(backToBack({ legs: [leg(TODAY), leg(iso(3))] }))).toBe(null); // nothing tomorrow
+    expect(alsoTomorrow(backToBack({ legs: [leg(YESTERDAY), leg(TOMORROW)] }))).toBe(null); // already under Tomorrow
+    expect(alsoTomorrow(backToBack({ stage: 'cancelled' }))).toBe(null);
+    expect(alsoTomorrow(backToBack({ stage: 'awaiting_payment' }))).toBe(null); // Expired: first day gone
+    expect(alsoTomorrow(t({ date: TODAY }))).toBe(null); // a transfer has no legs
+  });
+
+  it('renders the second row in the Tomorrow group without counting the booking twice', () => {
+    expect(html).toContain('const also=alsoTomorrow(t);if(also)buckets.Tomorrow.push(also);');
+    expect(html).toContain('<b>${list.length} booking');
   });
 });
