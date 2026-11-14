@@ -182,7 +182,7 @@ test('searching a ref asks the API for exactly that ref and draws header, verdic
 
   // "Open in queue" opens the booking's drawer over the page.
   await head.getByRole('button', { name: 'Open in queue' }).click();
-  await expect(page.locator('#sheet.show .block h4', { hasText: 'Customer' })).toBeVisible();
+  await expect(page.locator('#sheet.show .block h4', { hasText: /^Customer$/ })).toBeVisible();
 });
 
 test('a deep link ?case=…#lookup renders the case and survives a reload', async ({ page }) => {
@@ -271,7 +271,7 @@ test('the drawer’s "Payment history →" opens the lookup for that booking (pa
   await page.goto(OPS_FILE + '#bookings');
   await ready(page);
   await page.locator('.tk[data-act="open"][data-id="b1"]').click();
-  await expect(page.locator('#sheet .block h4', { hasText: 'Customer' })).toBeVisible();
+  await expect(page.locator('#sheet .block h4', { hasText: /^Customer$/ })).toBeVisible();
   const link = page.locator('#sheet .block', { has: page.locator('h4', { hasText: /^Payment$/ }) }).getByRole('button', { name: 'Payment history →' });
   await link.click();
   await expect(page.locator('#view h1')).toHaveText('Lookup');
@@ -286,7 +286,7 @@ test('an ops session gets no "Payment history →" in the drawer', async ({ page
   await page.goto(OPS_FILE + '#bookings');
   await ready(page);
   await page.locator('.tk[data-act="open"][data-id="b1"]').click();
-  await expect(page.locator('#sheet .block h4', { hasText: 'Customer' })).toBeVisible();
+  await expect(page.locator('#sheet .block h4', { hasText: /^Customer$/ })).toBeVisible();
   await expect(page.locator('#sheet [data-act="lookup"]')).toHaveCount(0);
 });
 
