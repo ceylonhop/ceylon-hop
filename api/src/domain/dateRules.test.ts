@@ -9,8 +9,10 @@ import {
   earliestChauffeurDate,
   isTooSoonPrivate,
   isTooSoonChauffeur,
+  isTooSoonShared,
   PRIVATE_MIN_LEAD_HOURS,
   CHAUFFEUR_MIN_LEAD_DAYS,
+  SHARED_MIN_LEAD_DAYS,
 } from './dateRules';
 
 describe('isoToday', () => {
@@ -145,6 +147,23 @@ describe('earliestChauffeurDate / isTooSoonChauffeur', () => {
     expect(isTooSoonChauffeur([], NOW)).toBe(false);
     expect(isTooSoonChauffeur(['to confirm', ''], NOW)).toBe(false);
     expect(isTooSoonChauffeur([undefined, null], NOW)).toBe(false);
+  });
+});
+
+describe('isTooSoonShared', () => {
+  it('needs 7 days, judged on the Asia/Colombo calendar', () => {
+    expect(SHARED_MIN_LEAD_DAYS).toBe(7);
+    expect(isTooSoonShared('2026-08-17', NOW)).toBe(true);
+    expect(isTooSoonShared('2026-08-22', NOW)).toBe(true);
+    expect(isTooSoonShared('2026-08-23', NOW)).toBe(false); // exactly 7 days out
+    // 20:00 UTC is already the 17th in Colombo, so the 23rd is now only 6 days away.
+    expect(isTooSoonShared('2026-08-23', new Date('2026-08-16T20:00:00Z'))).toBe(true);
+  });
+
+  it('leaves absent and non-ISO dates to the other validators', () => {
+    expect(isTooSoonShared(undefined, NOW)).toBe(false);
+    expect(isTooSoonShared('', NOW)).toBe(false);
+    expect(isTooSoonShared('to confirm', NOW)).toBe(false);
   });
 });
 

@@ -12,8 +12,10 @@ import {
   serviceDaysLabel,
   isTooSoonPrivate,
   isTooSoonChauffeur,
+  isTooSoonShared,
   PRIVATE_MIN_LEAD_HOURS,
   CHAUFFEUR_MIN_LEAD_DAYS,
+  SHARED_MIN_LEAD_DAYS,
 } from '../domain/dateRules';
 import {
   priceSingle,
@@ -79,6 +81,7 @@ import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 // Minimum-notice copy. Customer-facing, so it states the rule rather than the field that failed.
 const PRIVATE_NOTICE_MESSAGE = `Private transfers need at least ${PRIVATE_MIN_LEAD_HOURS} hours' notice — please pick a later pick-up.`;
 const CHAUFFEUR_NOTICE_MESSAGE = `Chauffeur-guide trips need at least ${CHAUFFEUR_MIN_LEAD_DAYS} days' notice — please pick a later start date.`;
+const SHARED_NOTICE_MESSAGE = `Shared taxi seats need at least ${SHARED_MIN_LEAD_DAYS} days' notice — please pick a later departure, or book a private transfer.`;
 // Customer route choice (spec 2026-09-26-customer-route-choice-design.md §4.2): shown when the
 // toll-free road the customer was quoted no longer forks at booking time. Nothing is charged.
 const ROUTE_CHOICE_UNAVAILABLE_MESSAGE =
@@ -903,6 +906,9 @@ function invalidRequest(error: ZodError) {
     // No past dates — a seat can't be booked for a departure that has already passed.
     if (isPastIsoDate(req.date, isoToday())) {
       return c.json({ error: 'date_in_past', message: 'Trip dates cannot be in the past.' }, 400);
+    }
+    if (isTooSoonShared(req.date)) {
+      return c.json({ error: 'lead_time_too_short', message: SHARED_NOTICE_MESSAGE }, 400);
     }
 
     const claim = await claimIdempotencyKey(c.req.header('Idempotency-Key'), req.customer.email);
