@@ -504,6 +504,7 @@ if (shared) {
     <p class="o-desc">One AC vehicle, shared between you. Same driver, same comfort as a private transfer — for a fraction of the fare.</p>
     <div class="shared-price"><span class="amt">$${shared.seat}</span><span class="per">/ seat</span></div>
     <p class="shared-runs"><b>${runs ? `Runs ${dateText}` : 'Scheduled service'}</b> · guaranteed departure · pay now to reserve your seat</p>
+    ${runs === true ? '<div id="sb-booked-slot"></div>' : ''}
     <span id="shared-save-slot" style="display:contents">${sharedSavingHtml(askEngine)}</span>
     <div class="shared-meta">
       ${pickupRows}
@@ -574,6 +575,7 @@ function renderResults(state) {
   // A route with no scheduled van asks too — that is where most board rides live (Kandy → Ella).
   // No date, nothing to match a ride against.
   if (offDay || (!shared && date)) showAlreadyGoing();
+  if (runsOnDate === true && !offDay) showVanBookers();
   // "Switch date" comes back with #shared-option, but the card is drawn after load — so the
   // browser's own jump to the hash finds nothing. Do it once the card exists.
   if (location.hash === '#shared-option' && !renderResults.jumped) {
@@ -622,6 +624,44 @@ function jumpToShared() {
    only ever UPGRADES: a miss, an error, a slow or switched-off API all leave what was there
    exactly as it was. Asked once, re-applied on any re-render. */
 let goingList;
+
+/* Who has already booked this van (owner, 2026-11-13): the board's scheduled-row faces, two
+   letters and a flag per booking from GET /board/scheduled-seats, on a date the seat is for sale.
+   The endpoint pools a van's legs, so a Negombo booker shows on the CMB search too. Upgrade-only,
+   like the board lookup above: nobody booked, an error or no API leaves the card as it was. */
+let vanBookers;
+const BOOKER_AV = ['#0AB9B6', '#63BFD6', '#F9A429', '#8f7ad6', '#4aa66a', '#d66a9c', '#e0745f']; // board.js AV
+// A country NAME as the booking form stores it ("United Kingdom"), or a 2-letter code → flag emoji.
+function bookerFlag(country) {
+  const c = String(country || '').trim();
+  let code = /^[A-Za-z]{2}$/.test(c) ? c.toUpperCase() : '';
+  if (!code) { const hit = (window.PHONE_COUNTRIES || []).find(x => x[1].toLowerCase() === c.toLowerCase()); code = hit ? hit[0] : ''; }
+  return code ? String.fromCodePoint(0x1F1E6 + code.charCodeAt(0) - 65, 0x1F1E6 + code.charCodeAt(1) - 65) : '';
+}
+function showVanBookers() {
+  const apply = () => {
+    const slot = document.getElementById('sb-booked-slot');
+    const V = vanBookers;
+    if (!slot || !V || !V.booked || !(V.people || []).length) return;
+    const faces = V.people.slice(0, 3).map((p, i) => {
+      const flag = bookerFlag(p.country);
+      return `<span class="avatar" style="background:${BOOKER_AV[i % BOOKER_AV.length]}">${escHtml(p.ini)}${flag ? `<span class="flag">${flag}</span>` : ''}</span>`;
+    }).join('') + (V.people.length > 3 ? `<span class="avatar more">+${V.people.length - 3}</span>` : '');
+    slot.innerHTML = `<div class="sb-booked"><span class="sb-faces" aria-hidden="true">${faces}</span>
+      <span><b>${V.booked} traveller${V.booked === 1 ? '' : 's'} booked on this van</b><small>Grab a seat beside them</small></span></div>`;
+  };
+  if (vanBookers !== undefined) { apply(); return; }
+  const api = window.CEYLON_HOP_API;
+  if (!api || typeof fetch !== 'function') return;
+  vanBookers = null;
+  fetch(`${api}/board/scheduled-seats?from=${encodeURIComponent(date)}&days=1`)
+    .then(r => (r.ok ? r.json() : null))
+    .then(d => {
+      vanBookers = ((d && d.departures) || []).find(x => x.corridorId === shared.corridorId && x.date === date && x.time === shared.times[0]) || null;
+      apply();
+    })
+    .catch(() => {});
+}
 // Same rule as sharedSavingHtml(): a percentage that has been shown must not change, so the board
 // card's saving is laid out but not visible until the fares on the page are final.
 let faresFinal = !askEngine;
