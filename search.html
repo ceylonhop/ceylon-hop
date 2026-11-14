@@ -216,6 +216,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   .sb-going{display:flex;flex-direction:column;background:var(--pc-teal);border-radius:14px;padding:11px 14px}
   .sb-going b{font-size:.98rem}
   .sb-going small{font-size:.8rem;color:var(--ink-soft)}
+  /* who has booked the scheduled van — the board's faces (board.html .avatar), on the shared card */
+  .sb-booked{display:flex;align-items:center;gap:12px;background:var(--pc-teal);border-radius:14px;padding:9px 14px;margin:0 0 .75rem}
+  .sb-booked b{display:block;font-size:.95rem}
+  .sb-booked small{display:block;font-size:.8rem;color:var(--ink-soft)}
+  .sb-faces{display:flex;flex:none;padding-right:4px}
+  .sb-faces .avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:.62rem;font-weight:800;color:#fff;position:relative;border:2px solid var(--paper)}
+  .sb-faces .avatar+.avatar{margin-left:-9px}
+  .sb-faces .avatar .flag{position:absolute;z-index:2;right:-5px;bottom:-4px;font-size:.72rem;line-height:1;filter:drop-shadow(0 1px 1px rgba(0,0,0,.2))}
+  .sb-faces .avatar.more{background:#8a8577}
   .sb-other{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;margin-top:12px;font-weight:600;font-size:.88rem;color:var(--accent-deep,#24758A);text-decoration:none}
   .sb-other:hover{text-decoration:underline}
   .sb-other svg{width:15px;height:15px}
@@ -386,9 +395,10 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 <script src="route-estimate.js?v=247a93e794"></script>
 <!-- short display labels for Google-address places — the title, not the data (see search.js) -->
 <script src="ch-shortplace.js?v=1eb1db0211"></script>
+<script src="phone-countries.js?v=0b8dd7a9f6"></script>
 <script src="shared-day.js?v=cbcec2fb62"></script>
 <!-- the "two roads" popup (route choice), shared with plan.html -->
 <script src="route-choice.js?v=5a3a128097"></script>
-<script src="search.js?v=354ca3b4c0"></script>
+<script src="search.js?v=312f442c3c"></script>
 </body>
 </html>
