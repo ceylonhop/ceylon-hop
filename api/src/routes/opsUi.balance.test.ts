@@ -129,7 +129,7 @@ describe('ops shell: balance wiring', () => {
     const sheet = body.slice(body.indexOf('function renderSheet('));
     const card = sheet.slice(sheet.indexOf('<div class="followup bal-card">'), sheet.indexOf('<div class="kv"><span class="k">Amount</span>'));
     expect(card.length).toBeGreaterThan(0); // the card sits between the heading and the Amount row
-    expect(sheet).toMatch(/<h4>Payment<\/h4>\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
+    expect(sheet).toMatch(/fold\('payment','Payment',esc\(paymentWord\(t,cashDue\(t\)\)\),`\s*\$\{t\.paid&&t\.balance>0\?`<div class="followup bal-card">/);
     expect(card).toContain('Balance due · ${money({amount:t.balance,currency:t.currency})}');
     // The second sentence only when there IS a link — a booking with none must not claim the customer holds one.
     expect(card).toContain("Deposit of ${money({amount:t.paidCents,currency:t.currency})} paid.${d.balancePayLink?' The customer pays the rest on the link they already have.':''}");
@@ -138,12 +138,13 @@ describe('ops shell: balance wiring', () => {
     expect(body).not.toContain('<span class="k">Balance due</span>');
     expect(body).not.toContain('Copy pay link');
   });
-  it('the sheet header tag is opt-in: the booking sheet passes it, the ride-board sheet does not', () => {
+  it('the header balance tag is gone: the booking sheet passes the exception line (alert:), the ride-board sheet passes nothing', () => {
     const calls = body.split('sheetHeadHtml(t,{').slice(1).map((c) => c.slice(0, c.indexOf('});')));
     expect(calls).toHaveLength(2);
-    expect(calls.filter((c) => /\btag:/.test(c))).toHaveLength(1);
-    expect(calls.find((c) => /\btag:/.test(c))).toMatch(/tag:t\.paid&&t\.balance>0\?`<span class="pill pill-bal"[^`]*Balance \$\{money\(\{amount:t\.balance/);
-    expect(calls.find((c) => !/\btag:/.test(c))).toContain('Ride board van');
+    expect(calls.filter((c) => /\btag:/.test(c))).toHaveLength(0);
+    expect(calls.filter((c) => /\balert:/.test(c))).toHaveLength(1);
+    expect(calls.find((c) => /\balert:/.test(c))).toContain('data-testid="sheet-exception"');
+    expect(calls.find((c) => !/\balert:/.test(c))).toContain('Ride board van');
   });
   it('the balance link copies exactly the booking’s balancePayLink', () => {
     expect(body).toMatch(/case 'balancelink':\{const link=state\.detailData&&state\.detailData\.balancePayLink;/);
