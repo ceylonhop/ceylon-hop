@@ -18,6 +18,11 @@ describe('pages that inherited the "shared taxi" searches say "shared taxi"', ()
     expect(desc(d)).toMatch(/shared taxi/i);
     expect(d.querySelector('h1').textContent).toMatch(/shared taxi/i);
   });
+  // GSC 2026-11-10: the "share taxi" cluster ranks through the HOMEPAGE (position ~4, CTR ~4%)
+  // while its title said "transfers & shared rides" — the searched words weren't in the snippet.
+  it('index.html — title', () => {
+    expect(doc('index.html').title).toMatch(/shared taxi/i);
+  });
   it('board.html — title and description', () => {
     const d = doc('board.html');
     expect(d.title).toMatch(/shared taxi/i);
