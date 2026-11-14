@@ -2108,6 +2108,7 @@ const nowStamp=()=>{const d=new Date();return `${isoOf(d)} ${_pad(d.getHours())}
    "travels today" and the When line all mean the start, and Expired stays on it too — an unpaid
    trip whose first day has gone is dead money whatever its later legs say. */
 const anchorDate=t=>{
+  if(t.at)return t.at; /* the second row of a back-to-back trip (alsoTomorrow) */
   const dated=(t.legs||[]).map(l=>l.date).filter(Boolean).sort();
   if(!dated.length)return t.date;
   return dated.find(d=>d>=TODAY)||dated[dated.length-1];
@@ -2116,7 +2117,7 @@ const anchorDate=t=>{
    not a new booking. Nothing before the first leg (the row's date says it) or after the last. */
 const legNote=t=>{
   const legs=t.legs||[],a=anchorDate(t),i=legs.findIndex(l=>l.date===a);
-  if(i<1||a<TODAY||!legs.some(l=>l.date&&l.date<TODAY))return '';
+  if(i<1||a<TODAY||!(t.at||legs.some(l=>l.date&&l.date<TODAY)))return '';
   return `Leg ${i+1} of ${legs.length} · ${legs[i].from} → ${legs[i].to}`;
 };
 const isExpired=t=>{ return t.stage==='awaiting_payment'&&!!t.date&&t.date<TODAY; };
@@ -2146,6 +2147,14 @@ const dayGroup=t=>{
   if(d===TODAY)return 'Today';
   if(d===TOMORROW)return 'Tomorrow';
   return 'Upcoming';
+};
+/* A trip with a leg today AND a leg tomorrow is one row under Today, so tomorrow's leg was missing
+   from the list the team plans tomorrow's vehicles from (ops report 2026-11-12, CH-HA3PA). It
+   gets a second row under Tomorrow: the same booking, pinned to that leg's date by `at`. Today
+   and Tomorrow only — further out, the row moves there by itself as the legs run. */
+const alsoTomorrow=t=>{
+  if(dayGroup(t)!=='Today'||!(t.legs||[]).some(l=>l.date===TOMORROW))return null;
+  return {...t,at:TOMORROW};
 };
 const groupNote={Today:()=>fmtFull(TODAY),Tomorrow:()=>fmtFull(TOMORROW),Upcoming:'scheduled ahead','No date yet':'trip date not set — confirm with the customer','Needs closing':'date passed — mark completed or no-show',Expired:'unpaid and the date has passed — no trip to run',Closed:'done · cancelled · refunded'};
 
@@ -2648,7 +2657,7 @@ function ticketRow(t,i){
   const tick=closable
     ?`<label class="tk-tick" data-act="noop" onclick="event.stopPropagation()"><input type="checkbox" data-act="closesel" data-id="${esc(t.id)}"${closeSel.has(t.id)?' checked':''} aria-label="Select ${esc(t.ref)} to close out"></label>`
     :'';
-  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}" role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${esc(stageLabel(t))}">
+  return `<div class="tk ${attn?'attn':''} ${board?'tk-board':''} ${closable?'tk-sel':''}" style="${stVars(t.stage)};animation-delay:${Math.min((i||0)*22,220)}ms" data-act="open" data-id="${esc(t.id)}"${t.at?` data-at="${esc(t.at)}"`:''} role="button" tabindex="0" aria-label="${board?'Ride board van':'Booking'} ${esc(t.ref)} — ${esc(t.cust)}, ${esc(t.route)}, ${esc(stageLabel(t))}">
     ${tick}${lead}
     <div class="tk-main">
       <div class="tk-cust">${esc(t.cust)} <span class="id">${esc(t.ref)}</span>${t.test?'<span class="id tk-test" title="Team test booking — not a customer">test</span>':''}${t.road?`<span class="id tk-road" title="${t.mode==='trip'?esc(t.road):'The customer chose the local road — no expressway'}">local road</span>`:''}</div>
@@ -2678,7 +2687,7 @@ function flipRows(sel,mutate){
      those can keep the row under the pointer "moving" long enough that a click never lands. */
   const currentRows=document.querySelectorAll(sel);
   if(reduce||currentRows.length>100||typeof Element.prototype.animate!=='function'){mutate();return;}
-  const key=el=>el.getAttribute('data-qopen')||el.getAttribute('data-id');
+  const key=el=>el.getAttribute('data-qopen')||(el.getAttribute('data-id')||'')+(el.getAttribute('data-at')||'');
   const first={};
   currentRows.forEach(el=>{const k=key(el);if(k)first[k]=el.getBoundingClientRect();});
   mutate();
@@ -2713,7 +2722,7 @@ function viewTickets(){
   });
   const tkey=t=>(anchorDate(t)||'9999-99-99')+'T'+(t.time||'99:99');
   const buckets={};DAYGROUPS.forEach(g=>buckets[g]=[]);
-  list.forEach(t=>buckets[dayGroup(t)].push(t));
+  list.forEach(t=>{buckets[dayGroup(t)].push(t);const also=alsoTomorrow(t);if(also)buckets.Tomorrow.push(also);});
   let html=`<div class="qhead pagehead"><h1>Bookings</h1>${anSeg([{id:'date',label:'By travel date'},{id:'recent',label:'Recently booked'}],state.view,'bview','sm')}</div>
     <p class="pagesub"><b>${list.length} booking${list.length===1?'':'s'}</b> · ${recent?'newest first, every stage':'paid &amp; upcoming, website &amp; WhatsApp in one timeline'} · <span class="a">${list.filter(t=>isAttn(t)&&!t.test).length} need attention</span></p>
     ${recent?'':`<div class="filterbar">${GROUPS.filter(g=>!g.founder||isFounderUi()).map(g=>{const n=tickets.filter(x=>inGroup(x,g.id)&&!x.test).length;return `<button class="fchip ${state.group===g.id?'on':''}" style="--fc:${g.c}" data-g="${g.id}"><span class="dot"></span>${g.label}<span class="fc">${n}</span></button>`;}).join('')}</div>`}`;
@@ -11405,21 +11414,29 @@ function chauffeurUpsellSummary() {
   return (chauf && chauf.total) ? chauf : null;
 }
 
+// The word the upsell uses for what the customer rides in: it said "car" on van quotes (owner,
+// 2026-11-11, Q-KBRPF). Same Car / Van / Vehicle split as the customer quote and pay pages.
+function upsellVehicleWord(vehicleType) {
+  if (vehicleType === 'car') return 'car';
+  return String(vehicleType || '').indexOf('van') === 0 ? 'van' : 'vehicle';
+}
+
 function appendChauffeurUpsell(lines, emailStyle) {
   var chauf = chauffeurUpsellSummary();
   if (!outputIncludeChauffeurUpsell || !chauf) return;
   var amount = M(chauf.total.cents);
+  var veh = upsellVehicleWord(state.vehicleType);
   if (emailStyle) {
     lines.push(
       '',
-      'If you would also like the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+      'If you would also like the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
       'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
     );
     return;
   }
   lines.push(
     '',
-    'If you\'d prefer the chauffeur-guide option to keep the same car and driver with you throughout the trip, that would be ' + amount + ' total.',
+    'If you\'d prefer the chauffeur-guide option to keep the same ' + veh + ' and driver with you throughout the trip, that would be ' + amount + ' total.',
     'That option includes fuel, tolls, and the driver staying with you between the dated travel days, with meals and accommodation covered.'
   );
 }
@@ -13636,12 +13653,6 @@ function mapPins(pts, zoom) {
   });
 }
 
-function pinLabelsVisible(zoom) {
-  // Below a regional view a long itinerary is a wall of unreadable digits, and the route line is
-  // the story anyway — the expanded map's legend still carries the full numbered order.
-  return typeof zoom !== 'number' || zoom >= 9;
-}
-
 // The async-loaded Maps API exposes classes only via importLibrary; pull the libraries the
 // route map needs once. Resolves null when any import fails (e.g. routes library unavailable).
 var _mapsLibsPromise = null;
@@ -13917,7 +13928,6 @@ async function drawItinRoute(hostEl, runs) {
       _mapMarkers.forEach(function (m) { m.setMap(null); });
       _mapMarkers = [];
       var z = _mapMap.getZoom();
-      var showText = pinLabelsVisible(z);
       mapPins(locs, z).forEach(function (p) {
         var fill = p.isFirst ? '#0a7d6f' : (p.isLast ? '#e8623a' : '#0AB9B6');
         _mapMarkers.push(new libs.Marker({
@@ -13925,10 +13935,9 @@ async function drawItinRoute(hostEl, runs) {
           zIndex: (p.isFirst || p.isLast) ? 6 : 5,
           // White on all three fills; the pin head is small, so bold and tight. A merged pin
           // reads "3–7" or "1·3" — both narrower than a comma list, and they fit the head.
-          label: showText
-            ? { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' }
-            : undefined,
-          // The title is always the full truth, even when the label is hidden.
+          // Shown at every zoom (owner, 2026-11-10) — see ch-map.js drawPins.
+          label: { text: p.text, color: '#fff', fontSize: p.text.length > 2 ? '9px' : '11px', fontWeight: '700' },
+          // The title spells out merged pins in full.
           title: p.stops.length > 1
             ? 'Stops ' + p.stops.join(', ') + ' of ' + pts.length
             : 'Stop ' + p.stops[0] + ' of ' + pts.length,

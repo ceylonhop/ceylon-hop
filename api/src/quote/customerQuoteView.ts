@@ -8,7 +8,7 @@
 //
 // HAND-PICKED on purpose. The stored quote carries marginCents, the locked rate card (cost and
 // markup) and hot-zone annotations; nothing here may echo `result`, `request` or `rateCardJson`.
-import { payPageCopy, includedName } from './payPageCopy';
+import { payPageCopy, includedName, vehicleLabel } from './payPageCopy';
 import { quoteDays, type QuoteDayRow } from './quoteDays';
 
 export interface QuoteViewOption {
@@ -496,7 +496,12 @@ export function customerQuoteView(
     // Matched by the Included list's own name for it (includedName): "Sightseeing up to 3hrs", not the row's label.
     const ownRow = new Set((legPrices?.rows ?? []).map((r) => includedName(r.label)));
     const addOns = lead ? (copy.addOns ?? []).filter((a) => !ownRow.has(a)) : [];
-    const included = { lead: c.included.lead, items: [...c.included.items, ...addOns] };
+    // COPY says "car"; the customer is told the vehicle they were actually quoted (owner,
+    // 2026-11-11 — Q-KBRPF, a 9-seat van, read "Air-conditioned car with driver"). The same
+    // Car / Van / Vehicle word the pay page already uses, so the two pages agree.
+    const veh = vehicleLabel(quote.vehicle).toLowerCase();
+    const base = c.included.items.map((i) => i.replace(/\bcar\b/, veh));
+    const included = { lead: c.included.lead, items: [...base, ...addOns] };
     return {
       service,
       name: c.name,
