@@ -13,9 +13,9 @@ function load() {
   const m = html.match(/\/\* @sheet-job:start[\s\S]*?\/\* @sheet-job:end \*\//);
   if (!m) throw new Error('@sheet-job block not found in ops-ui.html');
   // eslint-disable-next-line no-new-func
-  return new Function(m[0] + '\nreturn { shortPlace, roadOf, legRows, jobFacts };')();
+  return new Function(m[0] + '\nreturn { shortPlace, roadOf, legRows, jobFacts, sheetException, paymentWord, noteParts };')();
 }
-const { shortPlace, roadOf, legRows, jobFacts } = load();
+const { shortPlace, roadOf, legRows, jobFacts, sheetException, paymentWord, noteParts } = load();
 
 // Dates are anchored to now (web-tests/dates.js); `on(n)` is n days from today, so `on(-3)` is
 // a past date and `on(2)` a future one. The ordering between the dates is what each test checks.
@@ -169,5 +169,83 @@ describe('jobFacts', () => {
   it('keeps When on a trip that has not started', () => {
     const b = trip({ stops: ['A', 'B', 'C'], dates: [on(4), on(6)] });
     expect(jobFacts(b, 'car', 'private', legRows(b, TODAY)).when.label).toBe('When');
+  });
+});
+
+describe('sheetException', () => {
+  const NOW = Date.parse(futureIsoDate(0) + 'T12:00:00');
+  const tk = (o) => ({ stage: 'paid', chan: 'website', date: futureIsoDate(10), time: '09:00', amount: 3900, paid: true, balance: 0, cashDue: 0, ...o });
+
+  it('is nothing for a booking paid in full', () => {
+    expect(sheetException(tk({}), false, NOW)).toBeNull();
+  });
+
+  it('keeps an unpaid website checkout amber and factual, even travelling tomorrow', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, date: futureIsoDate(1) }), false, NOW))
+      .toEqual({ kind: 'checkout', tone: 'amber', text: 'Checkout not completed', amount: 3900, openPayment: true });
+  });
+
+  it('turns an unpaid WhatsApp quote red inside 48 hours', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, chan: 'whatsapp', date: futureIsoDate(1) }), false, NOW))
+      .toEqual({ kind: 'unpaid', tone: 'red', text: 'Not paid · travels within 48 hours', amount: 3900, openPayment: true });
+  });
+
+  it('keeps an unpaid WhatsApp quote amber when travel is further out', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, chan: 'whatsapp', date: futureIsoDate(10) }), false, NOW))
+      .toMatchObject({ kind: 'unpaid', tone: 'amber', text: 'Not paid' });
+  });
+
+  it('keeps an undated unpaid quote amber: there is no travel time to measure', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, chan: 'whatsapp', date: null, time: null }), false, NOW))
+      .toMatchObject({ tone: 'amber' });
+  });
+
+  it('flags a balance owed in amber', () => {
+    expect(sheetException(tk({ balance: 16900 }), false, NOW))
+      .toEqual({ kind: 'balance', tone: 'amber', text: 'Balance due', amount: 16900, openPayment: true });
+  });
+
+  it('flags cash to collect in amber', () => {
+    expect(sheetException(tk({ paid: false, cashDue: 5000 }), true, NOW))
+      .toEqual({ kind: 'cash', tone: 'amber', text: 'Cash due at the first pickup', amount: 5000, openPayment: true });
+  });
+
+  it('names a closed booking’s outcome in grey', () => {
+    expect(sheetException(tk({ stage: 'cancelled' }), false, NOW)).toEqual({ kind: 'closed', tone: 'grey', text: 'Cancelled', amount: null, openPayment: false });
+    expect(sheetException(tk({ stage: 'no_show' }), false, NOW).text).toBe('No-show');
+    expect(sheetException(tk({ stage: 'completed' }), false, NOW).text).toBe('Completed');
+    expect(sheetException(tk({ stage: 'refunded' }), false, NOW).text).toBe('Refunded');
+  });
+
+  it('keeps money owed visible on a completed booking', () => {
+    expect(sheetException(tk({ stage: 'completed', paid: false, cashDue: 5000 }), true, NOW))
+      .toEqual({ kind: 'cash', tone: 'amber', text: 'Cash due at the first pickup', amount: 5000, openPayment: true });
+    expect(sheetException(tk({ stage: 'completed', balance: 16900 }), false, NOW))
+      .toEqual({ kind: 'balance', tone: 'amber', text: 'Balance due', amount: 16900, openPayment: true });
+    expect(sheetException(tk({ stage: 'completed' }), false, NOW))
+      .toEqual({ kind: 'closed', tone: 'grey', text: 'Completed', amount: null, openPayment: false });
+  });
+
+  it('says the travel date has passed for an unpaid quote that is already behind us', () => {
+    expect(sheetException(tk({ stage: 'awaiting_payment', paid: false, chan: 'whatsapp', date: futureIsoDate(-2) }), false, NOW))
+      .toEqual({ kind: 'unpaid', tone: 'red', text: 'Not paid · travel date has passed', amount: 3900, openPayment: true });
+  });
+});
+
+describe('paymentWord', () => {
+  it('matches the Payment block’s old Status row', () => {
+    expect(paymentWord({ paid: true, balance: 0 }, false)).toBe('Paid');
+    expect(paymentWord({ paid: true, balance: 100 }, false)).toBe('Deposit paid');
+    expect(paymentWord({ paid: false, balance: 0 }, true)).toBe('Cash due on the day');
+    expect(paymentWord({ paid: false, balance: 0 }, false)).toBe('Awaiting payment');
+  });
+});
+
+describe('noteParts', () => {
+  it('splits the stamp the page writes from the note', () => {
+    expect(noteParts('[2026-11-12 15:40] Van confirmed, driver Sunil')).toEqual({ at: '2026-11-12 15:40', text: 'Van confirmed, driver Sunil' });
+  });
+  it('keeps an unstamped legacy line whole', () => {
+    expect(noteParts('child seat needed')).toEqual({ at: null, text: 'child seat needed' });
   });
 });

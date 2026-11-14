@@ -42,7 +42,9 @@ async function openDrawer(page, body) {
   await page.waitForSelector('#approot:not([hidden]) #nav button', { timeout: 10000 });
   await page.locator('.tk[data-act="open"][data-id="b1"]').click();
   // The detail has landed once the skeleton gives way to the Customer block.
-  await expect(page.locator('#sheet .block h4', { hasText: /^Customer$/ })).toBeVisible();
+  await expect(page.locator('#sheet .block h4', { hasText: /^Contact$/ })).toBeVisible();
+  // An unpaid website booking: the Payment fold opens by itself, so the attempts are in view.
+  await expect(page.locator('#sheet details.fold[data-fold="payment"]')).toHaveAttribute('open', '');
 }
 
 test('the drawer lists the payment attempts in plain English, with the no-answer hint', async ({ page }) => {
@@ -62,6 +64,7 @@ test('the drawer lists the payment attempts in plain English, with the no-answer
   ]));
 
   const block = page.locator('#sheet .block.pay-attempts');
+  await expect(block).toBeVisible();
   await expect(block.locator('h4')).toHaveText('Payment attempts');
   await expect(block.locator('.pa-row .pa-what')).toHaveText([
     'Booking created',

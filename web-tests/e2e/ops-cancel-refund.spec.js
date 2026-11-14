@@ -53,6 +53,7 @@ async function boot(page, { caps, travelDate }) {
   await page.locator('#view .tk[data-act="open"]').first().click();
   await page.waitForSelector('#sheet.show', { timeout: 10000 });
   await page.waitForSelector('#sheet .sheet-b', { timeout: 10000 });
+  await page.locator('#sheet details.fold[data-fold="refund"] > summary').click();
 }
 
 const FOUNDER = ['bookings:read', 'bookings:operate', 'payments:act', 'payments:reverse'];
