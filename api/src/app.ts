@@ -76,6 +76,7 @@ import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
 import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
+import { InMemoryAddOnRepo, type AddOnRepo } from './db/addOnRepo';
 import {
   InMemoryCustomerShortLinkRepo,
   type CustomerShortLinkRepo,
@@ -90,6 +91,8 @@ export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
   refunds?: RefundRepo;
+  /** Add-ons added after booking (spec 2026-11-14): requests, their lines, and the stored legs. */
+  addOns?: AddOnRepo;
   settlements?: PaymentSettlementRepo;
   // PayHere's stored notices, for the ops payment lookup. The Postgres settlement repo writes the
   // same table itself; the in-memory default settlement writes to this one.
@@ -228,6 +231,10 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  // Add-ons after booking (spec 2026-11-14). Wired ahead of its readers: the ops and customer
+  // routes that use it arrive in the next PRs, so nothing reads it yet.
+  const addOns = deps.addOns ?? new InMemoryAddOnRepo(bookings, payments);
+  void addOns;
   // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
   const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =

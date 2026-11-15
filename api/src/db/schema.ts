@@ -173,7 +173,8 @@ export const payments = pgTable(
       sql`${t.provider} in ('payhere', 'fake', 'cash', 'bank_transfer', 'manual_other')`,
     ),
     check('payments_status_valid', sql`${t.status} in ('pending', 'succeeded', 'failed')`),
-    check('payments_purpose_valid', sql`${t.purpose} in ('full', 'deposit', 'balance')`),
+    // 'add_on' (0079): a payment for add-ons added after booking. Never part of the trip's money.
+    check('payments_purpose_valid', sql`${t.purpose} in ('full', 'deposit', 'balance', 'add_on')`),
     check(
       'payments_succeeded_settled_at_required',
       sql`${t.status} <> 'succeeded' or ${t.settledAt} is not null`,
@@ -652,6 +653,63 @@ export const bookingScheduleEvents = pgTable(
   ],
 );
 
+// Add-ons after booking (spec 2026-11-14 §5, migration 0079). A request is what ops sends the
+// customer: one or more lines at prices frozen when it was sent, paid as ONE payment. It never
+// rewrites the booking's own total. "Expired" and "cancelled with the booking" are worked out on
+// read (domain/addOns.ts), so `status` holds only what was done to the request itself.
+export const bookingAddOnRequests = pgTable(
+  'booking_add_on_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    // 1, 2, … per booking, assigned under the booking row lock. Names the order id (REF-A<seq>).
+    seq: integer('seq').notNull(),
+    status: text('status').notNull(),
+    // The sum of its lines, fixed at creation.
+    totalCents: integer('total_cents').notNull(),
+    currency: text('currency').notNull(),
+    // The live card's version when the lines were priced.
+    rateCardVersion: text('rate_card_version').notNull(),
+    // Set when the first checkout creates the payment row.
+    paymentId: uuid('payment_id').references(() => payments.id),
+    createdBy: text('created_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    cancelledBy: text('cancelled_by'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelReason: text('cancel_reason'),
+  },
+  (t) => [
+    unique('booking_add_on_requests_booking_seq_unique').on(t.bookingId, t.seq),
+    unique('booking_add_on_requests_payment_id_unique').on(t.paymentId),
+    check('booking_add_on_requests_status_valid', sql`${t.status} in ('open', 'paid', 'cancelled')`),
+    check('booking_add_on_requests_total_positive', sql`${t.totalCents} > 0`),
+  ],
+);
+
+// A request's lines: one rate-card add-on on one stored leg.
+export const bookingAddOns = pgTable(
+  'booking_add_ons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    requestId: uuid('request_id').notNull().references(() => bookingAddOnRequests.id),
+    // Denormalised for the per-booking read.
+    bookingId: uuid('booking_id').notNull().references(() => bookings.id),
+    // NOT NULL in version 1 (private transfers only). A shared seat would need it nullable.
+    legId: uuid('leg_id').notNull().references(() => bookingLegs.id),
+    // An EXTRA_CODES value at creation. Deliberately not CHECKed: the rate card owns the list.
+    code: text('code').notNull(),
+    // The customer-facing label and the price, both frozen at creation.
+    label: text('label').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+  },
+  (t) => [
+    check('booking_add_ons_amount_positive', sql`${t.amountCents} > 0`),
+    index('booking_add_ons_booking_idx').on(t.bookingId),
+    index('booking_add_ons_request_idx').on(t.requestId),
+  ],
+);
+
 // M23.5 — immutable customer communication intent and outcome ledger. The payload itself is
 // never stored: only a SHA-256 fingerprint, provider identifiers and allowlisted facts.
 export const customerCommunications = pgTable(
@@ -678,7 +736,7 @@ export const customerCommunications = pgTable(
   },
   (t) => [
     check('customer_communications_channel_valid', sql`${t.channel} = 'email'`),
-    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2', 'pay_on_day_confirmed')`),
+    check('customer_communications_kind_valid', sql`${t.kind} in ('confirmation', 'details_needed', 'booking_confirmed', 'cancellation', 'refund', 'no_show_notice', 'trip_reminder', 'review_request', 'payment_recovery', 'payment_failed', 'deposit_received', 'balance_received', 'schedule_set', 'details_reminder_1', 'details_reminder_2', 'pay_on_day_confirmed', 'add_on_request', 'add_on_paid')`),
     check('customer_communications_source_valid', sql`${t.source} in ('website', 'ops', 'payment_webhook', 'quote_conversion', 'refund', 'scheduled_job', 'migration', 'system')`),
     check('customer_communications_actor_type_valid', sql`${t.actorType} in ('customer', 'staff', 'provider', 'scheduler', 'migration', 'system')`),
     check('customer_communications_payload_sha256_valid', sql`${t.payloadSha256} ~ '^[0-9a-f]{64}$'`),

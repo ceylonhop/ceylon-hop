@@ -21,10 +21,10 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
+import { bookingAddOnRequests, bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
 import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
 import { usageCounterRepoContract } from './usageCounterRepo.test';
-import { eq } from 'drizzle-orm';
+import { eq, sql as dsql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
 import { distanceCacheRepoContract } from './distanceCacheRepo.test';
@@ -33,6 +33,8 @@ import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
 import { amountDueNowContract } from './bookingAmountDueNow.test';
 import { paymentArrangementContract } from './bookingPaymentArrangement.test';
+import { PostgresAddOnRepo } from './postgresAddOnRepo';
+import { addOnRepoContract } from './addOnRepo.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
@@ -1779,4 +1781,39 @@ describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)'
 describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
   const migrated = migratedDbPerDescribe();
   paymentArrangementContract('contract', async () => new PostgresBookingRepo(await migrated()));
+});
+
+describe.skipIf(!TEST_URL)('PostgresAddOnRepo (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  addOnRepoContract('contract', async () => {
+    const db = await migrated();
+    return {
+      repo: new PostgresAddOnRepo(db),
+      bookings: new PostgresBookingRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      // Settlement marks a request paid (a later step); until then the test writes what it will.
+      markPaid: async (requestId, at) => {
+        await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
+      },
+    };
+  });
+
+  // Postgres only: nothing in the codebase removes a leg, so the in-memory repo cannot hold one.
+  it('listLegs leaves out a removed leg', async () => {
+    const db = await migrated();
+    const b = await new PostgresBookingRepo(db).create({
+      mode: 'trip',
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-12-10', '2026-12-12'], pax: 2,
+        vehicleType: 'car', serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 24000, amountDueNow: 24000, currency: 'USD',
+    });
+    const repo = new PostgresAddOnRepo(db);
+    const [first, second] = await repo.listLegs(b.id);
+    expect([first.to, second.to]).toEqual(['Ella', 'Galle']);
+    await db.execute(dsql`update booking_legs set removed_at = now() where id = ${first.id}`);
+    expect(await repo.listLegs(b.id)).toEqual([second]);
+  });
 });
