@@ -5,6 +5,7 @@ import type { SharedInput } from '../domain/shared';
 import type { SharedSeatCount } from '../domain/scheduledSeats';
 import type { ScheduleReason } from '../domain/bookingSchedule';
 import { assertTransition, type BookingStatus } from '../domain/status';
+import { tripPayments } from '../domain/balance';
 import type { PaymentArrangement } from '../domain/paymentMethod';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
@@ -483,8 +484,9 @@ export class InMemoryBookingRepo implements BookingRepo {
   }
 
   private async useOf(b: Booking, now: Date): Promise<PromoUseState> {
+    // Trip payments only, as the Postgres query does: an add-on payment is not the use of a code.
     const hasSucceededPayment = this.payments
-      ? (await this.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded')
+      ? tripPayments(await this.payments.findByBookingId(b.id)).some((p) => p.status === 'succeeded')
       : false;
     return promoUseState(
       { status: b.status, promoHoldUntil: b.promoHoldUntil ? new Date(b.promoHoldUntil) : null, hasSucceededPayment },
@@ -658,8 +660,9 @@ export class InMemoryBookingRepo implements BookingRepo {
     if (!current) throw new BookingNotFoundError(id);
     if (!(PAYER_EDITABLE_STATUSES as readonly string[]).includes(current.status)) return this.present(current);
     // The choice is frozen the moment any payment on the booking has succeeded (see the interface).
+    // Trip payments only, as the Postgres guard does: an add-on payment is not the trip's money.
     const settled = this.payments
-      ? (await this.payments.findByBookingId(id)).some((p) => p.status === 'succeeded')
+      ? tripPayments(await this.payments.findByBookingId(id)).some((p) => p.status === 'succeeded')
       : false;
     const updated: Booking = {
       ...current,

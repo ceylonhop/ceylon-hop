@@ -6,6 +6,7 @@ import type {
   CustomerCommunicationReconciliationFinding,
 } from '../db/customerCommunicationRepo';
 import type { PaymentRepo } from '../db/paymentRepo';
+import { tripPayments } from '../domain/balance';
 
 export const TRACKING_HISTORY_AVAILABLE_SINCE = {
   bookingTransitions: '2026-09-26T00:00:00.000Z',
@@ -236,8 +237,9 @@ export async function reconcileBookingTracking(
     const bookings = await deps.bookings.list();
     const payments = await deps.payments.findByBookingIds(bookings.map((booking) => booking.id));
     const payOnTheDay = new Set(bookings.filter((booking) => booking.paymentArrangement).map((booking) => booking.id));
-    // A balance never moves the booking — the deposit did (spec 2026-10-07).
-    const withEvidence = await Promise.all(payments.filter((payment) => payment.status === 'succeeded' && payment.purpose !== 'balance').map(async (payment) => ({
+    // A balance never moves the booking — the deposit did (spec 2026-10-07). Neither does an
+    // add-on payment (spec 2026-11-14): it is not the trip's money, so no paid transition follows it.
+    const withEvidence = await Promise.all(tripPayments(payments).filter((payment) => payment.status === 'succeeded' && payment.purpose !== 'balance').map(async (payment) => ({
       payment,
       evidence: await deps.payments.provenanceFor(payment.id),
     })));

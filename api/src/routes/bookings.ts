@@ -33,7 +33,7 @@ import { websitePricingSnapshot, sharedPricingSnapshot, SCHEDULE_EDITABLE_STATUS
 import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
-import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
+import { balanceDueCents, isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
@@ -231,7 +231,8 @@ export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBo
     amountDueNowCents: dueNow,
     balanceDueCents: balanceDueCents(b, payments),
     ...(b.paymentArrangement ? { paymentArrangement: b.paymentArrangement } : {}),
-    paidCents: paidCents(payments),
+    // What was paid towards the trip. An add-on paid after booking is its own money.
+    paidCents: paidCents(tripPayments(payments)),
     balancePayable: isBalanceOpen(b, payments),
     needsPricing: !!b.needsPricing,
     ...(b.addOns?.length ? { addOns: b.addOns } : {}),

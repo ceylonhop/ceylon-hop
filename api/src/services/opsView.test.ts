@@ -258,3 +258,20 @@ describe('opsView — payment arrangement', () => {
     expect(toOpsRow(base, { paid: true })).toMatchObject({ paymentArrangement: null, cashDueCents: 0 });
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own payment row. The
+// row's paid / balance / cash-due figures are the trip's, so that row is left out of all three.
+describe('opsView — add-on money is not trip money', () => {
+  const addOn = { status: 'succeeded', amount: 1000, purpose: 'add_on' };
+
+  it('a deposit booking with a paid add-on shows the deposit as paid and the full balance', () => {
+    const dep = { ...base, total: 21900, amountDueNow: 5000 } as Booking;
+    const deposit = { status: 'succeeded', amount: 5000, purpose: 'deposit' };
+    expect(toOpsRow(dep, { paid: true, payments: [deposit, addOn] })).toMatchObject({ paidCents: 5000, balanceCents: 16900 });
+  });
+
+  it('a pay-on-the-day booking with a paid add-on still has the whole total as cash due', () => {
+    const onTheDay: Booking = { ...base, status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+    expect(toOpsRow(onTheDay, { paid: false, payments: [addOn] })).toMatchObject({ paidCents: 0, balanceCents: 12100, cashDueCents: 12100 });
+  });
+});

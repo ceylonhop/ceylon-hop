@@ -17,7 +17,7 @@ import { soldView, soldViewFor } from '../quote/quoteAlternative';
 import { shortenRouteLabel } from '../quote/shortPlace';
 import { browserItem } from '../services/analytics/ga4Hits';
 import { depositFor } from '../quote/extrasDeposit';
-import { balanceDueCents, isBalanceOpen, paidCents } from '../domain/balance';
+import { balanceDueCents, isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
 import { isoToday } from '../domain/dateRules';
 import { CustomerInput, BillingInput } from '../domain/singleTransfer';
 
@@ -218,7 +218,10 @@ export function quotePayRoutes(deps: {
   ): Promise<{ state: PayState; paidVia?: { bookingId: string } }> {
     if (!quote) return { state: 'unavailable' };
     if (quote.convertedBookingId) {
-      const rows = await deps.payments.findByBookingId(quote.convertedBookingId);
+      // Trip payments only, here and in every state below: this page states what the trip cost
+      // and what is still owed for it. An add-on paid after booking is its own money and is shown
+      // on the manage page.
+      const rows = tripPayments(await deps.payments.findByBookingId(quote.convertedBookingId));
       const booking = await deps.bookings.get(quote.convertedBookingId);
       if (booking && isBalanceOpen(booking, rows)) {
         return { state: 'balance', paidVia: { bookingId: booking.id } };
@@ -301,7 +304,7 @@ export function quotePayRoutes(deps: {
     if (state === 'balance' && quote && paidVia) {
       const booking = await deps.bookings.get(paidVia.bookingId);
       const sold = soldViewFor(quote, booking);
-      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const rows = tripPayments(await deps.payments.findByBookingId(paidVia.bookingId));
       const deposit = rows.find((p) => p.purpose === 'deposit' && p.status === 'succeeded');
       const settledAt = deposit ? (await deps.payments.provenanceFor(deposit.id))?.settledAt ?? null : null;
       const balance = booking ? balanceDueCents(booking, rows) : 0;
@@ -329,7 +332,7 @@ export function quotePayRoutes(deps: {
 
     if (state === 'pay_on_day' && quote && paidVia) {
       const booking = await deps.bookings.get(paidVia.bookingId);
-      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const rows = tripPayments(await deps.payments.findByBookingId(paidVia.bookingId));
       const sold = soldViewFor(quote, booking);
       return c.json({
         state,
@@ -345,7 +348,7 @@ export function quotePayRoutes(deps: {
 
     if (state === 'payment_due' && quote && paidVia) {
       const booking = await deps.bookings.get(paidVia.bookingId);
-      const rows = await deps.payments.findByBookingId(paidVia.bookingId);
+      const rows = tripPayments(await deps.payments.findByBookingId(paidVia.bookingId));
       const sold = soldViewFor(quote, booking);
       return c.json({
         state,
@@ -362,7 +365,7 @@ export function quotePayRoutes(deps: {
 
     if (state === 'paid' && quote) {
       const booking = paidVia ? await deps.bookings.get(paidVia.bookingId) : null;
-      const paidRows = paidVia ? await deps.payments.findByBookingId(paidVia.bookingId) : [];
+      const paidRows = paidVia ? tripPayments(await deps.payments.findByBookingId(paidVia.bookingId)) : [];
       const payment = paidRows.find((p) => p.status === 'succeeded');
       // A deposit + balance pair is ONE sale: the keepsake states what the whole trip cost, not
       // the first payment's $50. Any other history keeps today's first-succeeded reading.

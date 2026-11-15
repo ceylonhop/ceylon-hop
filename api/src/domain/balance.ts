@@ -10,11 +10,21 @@ type BookingLike = { status: string; total: number; amountDueNow?: number | null
 export const SECURED_STATUSES: ReadonlySet<string> = new Set(['paid', 'confirmed', 'in_progress']);
 const CLOSED_STATUSES: ReadonlySet<string> = new Set(['cancelled', 'refunded', 'no_show', 'completed']);
 
+// Add-ons after booking (spec 2026-11-14 §6.1) are paid on their own rows, purpose 'add_on'. That
+// money is real, but it is not the trip's: it must not lower a balance, count as the trip being
+// paid, or look like a second capture. Every rule about the TRIP's money reads its rows through
+// this. Readers that ask "is there any money on this booking?" (refund ceilings, revenue, the
+// superseded-link and duplicate checks) deliberately do not.
+export function tripPayments<T extends { purpose: string }>(rows: T[]): T[] {
+  return rows.filter((p) => p.purpose !== 'add_on');
+}
+
 export function paidCents(payments: PaymentLike[]): number {
   return payments.filter((p) => p.status === 'succeeded').reduce((sum, p) => sum + p.amount, 0);
 }
 
-export function balanceDueCents(booking: BookingLike, payments: PaymentLike[]): number {
+export function balanceDueCents(booking: BookingLike, allPayments: PaymentLike[]): number {
+  const payments = tripPayments(allPayments);
   // Pay on the day (0077): the trip goes ahead before any money, so owed = total − ledger, even once
   // the trip is over (the team may hold the cash before ops records it). Cancelled/no-show owe nothing.
   if (booking.paymentArrangement && booking.status !== 'cancelled' && booking.status !== 'refunded' && booking.status !== 'no_show') {

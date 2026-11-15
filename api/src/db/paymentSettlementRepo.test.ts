@@ -363,6 +363,43 @@ describe('InMemoryPaymentSettlementRepo', () => {
     expect(outcome.kind).toBe('double_capture');
   });
 
+  // Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own row (purpose
+  // 'add_on'). It is not a capture of the trip, so it must not make the trip's next payment look
+  // like a second capture.
+  const paidAddOn = async (f: Awaited<ReturnType<typeof fixture>>) => {
+    const addOn = await f.payments.create({
+      bookingId: f.booking.id, provider: 'payhere', orderId: `${f.booking.reference}-A1`, amount: 500,
+      currency: 'USD', idempotencyKey: `checkout:${f.booking.id}:addon:r1`, purpose: 'add_on',
+    });
+    await f.payments.markSucceeded(addOn.id);
+    return addOn;
+  };
+
+  it('settles a balance after its deposit when an add-on was paid in between', async () => {
+    const { f, event } = await depositThenBalance();
+    await paidAddOn(f);
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(event);
+    expect(outcome.kind).toBe('balance_settled');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect((await f.bookings.get(f.booking.id))?.status).toBe('paid');
+  });
+
+  it('settles the first trip payment on a payment_pending booking that already has a paid add-on', async () => {
+    const f = await fixture();
+    await paidAddOn(f);
+    const outcome = await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(f.event);
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.status).toBe('paid');
+    expect(outcome.booking.amountDueNow).toBe(4_000);
+  });
+
+  it('still flags a second trip capture when an add-on was also paid', async () => {
+    const { f } = await depositThenBalance();
+    await paidAddOn(f);
+    // The customer also paid the abandoned full attempt (the fixture's 4_000 row).
+    expect((await new InMemoryPaymentSettlementRepo(f).acceptVerifiedEvent(f.event)).kind).toBe('double_capture');
+  });
+
   it('repairs a legacy succeeded-payment/pending-booking split on the next verified success', async () => {
     const f = await fixture();
     await f.payments.markSucceeded(f.payment.id);
