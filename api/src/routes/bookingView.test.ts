@@ -182,3 +182,21 @@ describe('projectBooking names a shared leg\'s pick-up and drop-off points', () 
     }
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own payment row. The
+// card's "paid" and "balance" are the trip's, so that row is left out of both.
+describe('projectBooking keeps add-on money out of the trip figures', () => {
+  const deposit = { status: 'succeeded', amount: 5000, purpose: 'deposit' };
+  const addOn = { status: 'succeeded', amount: 1000, purpose: 'add_on' };
+  const rows = (...p: Array<{ status: string; amount: number; purpose: string }>) => p as unknown as Parameters<typeof projectBooking>[1];
+
+  it('a deposit booking with a paid add-on shows the deposit as paid and the full balance', () => {
+    const b = { ...singleBooking, status: 'confirmed', amountDueNow: 5000 } as unknown as Booking;
+    expect(projectBooking(b, rows(deposit, addOn))).toMatchObject({ paidCents: 5000, balanceDueCents: 17900, balancePayable: true });
+  });
+
+  it('a pay-on-the-day booking with a paid add-on has paid nothing towards the trip', () => {
+    const b = { ...singleBooking, status: 'confirmed', paymentArrangement: 'on_the_day' } as unknown as Booking;
+    expect(projectBooking(b, rows(addOn))).toMatchObject({ paidCents: 0, balanceDueCents: 22900, balancePayable: false });
+  });
+});

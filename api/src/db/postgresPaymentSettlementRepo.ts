@@ -14,6 +14,7 @@ import {
 } from './paymentSettlementRepo';
 import type { Payment, PaymentPurpose, PaymentStatus } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
+import { tripPayments } from '../domain/balance';
 
 type PaymentRow = typeof payments.$inferSelect;
 
@@ -125,8 +126,10 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
       // after the booking row is locked FOR UPDATE above, so a concurrent settle on a sibling
       // payment can't slip in between this read and our write — and before our own update, so
       // this row is not its own evidence. `ne` is the whole point: an ordinary retry re-settling
-      // the same payment must stay a plain settlement.
-      const otherCaptures = await tx
+      // the same payment must stay a plain settlement. Trip payments only: an add-on paid earlier
+      // is not a capture of the trip, so it must not turn the balance, or the first trip payment,
+      // into a double capture.
+      const otherCaptures = tripPayments(await tx
         .select({ id: payments.id, purpose: payments.purpose, amount: payments.amount })
         .from(payments)
         .where(
@@ -135,7 +138,7 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
             eq(payments.status, 'succeeded'),
             ne(payments.id, payment.id),
           ),
-        );
+        ));
 
       const [succeeded] = await tx
         .update(payments)
