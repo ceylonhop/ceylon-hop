@@ -298,6 +298,27 @@ describe('reconcileBookingTracking', () => {
         .toEqual([expect.objectContaining({ paymentId: gateway.id })]);
     });
 
+    // Add-ons after booking (spec 2026-11-14 §6.1): an add-on payment never moves the booking, so
+    // there is no paid transition to look for behind it.
+    it('does not report a succeeded add-on payment on a confirmed booking', async () => {
+      const { bookings, booking } = await confirmedOnTheDay();
+      const payments = new InMemoryPaymentRepo();
+      const addOn = await payments.create({
+        bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-A1`,
+        amount: 1_000, currency: booking.currency, idempotencyKey: `checkout:${booking.id}:addon:r1`, purpose: 'add_on',
+      });
+      await payments.markSucceeded(addOn.id);
+      payments.provenanceFor = async () => ({
+        createdAt: NOW, settledAt: NOW, settlementSource: 'webhook', settledBy: null, gatewayPaymentId: 'PH-A1',
+      });
+
+      const result = await reconcileBookingTracking(NOW, {
+        bookings, payments, communications: new InMemoryCustomerCommunicationRepo(),
+      });
+
+      expect(result.findings).not.toContainEqual(expect.objectContaining({ kind: 'captured_payment_missing_transition' }));
+    });
+
     it('still reports a manual payment on an ordinary booking with no paid transition', async () => {
       const bookings = new InMemoryBookingRepo({ transitionTrackingEnabled: true, now: () => NOW });
       const booking = await bookings.create(draft);

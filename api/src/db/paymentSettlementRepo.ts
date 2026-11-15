@@ -5,7 +5,7 @@ import { InMemoryPaymentEventRepo } from './paymentEventRepo';
 import type { Payment } from './paymentRepo';
 import { InMemoryPaymentRepo } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
-import { SECURED_STATUSES } from '../domain/balance';
+import { SECURED_STATUSES, tripPayments } from '../domain/balance';
 
 export type PaymentSettlementOutcome =
   | { kind: 'settled'; payment: Payment; booking: Booking }
@@ -192,8 +192,10 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
-    // Read before our own write, so this asks only about OTHER payments on the booking.
-    const otherCaptures = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
+    // Read before our own write, so this asks only about OTHER payments on the booking. Trip
+    // payments only: an add-on paid earlier is not a capture of the trip, so it must not turn the
+    // balance, or the first trip payment, into a double capture.
+    const otherCaptures = tripPayments(await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
       (p) => p.id !== paymentRecord.id && p.status === 'succeeded',
     );
 

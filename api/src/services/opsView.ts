@@ -4,7 +4,7 @@ import type { RideStatus } from '../domain/rideStatus';
 import { sharedRouteLabel } from '../db/departureRepo';
 import { isTeamEmail } from './testBookings';
 import { roadRow } from './notifications';
-import { balanceDueCents, paidCents } from '../domain/balance';
+import { balanceDueCents, paidCents, tripPayments } from '../domain/balance';
 import type { PaymentArrangement } from '../domain/paymentMethod';
 import { deriveLegsForMode } from '../domain/bookingLegs';
 
@@ -143,7 +143,8 @@ export function toOpsRow(
     id: b.id, reference: b.reference, mode: b.mode, channel: b.channel,
     bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
-    paidCents: paidCents(ledger), balanceCents: balance,
+    // Paid towards the trip: an add-on paid after booking is its own money.
+    paidCents: paidCents(tripPayments(ledger)), balanceCents: balance,
     paymentArrangement: b.paymentArrangement ?? null,
     cashDueCents: b.paymentArrangement ? balance : 0,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),

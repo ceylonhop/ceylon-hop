@@ -339,12 +339,14 @@ export class PostgresBookingRepo implements BookingRepo {
   ) {}
 
   // SQL twin of promoUseState() (domain/promoCode.ts); bookingPromo.test.ts holds both to the same cases.
+  // Trip payments only, the SQL form of tripPayments() (domain/balance.ts): an add-on paid after
+  // booking is not the trip's money, so it neither uses a promo code nor freezes amount_due_now.
   private succeededPayment() {
     return exists(
       this.db
         .select({ one: sql`1` })
         .from(payments)
-        .where(and(eq(payments.bookingId, bookings.id), eq(payments.status, 'succeeded'))),
+        .where(and(eq(payments.bookingId, bookings.id), eq(payments.status, 'succeeded'), ne(payments.purpose, 'add_on'))),
     );
   }
 

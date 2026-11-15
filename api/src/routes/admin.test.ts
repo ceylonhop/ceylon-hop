@@ -1011,6 +1011,41 @@ describe('POST /admin/bookings/:id/mark-paid', () => {
     },
   );
 
+  // Add-ons after booking (spec 2026-11-14 §6.1): an add-on paid online is not the trip's money, so
+  // it must not read as "this booking is already paid" when ops record the trip's cash.
+  it('records the trip cash on a pay-on-the-day booking that has a paid add-on', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    const addOn = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: `${b.reference}-A1`, amount: 1000,
+      currency: b.currency, idempotencyKey: `checkout:${b.id}:addon:r1`, purpose: 'add_on',
+    });
+    await payments.markSucceeded(addOn.id);
+
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(200);
+    const after = (await bookings.get(b.id))!;
+    expect(after.status).toBe('confirmed');
+    const rows = (await payments.findByBookingId(b.id)).filter((p) => p.status === 'succeeded');
+    expect(rows.map((p) => [p.purpose, p.provider, p.amount])).toEqual([['add_on', 'payhere', 1000], ['full', 'cash', b.total]]);
+    expect(balanceDueCents(after, rows)).toBe(0);
+  });
+
+  it('still refuses when a trip payment already settled, add-on or not', async () => {
+    const { app, bookings, payments } = makeCashApp();
+    const b = await onTheDay(app, bookings);
+    for (const [suffix, purpose, amount] of [['A1', 'add_on', 1000], ['G', 'full', b.total]] as const) {
+      const p = await payments.create({
+        bookingId: b.id, provider: 'payhere', orderId: `${b.reference}-${suffix}`, amount,
+        currency: b.currency, idempotencyKey: `pay:${b.id}:${suffix}`, purpose,
+      });
+      await payments.markSucceeded(p.id);
+    }
+    const res = await markPaid(app, b.id, { method: 'cash' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('already_paid');
+  });
+
   it('a double-click on a pay-on-the-day booking records the cash once', async () => {
     const { app, bookings, payments } = makeCashApp();
     const b = await onTheDay(app, bookings);

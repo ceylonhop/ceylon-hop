@@ -38,7 +38,7 @@ import { MANUAL_PAYMENT_METHODS } from '../domain/paymentMethod';
 import { releaseWonQuote, claimWonQuote } from '../services/quoteOutcome';
 import { RefundError, type RefundConfirmation, type RefundRepo } from '../db/refundRepo';
 import type { PaymentAdapter } from '../adapters/payments';
-import { paidCents } from '../domain/balance';
+import { paidCents, tripPayments } from '../domain/balance';
 import { mayReverse, isLateRequest } from '../domain/reversalWindow';
 import { can } from '../lib/opsAuth';
 import type { StatusAudit } from '../db/bookingRepo';
@@ -568,7 +568,9 @@ export function adminRoutes(deps: {
       // on a booking ops decided to settle by hand — refuse rather than record a second one. Two
       // succeeded rows on one booking double the captured total refundRepo sums, which would make
       // refund_exceeds_captured wave through a refund of twice the money actually taken.
-      const settled = (await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
+      // Trip payments only: an add-on the customer paid online is not the trip's money, so it must
+      // not block recording the cash for a pay-on-the-day trip.
+      const settled = tripPayments(await deps.payments.findByBookingId(booking.id)).some((p) => p.status === 'succeeded');
       if (settled) return c.json({ error: 'already_paid', status: booking.status }, 409);
 
       const payment = await deps.payments.create({

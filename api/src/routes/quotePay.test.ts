@@ -1844,3 +1844,61 @@ describe('the payment_due state', () => {
     expect((await bookings.list()).length).toBe(1);
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §6.1, §7.7): an add-on is paid on its own payment row.
+// The pay page states the trip's money and nothing else, so that row changes no state and no figure.
+describe('GET /quotes/pay/view — a paid add-on is not trip money', () => {
+  const payAddOn = async (payments: InMemoryPaymentRepo, bookingId: string, reference: string) => {
+    const addOn = await payments.create({ bookingId, provider: 'payhere', orderId: `${reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `checkout:${bookingId}:addon:r1`, purpose: 'add_on' });
+    await payments.markSucceeded(addOn.id);
+  };
+
+  it('a deposit booking with a paid add-on still reads balance, with the full balance', async () => {
+    const { app, t, payments, bookingId, booking } = await depositPaid();
+    await payAddOn(payments, bookingId, booking.reference);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('balance');
+    expect(body.balance).toMatchObject({ totalUsd: '$219.00', paidUsd: '$50.00', paidOn: '2026-10-05', balanceCents: 16900, balanceUsd: '$169.00' });
+    expect((await payBalance(app, t)).status).toBe(200);
+  });
+
+  it('the keepsake of a deposit + balance booking states what the trip cost, not trip plus add-on', async () => {
+    const { app, t, payments, bookingId, booking } = await depositPaid({ balanceStatus: 'succeeded' });
+    await payAddOn(payments, bookingId, booking.reference);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('paid');
+    expect(body.paid.amountUsd).toBe('$219.00');
+  });
+
+  it('an unpaid pay-on-the-day booking with a paid add-on still reads pay_on_day, owing the whole trip', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t)).json();
+    await bookings.setPaymentArrangement(bookingId, 'on_the_day');
+    await bookings.setStatus(bookingId, 'confirmed');
+    await quotes.patch(q.id, { status: 'won' });
+    await payAddOn(payments, bookingId, (await bookings.get(bookingId))!.reference);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('pay_on_day');
+    expect(body.payOnDay.amountUsd).toBe('$219.00');
+  });
+
+  it('a booked, unpaid booking with a paid add-on still reads payment_due, owing the whole trip', async () => {
+    const quotes = new InMemoryQuoteRepo();
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ quotes, bookings, payments });
+    const q = await readyQuote(quotes);
+    const t = signQuotePayToken(q.id, q.revision, SECRET);
+    const { bookingId } = await (await start(app, t)).json();
+    await quotes.patch(q.id, { convertedBookingId: bookingId, status: 'won' });
+    await payAddOn(payments, bookingId, (await bookings.get(bookingId))!.reference);
+    const body = await (await view(app, t)).json();
+    expect(body.state).toBe('payment_due');
+    expect(body.paymentDue.amountUsd).toBe('$219.00');
+  });
+});
