@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { runScheduledNotifications, sweepStaleSharedHolds, STALE_HOLD_BY, STALE_HOLD_REASON } from './scheduler';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { InMemoryRefundRepo } from '../db/refundRepo';
+import { InMemoryAddOnRepo } from '../db/addOnRepo';
 import { InMemoryDepartureRepo } from '../db/departureRepo';
 import { InMemoryNotificationLogRepo } from '../db/notificationLogRepo';
 import { FakeEmailAdapter } from '../adapters/email';
@@ -122,6 +125,31 @@ describe('runScheduledNotifications — pre-trip reminder', () => {
     expect(r1.reminders).toBe(0); // send threw → swallowed, NOT counted, NOT marked
     const r2 = await runScheduledNotifications(NOW, { bookings, log, email: flaky, baseUrl: 'https://ceylonhop.com', linkSecret: 'test-link-secret' });
     expect(r2.reminders).toBe(1); // retried on the next tick and succeeded
+  });
+
+  // Spec 2026-11-14 §7.6: the reminder is not told about add-ons bought after booking. It prints
+  // booking.addOns, and a paid one is on that list by the time the booking is read.
+  it('names an add-on paid for after booking in the reminder’s Extras row', async () => {
+    const d = deps();
+    const payments = new InMemoryPaymentRepo();
+    const addOns = new InMemoryAddOnRepo(d.bookings, payments);
+    d.bookings.attachAddOns({ addOns, payments, refunds: new InMemoryRefundRepo(d.bookings, payments) });
+    const b = await paidTrip(d.bookings, ['2026-07-02', '2026-07-03']);
+    const [leg] = await addOns.listLegs(b.id);
+    const line = (code: string, label: string) => ({ legId: leg.id, code, label, amountCents: 1000 });
+    const request = (lines: Array<ReturnType<typeof line>>) => addOns.createRequest({
+      bookingId: b.id, lines, currency: 'USD', rateCardVersion: 'card-v1', createdBy: 'ops@ceylonhop.com', now: NOW, fullyRefundedPaymentIds: [],
+    });
+    const paid = await request([line('waiting', 'Waiting fee — Colombo Airport → Kandy')]);
+    addOns.markPaidForSettlement(paid.id, NOW);
+    // Sent but not paid: it is not part of the trip yet, so the reminder must not promise it.
+    await request([line('sightseeing', 'Sightseeing stops (up to 3h) — Colombo Airport → Kandy')]);
+
+    expect((await runScheduledNotifications(NOW, d)).reminders).toBe(1);
+    const m = d.email.sent.find((sent) => /coming up/i.test(sent.subject))!;
+    expect(m.text).toContain('Extras: Waiting fee — Colombo Airport → Kandy\n');
+    expect(m.html).toContain('Waiting fee — Colombo Airport → Kandy');
+    for (const body of [m.text, m.html]) expect(body).not.toContain('Sightseeing stops');
   });
 });
 

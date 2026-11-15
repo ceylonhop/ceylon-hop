@@ -35,6 +35,7 @@ import { amountDueNowContract } from './bookingAmountDueNow.test';
 import { paymentArrangementContract } from './bookingPaymentArrangement.test';
 import { PostgresAddOnRepo } from './postgresAddOnRepo';
 import { addOnRepoContract } from './addOnRepo.test';
+import { bookingAddOnsListContract } from './bookingAddOnsList.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
@@ -1886,5 +1887,22 @@ describe.skipIf(!TEST_URL)('PostgresAddOnRepo (integration)', () => {
     expect([first.to, second.to]).toEqual(['Ella', 'Galle']);
     await db.execute(dsql`update booking_legs set removed_at = now() where id = ${first.id}`);
     expect(await repo.listLegs(b.id)).toEqual([second]);
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres booking add-ons list (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  bookingAddOnsListContract('contract', async () => {
+    const db = await migrated();
+    return {
+      bookings: new PostgresBookingRepo(db),
+      addOns: new PostgresAddOnRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      refunds: new PostgresRefundRepo(db),
+      // Settlement marks a request paid (the payment step); until then the test writes what it will.
+      markPaid: async (requestId, at) => {
+        await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
+      },
+    };
   });
 });
