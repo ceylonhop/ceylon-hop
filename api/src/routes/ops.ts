@@ -14,6 +14,9 @@ import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
+import type { AddOnRepo } from '../db/addOnRepo';
+import type { ZonesRepo } from '../db/zonesRepo';
+import type { RateRevisionRepo } from '../db/rateRevisionRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, opsCsrf, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -36,6 +39,8 @@ import { loadBookingInterests } from '../experiences/bookingInterests';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
+import { addOnRequestViews, cancelAddOnRequest, createAddOnRequest, type AddOnDeps } from '../services/addOns';
+import { liveRateCard } from '../quote/liveCard';
 
 export interface OpsDeps {
   bookings: BookingRepo;
@@ -43,6 +48,11 @@ export interface OpsDeps {
   rideOps: RideOpsRepo;
   opsUserProfiles: OpsUserProfileRepo;
   auth: OpsAuthConfig;
+  // Add-ons after booking (spec 2026-11-14 §7.1): the requests themselves, and the two repos the
+  // live rate card is read from, so an add-on is priced exactly as a new booking's would be.
+  addOns: AddOnRepo;
+  zones: ZonesRepo;
+  rateRevisions: RateRevisionRepo;
   googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
   // Optional so tests that only exercise fulfilment can omit them; when present, the
   // fulfilment milestones fire the matching customer email (once, via notificationLog).
@@ -80,6 +90,16 @@ export interface OpsDeps {
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
 const CHECKOUT_EVENTS_MAX = 50;
+
+// Add-on errors as HTTP statuses, the way the schedule route maps its own: 404 when the thing
+// named is not there, 400 when the body asks for something that does not exist, 409 otherwise
+// (the booking, the leg or the request is not in a state that allows it).
+const ADD_ON_ERROR_STATUS: Partial<Record<string, 400 | 404>> = {
+  leg_not_found: 404,
+  request_not_found: 404,
+  unknown_add_on: 400,
+};
+const addOnErrorStatus = (code: string): 400 | 404 | 409 => ADD_ON_ERROR_STATUS[code] ?? 409;
 
 // Every status a booking can hold once it has left the website's cart. 'draft' and
 // 'awaiting_details' stay out on purpose — those are half-finished web checkouts, not ops work.
@@ -159,6 +179,11 @@ export function opsRoutes(deps: OpsDeps) {
   const csrf = opsCsrf;
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
+  const addOnDeps: AddOnDeps = {
+    addOns: deps.addOns, payments: deps.payments, refunds: deps.refunds, email: deps.email,
+    rateCard: () => liveRateCard(deps.zones, deps.rateRevisions),
+    baseUrl: deps.baseUrl, linkSecret: deps.linkSecret,
+  };
 
   // Remember who someone is, by the name Google already knows them by. Deliberately swallows
   // its errors: this is a nicety on the login path, and the prod migration lands by hand AFTER
@@ -329,9 +354,12 @@ export function opsRoutes(deps: OpsDeps) {
     // they were a ~94 ms round-trip each from Render to the database (2026-11-05), most of the
     // wait for this sheet to open. The best-effort ones catch their own failure, so losing one
     // costs its block only.
-    const [ops, payments, srcQuote, snapshot, checkoutEventRows, interests, scheduleEvents, notifications] = await Promise.all([
+    // Started here because two of the reads below need the payments: the sheet itself and the
+    // add-on requests. One read, shared.
+    const paymentsRead = deps.payments.findByBookingId(b.id);
+    const [ops, payments, srcQuote, snapshot, checkoutEventRows, interests, scheduleEvents, notifications, addOnViews] = await Promise.all([
       deps.rideOps.getOrCreate(b.id),
-      deps.payments.findByBookingId(b.id),
+      paymentsRead,
       // Partial pay link coverage, the vehicle tier and the refund lines all start from here.
       deps.quotes ? deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null,
       // A website booking's own pricing snapshot, used below when it did not come from a quote.
@@ -355,6 +383,9 @@ export function opsRoutes(deps: OpsDeps) {
       deps.bookings.listScheduleEvents(b.id),
       // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
       deps.notificationLog ? deps.notificationLog.listByBookingId(b.id).catch(() => []) : [],
+      // Add-ons after booking (spec 2026-11-14 §7.1): the stored legs, each request, and the
+      // catalogue when one can be added.
+      addOnRequestViews(addOnDeps, b, { payments: paymentsRead }),
     ]);
     // The customer's own pay-by-card link, for ops to paste into WhatsApp. A booking converted
     // from a quote gets no email of its own, so before this there was no way to hand a customer
@@ -416,7 +447,7 @@ export function opsRoutes(deps: OpsDeps) {
       confirmationChannel: i.confirmationChannel,
     }));
     const reminders = notifications.filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2');
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders, ...addOnViews });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
@@ -517,6 +548,43 @@ export function opsRoutes(deps: OpsDeps) {
       }
     }
     return c.json({ date, time, emailed, driverNotified });
+  });
+
+  // Send the customer an add-on request (spec 2026-11-14 §7.1): rate-card add-ons on legs of a
+  // private booking that is already booked, to be paid online. The body names legs and codes
+  // only; the service prices and labels every line from the live card.
+  r.post('/bookings/:id/add-ons', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({
+      lines: z.array(z.object({ legId: z.string().uuid(), code: z.string().min(1).max(40) })).min(1).max(24),
+      notifyCustomer: z.boolean(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const result = await createAddOnRequest(addOnDeps, booking, {
+      ...body.data, createdBy: c.get('identity').email, now: new Date(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, addOnErrorStatus(result.error));
+    return c.json({ request: result.request, emailed: result.emailed });
+  });
+
+  // Cancel a request the customer has not paid. A reason is required, as for every ops change.
+  r.post('/bookings/:id/add-ons/:requestId/cancel', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({ reason: z.string().trim().min(1).max(300) }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const requestId = c.req.param('requestId');
+    if (!z.string().uuid().safeParse(requestId).success) return c.json({ error: 'request_not_found' }, 404);
+    const result = await cancelAddOnRequest(addOnDeps, booking, requestId, {
+      by: c.get('identity').email, reason: body.data.reason, now: new Date(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, addOnErrorStatus(result.error));
+    return c.json({ request: result.request });
   });
 
   return r;

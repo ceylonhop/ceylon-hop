@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { Hono } from 'hono';
 import { createApp } from '../app';
-import { InMemoryBookingRepo } from '../db/bookingRepo';
+import { InMemoryBookingRepo, type Booking, type BookingRepo } from '../db/bookingRepo';
 import { InMemoryPaymentRepo } from '../db/paymentRepo';
+import { InMemoryRefundRepo } from '../db/refundRepo';
+import { InMemoryAddOnRepo } from '../db/addOnRepo';
+import { InMemoryRateRevisionRepo } from '../db/rateRevisionRepo';
+import { InMemoryZonesRepo } from '../db/zonesRepo';
 import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 import { InMemoryQuoteRepo } from '../db/quoteRepo';
 import { InMemoryBookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
@@ -31,10 +35,19 @@ function fixture() {
   const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
   const experienceInterests = new InMemoryExperienceInterestRepo();
   const notificationLog = new InMemoryNotificationLogRepo();
+  const refunds = new InMemoryRefundRepo(bookings, payments);
+  const rateRevisions = new InMemoryRateRevisionRepo();
+  const zones = new InMemoryZonesRepo();
+  // In memory the add-on repo derives a booking's legs from bookings.get(), which looks the
+  // booking's quote up again; Postgres reads booking_legs and touches neither. It is handed the
+  // seeded booking directly, so these tests watch only the reads the route itself makes.
+  const seeded = new Map<string, Booking>();
+  const addOns = new InMemoryAddOnRepo({ get: async (id: string) => seeded.get(id) ?? null } as unknown as BookingRepo, payments);
   const app = createApp({
-    bookings, payments, rideOps, quotes, checkoutEvents, experienceInterests, notificationLog, auth, adminApiKey: 'adminkey',
+    bookings, payments, rideOps, quotes, checkoutEvents, experienceInterests, notificationLog, refunds, addOns, rateRevisions, zones,
+    auth, adminApiKey: 'adminkey',
   });
-  return { app, bookings, payments, rideOps, quotes, checkoutEvents, experienceInterests, notificationLog };
+  return { app, bookings, payments, rideOps, quotes, checkoutEvents, experienceInterests, notificationLog, refunds, addOns, rateRevisions, zones, seeded };
 }
 
 type Fixture = ReturnType<typeof fixture>;
@@ -46,7 +59,7 @@ async function seed(f: Fixture) {
       customer: { firstName: 'Maya', lastName: 'Silva', email: 'm@x.com', whatsapp: '+34600', country: 'ES' } },
   } as never);
   await f.bookings.setStatus(b.id, 'payment_pending');
-  await f.bookings.setStatus(b.id, 'paid');
+  f.seeded.set(b.id, await f.bookings.setStatus(b.id, 'paid'));
   return b;
 }
 
@@ -68,6 +81,10 @@ const reads = (f: Fixture) => [
   [f.rideOps, 'getOrCreate'], [f.payments, 'findByBookingId'], [f.quotes, 'findByConvertedBookingId'],
   [f.bookings, 'websitePricingSnapshot'], [f.checkoutEvents, 'listByBookingId'], [f.experienceInterests, 'listForBooking'],
   [f.bookings, 'listScheduleEvents'], [f.notificationLog, 'listByBookingId'],
+  // Add-ons after booking: the stored legs, the requests, the refunds on their payments, and the
+  // live rate card (its revision and its zones) for the catalogue. The payments read is shared.
+  [f.addOns, 'listLegs'], [f.addOns, 'listByBooking'], [f.refunds, 'list'],
+  [f.rateRevisions, 'latest'], [f.zones, 'activeZones'],
 ] as unknown as Array<[Record<string, (...args: unknown[]) => Promise<unknown>>, string]>;
 
 describe('GET /admin/ops/bookings/:id', () => {
