@@ -231,10 +231,9 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
-  // Add-ons after booking (spec 2026-11-14). Wired ahead of its readers: the ops and customer
-  // routes that use it arrive in the next PRs, so nothing reads it yet.
+  // Add-ons after booking (spec 2026-11-14). Read and written by the ops routes; the customer
+  // routes that use it arrive in the next PRs.
   const addOns = deps.addOns ?? new InMemoryAddOnRepo(bookings, payments);
-  void addOns;
   // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
   const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =
@@ -674,7 +673,7 @@ export function createApp(deps: AppDeps = {}) {
   }));
   app.route('/admin/ops', opsRoutes({
     bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists, quotes, paymentEvents, refunds,
+    email, notificationLog, rideLists, quotes, paymentEvents, refunds, addOns, zones, rateRevisions,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,

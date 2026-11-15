@@ -23,7 +23,10 @@ export type CustomerCommunicationKind =
   | 'balance_received'
   | 'schedule_set'
   | 'details_reminder_1'
-  | 'details_reminder_2';
+  | 'details_reminder_2'
+  // Add-ons after booking (spec 2026-11-14 §7.5): the pay link ops sends, and its receipt.
+  | 'add_on_request'
+  | 'add_on_paid';
 
 export interface CustomerCommunicationTracking {
   bookingId: string;

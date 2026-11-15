@@ -23,6 +23,8 @@ export const TRACKED_BOOKING_EMAIL_KINDS = [
   'schedule_set',
   'details_reminder_1',
   'details_reminder_2',
+  'add_on_request',
+  'add_on_paid',
 ] as const;
 
 export type TrackedBookingEmailKind = (typeof TRACKED_BOOKING_EMAIL_KINDS)[number];
