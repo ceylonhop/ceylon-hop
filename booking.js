@@ -2856,6 +2856,7 @@ function render(){
   const gateNote=document.getElementById('details-error');
   if(gateNote){
     if(payGateReason){
+      errorHome();
       gateNote.textContent=payGateReason; gateNote.hidden=false; gateNote.dataset.gate='1';
       if(unpriced) renderUnpricedActions(gateNote);
       else if(payGateReason===ESTIMATED_COPY) renderUnpricedActions(gateNote, { waOnly:true });
@@ -2975,8 +2976,35 @@ function backToSearchUrl(){
 }
 
 // ---- payment ----
+// A refused Pay press named the box in #details-error and focused the box, but the line sat
+// between the billing form and the Payment heading — off-screen on a phone and on desktop
+// alike (UX review 2026-11-15). So the one line travels: errorToBox() puts it right under the
+// box that failed and brings both on screen; errorHome() returns it for everything else that
+// writes to it (the pay-gate reason in render(), the gates at the top of the press).
+// Home is remembered on the first move, not in a top-level const: render() calls errorHome()
+// and can run before this line of the file has.
+var derrHome=null;
+function errorHome(){
+  const d=document.getElementById('details-error');
+  if(!d || !derrHome || !d.classList.contains('at-box')) return;
+  d.classList.remove('at-box'); derrHome.parent.insertBefore(d, derrHome.next);
+}
+function errorToBox(el){
+  const d=document.getElementById('details-error'); if(!d) return;
+  let wrap=el.closest('.field') || el.closest('.addon'); if(!wrap) return;
+  // Two boxes side by side share a row: the line goes under the row, not between the boxes.
+  const row=wrap.parentElement;
+  if(row && row.classList.contains('grid2') && getComputedStyle(row).gridTemplateColumns.trim().split(/\s+/).length>1) wrap=row;
+  if(!derrHome) derrHome={ parent:d.parentNode, next:d.nextSibling };
+  d.classList.add('at-box'); wrap.after(d);
+  // Instant, and measured after the move: site.css scrolls smoothly, and a smooth scroll aimed
+  // before the layout settles lands on the wrong spot. A quarter down keeps the box and its
+  // reason clear of the header above and the keyboard below.
+  window.scrollTo({ top: window.scrollY + wrap.getBoundingClientRect().top - Math.round(window.innerHeight*0.25), behavior:'instant' });
+}
 document.getElementById('pay-btn').addEventListener('click',async ()=>{
   const derr=document.getElementById('details-error');
+  errorHome();
   // Pay gate (Task 3) — the button is already disabled for these in render(); this is the
   // belt-and-braces check for the moment a stale enabled button gets clicked anyway (e.g. a
   // click queued a frame before a re-render lands).
@@ -3006,7 +3034,7 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
   // A refused press used to leave no trace, so form trouble looked like people leaving (analytics
   // review 2026-11-10). Report WHICH box — its id, never what was typed.
   const reportInvalid=(el)=>{ if(typeof window.chTrack==='function') window.chTrack('checkout_field_invalid',{ field: String(el.id||'').replace(/^f-/,'') }); };
-  const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} el.focus(); reportInvalid(el); };
+  const fail=(el,msg)=>{ el.classList.add('inp-bad'); if(derr){derr.textContent=msg; derr.hidden=false;} errorToBox(el); el.focus({preventScroll:true}); reportInvalid(el); };
   const emailRe=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if(!first.value.trim()) return fail(first,'Please add the lead traveller’s first name.');
   if(!last.value.trim()) return fail(last,'Please add the lead traveller’s last name.');
@@ -3036,7 +3064,8 @@ document.getElementById('pay-btn').addEventListener('click',async ()=>{
     // Was a red border and nothing else: colour-only, no message, and it never reset.
     agree.closest('.addon').style.borderColor='var(--tomato)';
     if(derr){ derr.textContent='Please tick the box to agree to the Terms & cancellation policy.'; derr.hidden=false; }
-    agree.focus();
+    errorToBox(agree);
+    agree.focus({preventScroll:true});
     reportInvalid(agree);
     return;
   }
