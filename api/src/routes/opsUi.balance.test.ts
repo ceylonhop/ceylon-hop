@@ -136,7 +136,11 @@ describe('ops shell: balance wiring', () => {
     expect(card).toMatch(/\$\{d\.balancePayLink\?`[^`]*<button class="btn btn-go" data-act="balancelink"[^`]*Balance payment link<\/button>/);
     // What the card replaced is gone, so nothing is said twice.
     expect(body).not.toContain('<span class="k">Balance due</span>');
-    expect(body).not.toContain('Copy pay link');
+    // Read in the Payment fold only: since add-ons after booking (2026-11-15) "Copy pay link" is
+    // the label of an add-on request's own button, in the itinerary block.
+    const payFold = sheet.slice(sheet.indexOf("fold('payment'"), sheet.indexOf("fold('pickup'"));
+    expect(payFold.length).toBeGreaterThan(0);
+    expect(payFold).not.toContain('Copy pay link');
   });
   it('the header balance tag is gone: the booking sheet passes the exception line (alert:), the ride-board sheet passes nothing', () => {
     const calls = body.split('sheetHeadHtml(t,{').slice(1).map((c) => c.slice(0, c.indexOf('});')));
