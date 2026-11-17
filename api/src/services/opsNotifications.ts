@@ -442,6 +442,78 @@ export function teamBalancePaidEmail(
 }
 
 // ---------------------------------------------------------------------------
+// Add-on paid (spec 2026-11-14 §6.4, §7.5). The customer paid for an add-on ops added after
+// booking. An add-on is something the DRIVER has to do, and no driver is recorded anywhere, so
+// this email is how it reaches one: a person tells them. The subject is fixed and must never
+// start "Paid:", the prefix the owner's Gmail filter forwards trip money on.
+// ---------------------------------------------------------------------------
+
+export interface TeamAddOnPaidArgs {
+  orderId: string; // PayHere's order id for this payment: REF-A<n>
+  totalCents: number;
+  currency: string;
+  requestedBy: string; // the staff email that sent the request
+  // Each line names its add-on and its leg ("Waiting fee — Kandy → Ella"); travelDate is that leg's.
+  lines: Array<{ label: string; amountCents: number; travelDate: string | null }>;
+}
+
+export function teamAddOnPaidEmail(b: Booking, a: TeamAddOnPaidArgs, opsBaseUrl: string): { subject: string; html: string; text: string } {
+  const f = bookingFacts(b);
+  const c = b.input.customer;
+  const link = bookingDeepLink(b.id, opsBaseUrl);
+  const fallback = 'Find it under Bookings in the ops dashboard.';
+  const headline = `${c.firstName} ${c.lastName} paid for ${a.lines.length > 1 ? `${a.lines.length} add-ons` : 'an add-on'}`;
+  const tell = 'Tell the driver for this leg. Nothing was sent to the driver automatically.';
+  // A single transfer's pickup time is the leg's. A trip's legs carry no time of their own here,
+  // so none is claimed for them.
+  const pickup = b.mode === 'single' && b.input.time ? b.input.time : null;
+  const whenOf = (travelDate: string | null) =>
+    travelDate ? `${shortDay(travelDate)}${pickup ? ` · pickup ${pickup}` : ''}` : '';
+  const several = a.lines.length > 1;
+  const lineRows: SectionRow[] = a.lines.map((l) => {
+    const when = whenOf(l.travelDate);
+    return [money(l.amountCents, a.currency), l.label, when ? `<div style="font-size:12px;font-weight:400;color:${MUTED};margin-top:2px">${esc(when)}</div>` : ''];
+  });
+  if (several) lineRows.push(['Total', money(a.totalCents, a.currency)]);
+  const detailRows: SectionRow[] = [
+    ['Booking', `${b.reference} · ${f.people}`],
+    ['Customer', `${c.firstName} ${c.lastName}`],
+    ['WhatsApp', c.whatsapp, whatsappButton(c.whatsapp)],
+    ['Payment', `${a.orderId} · ${money(a.totalCents, a.currency)}`],
+    ['Requested by', a.requestedBy],
+  ];
+  const html = [
+    `<p style="margin:0 0 10px">${statusPill('ADD-ON PAID', '#1f6b3a', '#e3f1e6')}</p>`,
+    `<p style="font-size:21px;font-weight:700;margin:0 0 2px">${esc(headline)}</p>`,
+    `<p style="font-size:15px;font-weight:600;color:${TEAL_DEEP};margin:0 0 16px">${esc(b.reference)}</p>`,
+    `<p style="margin:0 0 18px;padding:12px 14px;background:#F0EEE5;border-radius:6px;font-size:14px">${esc(tell)}</p>`,
+    section(several ? 'Add-ons' : 'Add-on', lineRows, ['Total']),
+    section('Details', detailRows),
+    ctaBlock('Open the booking', link, fallback),
+  ].join('');
+  const wa = whatsappLink(c.whatsapp);
+  const text = [
+    `ADD-ON PAID · ${b.reference}`,
+    headline,
+    '',
+    tell,
+    '',
+    (several ? 'Add-ons' : 'Add-on').toUpperCase(),
+    ...a.lines.map((l) => {
+      const when = whenOf(l.travelDate);
+      return `${l.label}${when ? ` · ${when}` : ''}: ${money(l.amountCents, a.currency)}`;
+    }),
+    ...(several ? [`Total: ${money(a.totalCents, a.currency)}`] : []),
+    '',
+    'DETAILS',
+    ...detailRows.map(([k, v]) => `${(k + ':').padEnd(14)}${k === 'WhatsApp' && wa ? `${v} · ${wa}` : v}`),
+    '',
+    link ? `Open the booking: ${link}` : fallback,
+  ].join('\n');
+  return { subject: `Add-on paid, tell the driver: ${b.reference}`, ...opsEmailShell(html, text) };
+}
+
+// ---------------------------------------------------------------------------
 // Rescue (owner, 2026-09-26). PayHere declined the customer's card. A pay-link customer is
 // already talking to the owner on WhatsApp; a website customer was on their own. This hands the
 // team a one-tap WhatsApp message, pre-filled with the customer's own booking link (the same

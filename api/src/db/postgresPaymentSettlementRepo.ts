@@ -5,6 +5,7 @@ import type { Db } from './client';
 import { paymentEvents, payments, bookings } from './schema';
 import { applyBookingStatusTransition } from './postgresBookingRepo';
 import {
+  addOnCaptureKind,
   captureKindWithOthers,
   PaymentSettlementError,
   recordedCaptureId,
@@ -15,6 +16,7 @@ import {
 import type { Payment, PaymentPurpose, PaymentStatus } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
 import { tripPayments } from '../domain/balance';
+import { lockAddOnRequestForSettlement, markAddOnRequestPaidForSettlement, PostgresAddOnRepo } from './postgresAddOnRepo';
 
 type PaymentRow = typeof payments.$inferSelect;
 
@@ -122,6 +124,34 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
         };
       }
 
+      // An add-on payment (spec 2026-11-14 §6.3) is its own money: it stops here, before any rule
+      // about the trip's payments or the booking's status. Lock order: the payment and the booking
+      // are already locked above, the request row is locked last. Ops' cancel locks only the
+      // request row, so the two cannot deadlock, and whichever takes that lock second sees what
+      // the first committed: a cancelled request (the money is orphaned) or a paid one (the cancel
+      // is refused).
+      if (payment.purpose === 'add_on') {
+        const [succeeded] = await tx
+          .update(payments)
+          .set({
+            status: 'succeeded',
+            gatewayPaymentId: event.providerTxnId,
+            settledAt: event.receivedAt,
+            settlementSource: 'webhook',
+            updatedAt: event.receivedAt,
+          })
+          .where(eq(payments.id, payment.id))
+          .returning();
+        await this.failureHook?.('after_payment_update');
+        const request = await lockAddOnRequestForSettlement(tx, payment.id);
+        const kind = addOnCaptureKind(request, booking);
+        if (kind === 'add_on_settled') {
+          await markAddOnRequestPaidForSettlement(tx, request!.id, event.receivedAt);
+          await this.failureHook?.('after_add_on_update');
+        }
+        return { kind, payment: succeeded, bookingId: booking.id, addOnRequestId: request?.id ?? null };
+      }
+
       // Has some OTHER payment on this booking already captured? Read inside the transaction,
       // after the booking row is locked FOR UPDATE above, so a concurrent settle on a sibling
       // payment can't slip in between this read and our write — and before our own update, so
@@ -195,6 +225,16 @@ export class PostgresPaymentSettlementRepo implements PaymentSettlementRepo {
     const booking = await this.bookingRepo.get(committed.bookingId);
     if (!booking) throw new Error(`booking_not_found_after_settlement: ${committed.bookingId}`);
     const firstCaptureTxnId = 'firstCaptureTxnId' in committed ? committed.firstCaptureTxnId : undefined;
+    if (committed.kind === 'add_on_settled' || committed.kind === 'add_on_orphaned') {
+      // Read after the commit, with its lines: what the receipt and the team email are built from.
+      const requestId = 'addOnRequestId' in committed ? committed.addOnRequestId : null;
+      const request = requestId ? await new PostgresAddOnRepo(this.db).get(requestId) : null;
+      if (committed.kind === 'add_on_settled') {
+        if (!request) throw new Error(`add_on_request_not_found_after_settlement: ${requestId}`);
+        return { kind: 'add_on_settled', payment: toPayment(committed.payment), booking, request };
+      }
+      return { kind: 'add_on_orphaned', payment: toPayment(committed.payment), booking, request };
+    }
     return {
       kind: committed.kind,
       payment: toPayment(committed.payment),

@@ -53,6 +53,9 @@ export interface AddOnRequestView {
   inFlightUntil: string | null;
   /** Confirmed refunds on this request's own payment. */
   refundedCents: number;
+  /** The request's own payment row, once a checkout has made one: how the ops pane tells which
+   *  payment belongs to which request. Null until the customer first starts paying. */
+  paymentId: string | null;
   createdBy: string;
   createdAt: string;
   paidAt: string | null;
@@ -134,6 +137,7 @@ function viewOf(req: AddOnRequest, ctx: ViewContext): AddOnRequestView {
     payLink: payable && ctx.manageLink ? `${ctx.manageLink}#add-ons` : null,
     inFlightUntil: heldUntil && heldUntil > ctx.now ? heldUntil.toISOString() : null,
     refundedCents,
+    paymentId: req.paymentId,
     createdBy: req.createdBy,
     createdAt: req.createdAt.toISOString(),
     paidAt: iso(req.paidAt),

@@ -220,3 +220,68 @@ describe('Ga4Reporter never breaks a money path', () => {
     await expect(reporter.rememberVisitor('b-1', { clientId: '1.2' })).resolves.toBeUndefined();
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §7.8). "Is this a second payment?" is a question about
+// the TRIP's payments: an add-on paid earlier must not turn the trip's first payment into a
+// 'balance' with a made-up transaction id. An add-on itself reports as an add-on.
+describe('Ga4Reporter and add-on payments', () => {
+  // The reporter reads siblings from the payment repo, so the rows are created there.
+  const stored = async (payments: InMemoryPaymentRepo, purpose: 'full' | 'deposit' | 'balance' | 'add_on', orderId: string, amount: number, succeeded = true) => {
+    const p = await payments.create({ bookingId: 'b-1', provider: 'payhere', orderId, amount, currency: 'USD', idempotencyKey: `k:${orderId}`, purpose });
+    return succeeded ? payments.markSucceeded(p.id) : p;
+  };
+
+  it('a trip payment that settles after a paid add-on is still the first payment, under the bare reference', async () => {
+    const { reporter, adapter, payments } = setup();
+    await stored(payments, 'add_on', 'CH-TEST1-A1', 1000);
+    const trip = await stored(payments, 'full', 'CH-TEST1', 22900);
+    await reporter.reportPayment(booking(), trip, NOW);
+    expect(adapter!.sent).toHaveLength(1);
+    expect(adapter!.sent[0].events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', payment_type: 'full', value: 229 });
+  });
+
+  it('a deposit beside a paid add-on is still a deposit, and its balance is still the balance', async () => {
+    const { reporter, adapter, payments } = setup();
+    await stored(payments, 'add_on', 'CH-TEST1-A1', 1000);
+    const deposit = await stored(payments, 'deposit', 'CH-TEST1-D', 5000);
+    await reporter.reportPayment(booking(), deposit, NOW);
+    const balance = await stored(payments, 'balance', 'CH-TEST1-B', 17900);
+    await reporter.reportPayment(booking(), balance, NOW);
+    expect(adapter!.sent.map((h) => h.events[0].params.payment_type)).toEqual(['deposit', 'balance']);
+    expect(txnOf(adapter!.sent[0])).toBe('CH-TEST1');
+    expect(txnOf(adapter!.sent[1])).toBe(`CH-TEST1-${balance.id.slice(0, 6)}`);
+  });
+
+  it('an add-on payment on a paid booking reports as add_on under its own order id', async () => {
+    const { reporter, adapter, payments } = setup();
+    await stored(payments, 'full', 'CH-TEST1', 22900);
+    const addOn = await stored(payments, 'add_on', 'CH-TEST1-A1', 1000);
+    await reporter.reportPayment(booking(), addOn, NOW);
+    expect(adapter!.sent).toHaveLength(1);
+    expect(adapter!.sent[0].events[0].params).toMatchObject({ transaction_id: 'CH-TEST1-A1', payment_type: 'add_on', value: 10 });
+  });
+
+  it('an add-on on a pay-on-the-day booking with no trip payment is still an add-on, and two add-ons are two transactions', async () => {
+    const { reporter, adapter, payments } = setup();
+    const first = await stored(payments, 'add_on', 'CH-TEST1-A1', 1000);
+    await reporter.reportPayment(booking(), first, NOW);
+    const second = await stored(payments, 'add_on', 'CH-TEST1-A2', 1900);
+    await reporter.reportPayment(booking(), second, NOW);
+    expect(adapter!.sent.map((h) => [txnOf(h), h.events[0].params.payment_type])).toEqual([
+      ['CH-TEST1-A1', 'add_on'], ['CH-TEST1-A2', 'add_on'],
+    ]);
+  });
+
+  // The reporter's own rule: a refund carries the transaction_id its purchase was SENT with.
+  it('a refund of an add-on payment lands on the add-on purchase, under the same order id', async () => {
+    const { reporter, adapter, payments } = setup();
+    await stored(payments, 'full', 'CH-TEST1', 22900);
+    const addOn = await stored(payments, 'add_on', 'CH-TEST1-A1', 1000);
+    await reporter.reportPayment(booking(), addOn, NOW);
+    await reporter.reportRefund(booking(), refundOf(addOn.id));
+    const [purchase, refund] = adapter!.sent;
+    expect(txnOf(purchase)).toBe('CH-TEST1-A1');
+    expect(refund.events[0].name).toBe('refund_server');
+    expect(txnOf(refund)).toBe('CH-TEST1-A1');
+  });
+});

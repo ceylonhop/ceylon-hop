@@ -179,3 +179,34 @@ describe('boardHit', () => {
     for (const c of codes) expect([c, boardFor(c).consent.ad_user_data]).toEqual([c, 'DENIED']);
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §7.8): an add-on is its own payment on a booking that is
+// already paid. It is not a balance, and its GA4 transaction is PayHere's own order id.
+describe('purchaseHit for an add-on payment', () => {
+  const addOn = { ...payment, id: 'pay-addon001', orderId: 'CH-TEST1-A1', amount: 1000, idempotencyKey: 'checkout:b-1:addon:r1', purpose: 'add_on' } as Payment;
+
+  it('is payment_type add_on with the add-on order id as the transaction', () => {
+    const hit = purchaseHit({ booking, payment: addOn, settledAt: SETTLED, identity, returning: false, secondPayment: true, eventName: 'purchase_server' });
+    expect(hit.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1-A1', value: 10, currency: 'USD', payment_type: 'add_on', booking_total: 229 });
+    expect(hit.events[0].params.items).toMatchObject([{ price: 10, quantity: 1 }]);
+  });
+
+  it('says so whether or not another payment was seen beside it', () => {
+    const alone = purchaseHit({ booking, payment: addOn, settledAt: SETTLED, identity: null, returning: false, secondPayment: false, eventName: 'purchase' });
+    expect(alone.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1-A1', payment_type: 'add_on' });
+  });
+
+  it('stays within the Measurement Protocol limits and carries no personal data', () => {
+    const hit = purchaseHit({ booking, payment: addOn, settledAt: SETTLED, identity, returning: false, secondPayment: true, eventName: 'purchase' });
+    expect(Object.keys(hit.events[0].params).length).toBeLessThanOrEqual(MAX_PARAMS);
+    const raw = JSON.stringify(hit);
+    for (const pii of ['emma@example.test', 'Emma', '7700900000', 'b-1']) expect(raw).not.toContain(pii);
+  });
+
+  it('a trip payment is unchanged by the purpose field being present', () => {
+    const full = purchaseHit({ booking, payment: { ...payment, purpose: 'full' }, settledAt: SETTLED, identity, returning: false, secondPayment: false, eventName: 'purchase' });
+    expect(full.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1', payment_type: 'full' });
+    const balance = purchaseHit({ booking, payment: { ...payment, amount: 5000, purpose: 'balance' }, settledAt: SETTLED, identity, returning: false, secondPayment: true, eventName: 'purchase' });
+    expect(balance.events[0].params).toMatchObject({ transaction_id: 'CH-TEST1-pay-ab', payment_type: 'balance' });
+  });
+});

@@ -265,21 +265,40 @@ export function verifyQuoteViewToken(
 // reads as the return leg, the cautious answer. Both grant one thing: one booking's status.
 export type PayReturnLeg = 'return' | 'cancel';
 
-export function signPayReturnToken(bookingId: string, secret: string, leg: PayReturnLeg = 'return'): string {
+// An add-on request's return (spec 2026-11-14 §6.2). An add-on is paid on a booking that is
+// already paid, so "has any payment on this booking succeeded?" cannot answer its return: the
+// token says WHICH request it is for, by the request's number on the booking (the `A1` of the
+// order id `REF-A1`). Its own two purposes, `aret` / `acan`, are short on purpose: with the `a`
+// field they make the token exactly as long as a trip one for requests 1 to 9 (one character
+// longer from request 10), so the URL handed to PayHere does not grow past the proven length.
+export function signPayReturnToken(
+  bookingId: string,
+  secret: string,
+  leg: PayReturnLeg = 'return',
+  addOnSeq?: number,
+): string {
+  if (addOnSeq !== undefined) {
+    return signedBody({ v: 1, purpose: leg === 'cancel' ? 'acan' : 'aret', b: bookingId, a: addOnSeq }, secret);
+  }
   return signedBody({ v: 1, purpose: leg === 'cancel' ? 'pay-cancel' : 'pay-return', b: bookingId }, secret);
 }
 
 export function verifyPayReturnLeg(
   token: string | undefined,
   secret: string,
-): { bookingId: string; leg: PayReturnLeg } | null {
+): { bookingId: string; leg: PayReturnLeg; addOnSeq?: number } | null {
   const parsed = verifiedPayload(token, secret) as
-    | { v?: unknown; purpose?: unknown; b?: unknown }
+    | { v?: unknown; purpose?: unknown; b?: unknown; a?: unknown }
     | null;
   if (!parsed || parsed.v !== 1) return null;
+  if (typeof parsed.b !== 'string' || parsed.b.length === 0) return null;
+  if (parsed.purpose === 'aret' || parsed.purpose === 'acan') {
+    if (typeof parsed.a !== 'number' || !Number.isInteger(parsed.a) || parsed.a < 1) return null;
+    return { bookingId: parsed.b, leg: parsed.purpose === 'acan' ? 'cancel' : 'return', addOnSeq: parsed.a };
+  }
   const leg: PayReturnLeg | null =
     parsed.purpose === 'pay-return' ? 'return' : parsed.purpose === 'pay-cancel' ? 'cancel' : null;
-  if (!leg || typeof parsed.b !== 'string' || parsed.b.length === 0) return null;
+  if (!leg) return null;
   return { bookingId: parsed.b, leg };
 }
 

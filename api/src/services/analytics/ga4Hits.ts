@@ -121,11 +121,14 @@ export function purchaseHit(i: PurchaseHitInput): Ga4Hit {
   const promo = promoDiscount(b);
   const country = countryOf(b);
   const consent = consentFor(i.identity, country);
+  // An add-on paid after booking (spec 2026-11-14 §7.8) is its own purchase on a booking that is
+  // already paid: never a balance, and filed under PayHere's own order id (REF-A<n>).
+  const addOn = i.payment.purpose === 'add_on';
   const params: Ga4Event['params'] = {
-    transaction_id: i.secondPayment ? `${b.reference}-${i.payment.id.slice(0, 6)}` : b.reference,
+    transaction_id: addOn ? i.payment.orderId : i.secondPayment ? `${b.reference}-${i.payment.id.slice(0, 6)}` : b.reference,
     value,
     currency: i.payment.currency,
-    payment_type: i.secondPayment ? 'balance' : i.payment.amount < b.total ? 'deposit' : 'full',
+    payment_type: addOn ? 'add_on' : i.secondPayment ? 'balance' : i.payment.amount < b.total ? 'deposit' : 'full',
     ...(i.identity?.sessionId ? { session_id: i.identity.sessionId } : {}),
     engagement_time_msec: 1,
     items: [itemFor(facts, value)],
@@ -150,6 +153,9 @@ export interface RefundHitInput {
   eventName: Ga4PurchaseName;
   /** The client_id the purchase was sent with; used when no identity is stored (spec §5.4: same client_id). */
   clientId?: string;
+  /** The transaction_id the purchase was sent with, when it is known. An add-on's is its order id
+   *  (REF-A<n>), which the formula below cannot rebuild from the refund. */
+  transactionId?: string;
 }
 
 export function refundHit(i: RefundHitInput): Ga4Hit {
@@ -165,7 +171,7 @@ export function refundHit(i: RefundHitInput): Ga4Hit {
       name: i.eventName === 'purchase' ? 'refund' : 'refund_server',
       params: {
         // Same formula as purchaseHit, so the refund lands on the purchase it reverses.
-        transaction_id: i.secondPayment ? `${b.reference}-${i.refund.paymentId.slice(0, 6)}` : b.reference,
+        transaction_id: i.transactionId ?? (i.secondPayment ? `${b.reference}-${i.refund.paymentId.slice(0, 6)}` : b.reference),
         value,
         currency: i.refund.currency,
         ...(i.identity?.sessionId ? { session_id: i.identity.sessionId } : {}),

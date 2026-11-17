@@ -34,6 +34,8 @@ import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
 import { balanceDueCents, isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
+import type { AddOnRepo, AddOnRequest } from '../db/addOnRepo';
+import { addOnIdempotencyKey, addOnOrderId, isAddOnRequestPayable } from '../domain/addOns';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
@@ -56,6 +58,7 @@ import {
   verifyBookingToken,
   verifyPayReturnLeg,
   verifyCheckoutToken,
+  type PayReturnLeg,
 } from '../lib/bookingToken';
 import {
   normalizePromoCode,
@@ -342,6 +345,9 @@ export function bookingRoutes(deps: {
   // The customer's "Your pickup is set" email after they fill it on the manage page (Phase 4).
   // Unset → nothing is emailed; the change still saves.
   email?: EmailAdapter;
+  // Add-ons after booking (spec 2026-11-14 §6.2). Unset → no add-on request can be found, so the
+  // add-on checkout lane answers 404 and everything else behaves as before.
+  addOns?: AddOnRepo;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -410,6 +416,27 @@ export function bookingRoutes(deps: {
   // booking_id is a uuid column; a path id that is not one ("nope") must not be sent as one.
   const asUuid = (v: unknown): string | null =>
     typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
+
+  // ---- add-ons after booking (spec 2026-11-14 §6.2) ---------------------------------------------
+  // The one gate both the checkout token and the checkout itself pass an add-on request through:
+  // it must be this booking's, not paid already, and still payable today (Sri Lanka time, §4.4).
+  // `requestId` comes straight from a request body, so anything that is not a uuid is simply not
+  // one of this booking's requests.
+  type AddOnGate =
+    | { ok: true; request: AddOnRequest }
+    | { ok: false; status: 404 | 409; body: { error: 'not_found' | 'already_paid' | 'add_on_not_payable'; status?: string } };
+  async function payableAddOnRequest(booking: Booking, requestId: unknown): Promise<AddOnGate> {
+    const id = asUuid(requestId);
+    const request = id && deps.addOns ? await deps.addOns.get(id) : null;
+    if (!request || request.bookingId !== booking.id) return { ok: false, status: 404, body: { error: 'not_found' } };
+    if (request.status === 'paid') return { ok: false, status: 409, body: { error: 'already_paid', status: booking.status } };
+    const legs = await deps.addOns!.listLegs(booking.id);
+    const today = isoToday('Asia/Colombo', new Date(checkoutNow()));
+    if (!isAddOnRequestPayable(request, booking, legs, today)) {
+      return { ok: false, status: 409, body: { error: 'add_on_not_payable' } };
+    }
+    return { ok: true, request };
+  }
 
   // Every refusal and server error on a create or a checkout, recorded in one place so a new
   // early return cannot slip past it: the response's own error code is the reason. A 201 create
@@ -1058,8 +1085,22 @@ function invalidRequest(error: ZodError) {
     // A balance attempt is judged on its OWN row (spec 2026-10-07 §5.3): the deposit has already
     // succeeded, so "any payment succeeded" would tell a customer who just came back from the
     // balance's PayHere page "paid" before the balance's webhook has landed, or after it declined.
-    const balanceRow = rows.find((p) => p.purpose === 'balance');
-    const judged = balanceRow ? [balanceRow] : rows;
+    //
+    // An add-on return is judged on that request's OWN row too (spec 2026-11-14 §6.2), for the same
+    // reason: the trip is already paid. Its token names the request by its number on the booking.
+    // A trip return never counts an add-on's row: that money is not the trip's.
+    let judged: Payment[];
+    let addOnRequest: AddOnRequest | undefined;
+    if (token.addOnSeq !== undefined) {
+      addOnRequest = (await deps.addOns?.listByBooking(booking.id))?.find((req) => req.seq === token.addOnSeq);
+      if (!addOnRequest) return c.json({ error: 'not_found' }, 404);
+      const paymentId = addOnRequest.paymentId;
+      judged = rows.filter((p) => p.id === paymentId);
+    } else {
+      const tripRows = tripPayments(rows);
+      const balanceRow = tripRows.find((p) => p.purpose === 'balance');
+      judged = balanceRow ? [balanceRow] : tripRows;
+    }
     const status = judged.some((p) => p.status === 'succeeded')
       ? 'paid'
       : token.leg === 'cancel' && judged.some((p) => p.status === 'failed')
@@ -1067,9 +1108,13 @@ function invalidRequest(error: ZodError) {
         : 'pending';
     // The page polls every 2s for up to a minute; log what CHANGED, not every poll (see returnSeen).
     // `reason` records the leg: which of PayHere's two links the payer came back on.
-    if (returnSeen.first(`${booking.id}:${token.leg}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, reason: token.leg, httpStatus: 200, bookingId: booking.id,
-      reference: booking.reference, channel: booking.channel, ua: uaOf(c), source: 'server' });
-    return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true }, 200);
+    // An add-on return is logged under its own order id, so it is never read as the trip's.
+    const addOnOrder = addOnRequest ? addOnOrderId(booking.reference, addOnRequest.seq) : null;
+    if (returnSeen.first(`${booking.id}:${addOnOrder ? `${addOnOrder}:` : ''}${token.leg}:${status}`)) track({ action: 'return', outcome: status === 'paid' ? 'settled' : status, reason: token.leg, httpStatus: 200, bookingId: booking.id,
+      reference: booking.reference, ...(addOnOrder ? { orderId: addOnOrder } : {}), channel: booking.channel, ua: uaOf(c), source: 'server' });
+    // `addOnRequestId` only on an add-on return: it tells the page this was not the trip's payment
+    // and which request's card to show as paid. It is no booking data the customer lacks.
+    return c.json({ status, reference: booking.reference, sandbox: adapter.live !== true, ...(addOnRequest ? { addOnRequestId: addOnRequest.id } : {}) }, 200);
   });
 
   // 1.5 — view a booking via a signed capability token (customer-facing #2). Replaces the
@@ -1095,6 +1140,15 @@ function invalidRequest(error: ZodError) {
     if (!id) return c.json({ error: 'invalid_link' }, 401);
     const booking = await bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
+    // An add-on request (spec 2026-11-14 §6.2) is paid on a booking that is already secured, which
+    // the gate below refuses. Naming a payable request is the only other way to a token. Without
+    // `addOnRequestId` in the body this route behaves exactly as before.
+    const body = (await c.req.json().catch(() => null)) as { addOnRequestId?: unknown } | null;
+    if (body?.addOnRequestId !== undefined) {
+      const gate = await payableAddOnRequest(booking, body.addOnRequestId);
+      if (!gate.ok) return c.json(gate.body, gate.status);
+      return c.json({ checkoutToken: signCheckoutToken(booking.id, deps.linkSecret, checkoutNow()), bookingId: booking.id }, 200);
+    }
     if (
       (booking.status !== 'draft' && booking.status !== 'payment_pending') ||
       booking.needsPricing
@@ -1197,8 +1251,12 @@ function invalidRequest(error: ZodError) {
     // The caller's INTENT (never an amount): returnTo, the GA visitor, and — for the balance of a
     // deposit booking — purpose. Read once, here, because the balance branch changes which gate
     // applies.
-    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown; purpose?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { returnTo?: unknown; ga?: unknown; purpose?: unknown; addOnRequestId?: unknown } | null;
     const wantsBalance = body?.purpose === 'balance';
+    // An add-on request (spec 2026-11-14 §6.2): a third lane beside the balance. Like the balance
+    // it is paid on a booking that is already secured, so it has its own gate; unlike it, it never
+    // touches the booking at all (no status move, no promo re-hold, no amountDueNow).
+    let addOnRequest: AddOnRequest | null = null;
     // The balance of a deposit booking (spec 2026-10-07 §5.3): the booking is already SECURED
     // (paid | confirmed | in_progress), so the draft/payment_pending gate below would refuse it.
     // The only way in is isBalanceOpen — a succeeded deposit and money still owed.
@@ -1207,6 +1265,10 @@ function invalidRequest(error: ZodError) {
       const rows = await payments.findByBookingId(booking.id);
       if (!isBalanceOpen(booking, rows)) return c.json({ error: 'no_balance_due' }, 409);
       balanceDue = balanceDueCents(booking, rows);
+    } else if (body?.purpose === 'add_on') {
+      const gate = await payableAddOnRequest(booking, body.addOnRequestId);
+      if (!gate.ok) return c.json(gate.body, gate.status);
+      addOnRequest = gate.request;
     } else if (booking.status !== 'draft' && booking.status !== 'payment_pending') {
       // Only a fresh (draft) or in-progress (payment_pending) booking may be charged. A
       // cancelled, paid, or otherwise-progressed booking must NEVER be handed a live PayHere
@@ -1226,14 +1288,20 @@ function invalidRequest(error: ZodError) {
       );
     }
     // The balance charges exactly what is still owed (the ledger's figure), never amountDueNow.
-    const dueNow = wantsBalance ? balanceDue : (booking.amountDueNow ?? booking.total);
+    // An add-on request charges its own total, frozen when ops sent it.
+    const dueNow = addOnRequest ? addOnRequest.totalCents : wantsBalance ? balanceDue : (booking.amountDueNow ?? booking.total);
 
     // One row per kind of attempt (spec 2026-10-07 §4, rev. 2026-10-08): a customer who tries the
     // deposit and then switches to full gets a fresh row, never a UNIQUE collision on order_id /
     // idempotency_key. Full keeps REF so every existing booking reads exactly as before.
-    const purpose = wantsBalance ? 'balance' : dueNow < booking.total ? 'deposit' : 'full';
-    const idempotencyKey = purpose === 'full' ? `checkout:${booking.id}` : `checkout:${booking.id}:${purpose}`;
-    const orderId = purpose === 'full' ? booking.reference : `${booking.reference}-${purpose === 'deposit' ? 'D' : 'B'}`;
+    // An add-on request is one row per REQUEST: REF-A<seq>, keyed on the request's id.
+    const purpose = addOnRequest ? 'add_on' : wantsBalance ? 'balance' : dueNow < booking.total ? 'deposit' : 'full';
+    const idempotencyKey = addOnRequest
+      ? addOnIdempotencyKey(booking.id, addOnRequest.id)
+      : purpose === 'full' ? `checkout:${booking.id}` : `checkout:${booking.id}:${purpose}`;
+    const orderId = addOnRequest
+      ? addOnOrderId(booking.reference, addOnRequest.seq)
+      : purpose === 'full' ? booking.reference : `${booking.reference}-${purpose === 'deposit' ? 'D' : 'B'}`;
     let payment = await payments.findByIdempotencyKey(idempotencyKey);
     // Defence in depth: if the payment already settled, refuse a second checkout even if the
     // booking somehow lags in a chargeable status.
@@ -1243,8 +1311,8 @@ function invalidRequest(error: ZodError) {
     // §6.3 — a booking made with a code re-checks its hold before a payment starts. Runs whatever
     // PROMO_CODES_ENABLED says: the flag gates accepting codes, never honouring one already held.
     // Not for the balance: the code was honoured at the deposit, and a lapsed code must not block
-    // the customer from paying what they owe.
-    if (!wantsBalance && booking.promoCodeId && deps.promoCodes) {
+    // the customer from paying what they owe. Nor for an add-on: no code applies to one (§4.2).
+    if (!wantsBalance && !addOnRequest && booking.promoCodeId && deps.promoCodes) {
       const code = await deps.promoCodes.get(booking.promoCodeId);
       if (!code) return c.json({ error: 'promo_code_invalid' }, 409);
       try {
@@ -1265,6 +1333,10 @@ function invalidRequest(error: ZodError) {
         purpose,
       });
     }
+    // Tie the row to its request, so settlement can find the request by its payment. Outside
+    // `if (!payment)` for the same reason as the move below: a retry after a failed write repairs
+    // it. A second call with the same payment is a no-op.
+    if (addOnRequest) await deps.addOns!.attachPayment(addOnRequest.id, payment.id);
     // Outside `if (!payment)` on purpose: the payment row and this move are two writes, and when
     // the move failed after the insert, every retry found the payment, skipped the move, and still
     // handed out a live PayHere form for a DRAFT booking — a payment the webhook then could not
@@ -1304,6 +1376,10 @@ function invalidRequest(error: ZodError) {
         console.error('ga4 visitor capture failed:', err instanceof Error ? err.message : String(err));
       });
     }
+    // The status-only token the return page polls with. For an add-on it names the request, so
+    // the page is answered about that payment and not about the trip's (GET /pay-return).
+    const returnToken = (leg: PayReturnLeg): string =>
+      signPayReturnToken(booking.id, deps.linkSecret, leg, addOnRequest?.seq);
     const returnUrls =
       body?.returnTo === 'pay-link' && deps.payBaseUrl
         ? (() => {
@@ -1315,8 +1391,8 @@ function invalidRequest(error: ZodError) {
             // Each leg carries its own token, so pay-return knows which one the payer used (only
             // the cancel leg may call a decline final — see GET /pay-return).
             return {
-              returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
-              cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+              returnUrl: `${page}${encodeURIComponent(returnToken('return'))}`,
+              cancelUrl: `${page}${encodeURIComponent(returnToken('cancel'))}&c=1`,
             };
           })()
         : body?.returnTo === 'manage' && deps.manageBaseUrl
@@ -1331,8 +1407,8 @@ function invalidRequest(error: ZodError) {
               // for the website, which has none of its own). Same two-legs rule as above.
               const page = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=`;
               return {
-                returnUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret))}`,
-                cancelUrl: `${page}${encodeURIComponent(signPayReturnToken(booking.id, deps.linkSecret, 'cancel'))}&c=1`,
+                returnUrl: `${page}${encodeURIComponent(returnToken('return'))}`,
+                cancelUrl: `${page}${encodeURIComponent(returnToken('cancel'))}&c=1`,
               };
             })()
           : {};
@@ -1397,7 +1473,7 @@ function invalidRequest(error: ZodError) {
     return c.json(
       {
         ...params,
-        payReturnToken: signPayReturnToken(booking.id, deps.linkSecret),
+        payReturnToken: returnToken('return'),
         // Which attempt this is (1 = first). The page echoes it on its gateway beacons.
         ...(attemptNo != null ? { attempt: attemptNo } : {}),
         ...(manageToken ? { manageToken } : {}),

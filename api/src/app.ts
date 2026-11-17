@@ -231,8 +231,8 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
-  // Add-ons after booking (spec 2026-11-14). Read and written by the ops routes; the customer
-  // routes that use it arrive in the next PRs.
+  // Add-ons after booking (spec 2026-11-14). Read and written by the ops routes, the customer's
+  // add-on checkout, and settlement.
   const addOns = deps.addOns ?? new InMemoryAddOnRepo(bookings, payments);
   // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
   const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
@@ -242,6 +242,7 @@ export function createApp(deps: AppDeps = {}) {
       bookings: bookings as InMemoryBookingRepo,
       payments: payments as InMemoryPaymentRepo,
       events: paymentEvents instanceof InMemoryPaymentEventRepo ? paymentEvents : new InMemoryPaymentEventRepo(),
+      ...(addOns instanceof InMemoryAddOnRepo ? { addOns } : {}),
     });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
@@ -563,6 +564,7 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       email,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+      addOns,
     }),
   );
   app.route(
@@ -642,6 +644,7 @@ export function createApp(deps: AppDeps = {}) {
       duplicates: { bookings, departures, payments },
       experiences, experienceInterests,
       ...(ga4 ? { ga4 } : {}),
+      addOns,
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({
