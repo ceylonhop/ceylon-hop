@@ -650,6 +650,63 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .sched .sched-hint{display:block;color:var(--ink-faint);font-size:.78rem;font-weight:400;margin-top:4px}
   .sched .sched-warn{color:#c7841f;font-size:.85rem;margin:8px 0 0}
   .sched .btn-go{margin-top:10px}
+  /* Add-ons after booking (spec 2026-11-14 §7.2): the list under the legs, one card per request,
+     and the tick-box form. Every colour is one of the sheet's own tokens. */
+  .addons{margin-top:14px;padding-top:13px;border-top:1px solid var(--line)}
+  .ao-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px}
+  .ao-head h4{margin:0}
+  .ao-line{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:6px 0}
+  .ao-what{min-width:0;overflow-wrap:anywhere}
+  .ao-name{font-size:.9rem;font-weight:600}
+  .ao-sub{font-size:.77rem;color:var(--ink-soft);margin-top:1px;overflow-wrap:anywhere}
+  .ao-amt{flex:none;font-size:.9rem;font-weight:700}
+  .ao-tag{flex:none;font-size:.7rem;font-weight:700;padding:3px 9px;border-radius:999px;background:var(--idle-bg);color:var(--idle);white-space:nowrap}
+  .ao-req{border:1px solid var(--line);border-radius:12px;padding:5px 12px 11px;margin-top:8px}
+  .ao-req.st-awaiting_payment,.ao-req.st-paying{border-color:color-mix(in srgb,var(--wait) 30%,transparent);background:color-mix(in srgb,var(--wait-bg) 40%,var(--paper))}
+  .ao-total{display:flex;justify-content:space-between;gap:10px;padding-top:6px;border-top:1px dashed var(--line);font-size:.9rem;font-weight:700}
+  .ao-meta{display:flex;align-items:center;gap:4px 8px;flex-wrap:wrap;margin-top:6px;font-size:.77rem;color:var(--ink-soft)}
+  .ao-meta>span:last-child{min-width:0;overflow-wrap:anywhere}
+  .ao-st.st-awaiting_payment,.ao-st.st-part_refunded{--c:var(--wait);--cbg:var(--wait-bg)}
+  .ao-st.st-paying{--c:var(--go);--cbg:var(--go-bg)}
+  .ao-st.st-paid{--c:var(--ok);--cbg:var(--ok-bg)}
+  .ao-st.st-expired,.ao-st.st-cancelled,.ao-st.st-cancelled_with_booking,.ao-st.st-refunded{--c:var(--idle);--cbg:var(--idle-bg)}
+  .ao-driver{margin-top:8px;font-size:.8rem;font-weight:700;color:var(--ok)}
+  .ao-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .ao-acts .btn:disabled{opacity:.45;cursor:not-allowed}
+  .ao-acts .ao-sub{margin:0;flex:1 1 150px}
+  .ao-req .reverse-reason{margin:10px 0 0}
+  .ao-form{border:1.5px solid var(--ink);border-radius:14px;padding:14px;margin-top:10px}
+  .ao-form-t{font-size:1rem;font-weight:700}
+  .ao-cap{margin-top:13px;font-size:.63rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint)}
+  .ao-legs{display:flex;flex-direction:column;gap:7px;margin-top:7px}
+  .ao-leg{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .ao-leg.open{border-color:var(--ink)}
+  .ao-leg-h{display:flex;align-items:center;gap:10px;width:100%;padding:9px 10px;border:0;background:none;font:inherit;color:inherit;text-align:left;cursor:pointer}
+  .ao-leg-h .nm{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.86rem;font-weight:700}
+  .ao-leg-h .nm span{font-size:.77rem;font-weight:400;color:var(--ink-soft)}
+  .ao-leg-h .ct{flex:none;font-size:.74rem;color:var(--ink-soft)}
+  .ao-leg.has .ao-leg-h .ct{font-weight:700;color:var(--ink)}
+  .ao-leg-h::after{content:"";flex:none;width:7px;height:7px;border-right:2px solid var(--ink-faint);border-bottom:2px solid var(--ink-faint);transform:rotate(45deg);margin:0 3px 3px 0}
+  .ao-leg.open .ao-leg-h::after{transform:rotate(-135deg);margin:3px 3px 0 0}
+  .ao-leg-h:focus-visible{outline:2px solid var(--teal);outline-offset:-2px}
+  .ao-opt{display:flex;align-items:center;gap:9px;padding:6px 10px;border-top:1px solid var(--line-soft);font-size:.84rem;cursor:pointer}
+  .ao-opt input{width:15px;height:15px;margin:0;flex:none;accent-color:var(--ink)}
+  .ao-opt .nm{flex:1;min-width:0;overflow-wrap:anywhere}
+  .ao-opt .pr{flex:none;font-weight:700}
+  .ao-opt:has(input:checked:not(:disabled)){background:var(--cream)}
+  .ao-opt:has(input:checked:not(:disabled)) .nm{font-weight:700}
+  .ao-opt.taken{cursor:default;color:var(--ink-faint)}
+  .ao-opt.taken .pr{font-size:.74rem;font-weight:600}
+  .ao-note{margin:8px 0 0;font-size:.74rem;line-height:1.45;color:var(--ink-soft)}
+  .ao-picked{margin-top:5px;font-size:.84rem}
+  .ao-picked>div{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+  .ao-picked>div>span:first-child{min-width:0;overflow-wrap:anywhere}
+  .ao-picked>div>span:last-child{flex:none;font-weight:700}
+  .ao-sum{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:12px;padding-top:11px;border-top:1px dashed var(--line);font-size:.84rem;color:var(--ink-soft)}
+  .ao-sum b{flex:none;font-size:1.25rem;color:var(--ink)}
+  .ao-email{display:flex;align-items:flex-start;gap:8px;margin-top:11px;font-size:.84rem;line-height:1.4;cursor:pointer}
+  .ao-email input{width:16px;height:16px;margin:2px 0 0;flex:none;accent-color:var(--ink)}
+  .ao-email small{display:block;font-size:.74rem;color:var(--ink-soft)}
 
   .toast{position:fixed;bottom:26px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--pop-bg);color:var(--pop-fg);border:1px solid var(--pop-line);padding:12px 20px;border-radius:12px;font-weight:600;font-size:.9rem;box-shadow:var(--shadow-lg);opacity:0;pointer-events:none;transition:.22s;z-index:950;display:flex;align-items:center;gap:9px}
   .toast.show{opacity:1;transform:translateX(-50%)}.toast svg{width:17px;height:17px;color:#5fe0a0}
@@ -3907,6 +3964,13 @@ function buildActivity(t,d){
   if(d?.ops?.updatedAt)acts.push([fmtDateTime(d.ops.updatedAt),`Ops updated · now “${stageLabel(t)}”`]);
   (d?.scheduleEvents||[]).forEach(e=>acts.push([fmtDateTime(e.createdAt),`Pickup ${e.fromDate?'changed':'set'} · ${fmtDate(e.toDate)}${e.toTime?' '+e.toTime:''} · by ${e.actorType==='customer'?'customer':e.actorId}${e.reason?' · '+(SCHED_REASONS[e.reason]||e.reason):''}${e.note?' — '+e.note:''}`]));
   (d?.reminders||[]).forEach(r=>acts.push([fmtDateTime(r.sentAt),`Reminder ${r.kind==='details_reminder_1'?'1':'2'} sent · still need pickup date/time`]));
+  /* Add-ons after booking (spec 2026-11-14 §7.2): each request's own times and actors. */
+  (d?.addOnRequests||[]).forEach(r=>{
+    const amt=money({amount:r.totalCents,currency:r.currency});
+    acts.push([fmtDateTime(r.createdAt),`Add-on request ${r.name} sent (${amt}) by ${r.createdBy}`]);
+    if(r.paidAt)acts.push([fmtDateTime(r.paidAt),`Add-on request ${r.name} paid (${amt})`]);
+    if(r.cancelledAt)acts.push([fmtDateTime(r.cancelledAt),`Add-on request ${r.name} cancelled by ${r.cancelledBy||'unknown actor'}${r.cancelReason?' · '+r.cancelReason:''}`]);
+  });
   return acts;
 }
 
@@ -4188,7 +4252,9 @@ function refundRequestFor(t, d){
   const verb=founder?'Refund':'Request refund';
   const tip=founder?'Refunds through PayHere immediately — there is no undo':'Files a refund request — a founder approves it before any money moves';
   const targets=refundTargets(d);
-  const several=targets.length>1;
+  /* An add-on payment is always named, even when it is the only money taken (a pay-on-the-day
+     trip whose cash is not in yet): its refund is its own, never a share of the trip's lines. */
+  const several=targets.length>1||targets.some(p=>addOnPaymentName(d,p));
   const amountBox=`<label class="reverse-reason">Amount <span class="muted">empty = the full remaining amount</span>
       <input id="refundamount" inputmode="decimal" autocomplete="off" placeholder="${several?'Full remaining of the payment you pick':esc(money({amount:s.remaining,currency:s.currency}))}">
     </label>`;
@@ -4198,7 +4264,7 @@ function refundRequestFor(t, d){
       <input id="refundreason" maxlength="500" autocomplete="off" placeholder="e.g. customer dropped the Kandy → Ella leg">
     </label>`;
   const buttons=several
-    ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${refundPaymentName(p)} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
+    ? targets.filter(p=>p.remaining>0).map(p=>`<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" data-payment-id="${esc(p.id)}" title="${tip}">${verb}: ${esc(addOnPaymentName(d,p)||refundPaymentName(p))} — ${money({amount:p.remaining,currency:s.currency})} remaining</button>`).join('')
     : `<button class="btn btn-noshow" data-act="refundrequest" data-id="${esc(t.id)}" title="${tip}">${verb}</button>`;
   return `${several?'':refundLinesHtml(d)}${amountBox}${reasonBox}<div class="reverse-actions">${buttons}</div>`;
 }
@@ -4335,12 +4401,15 @@ function refundHtmlFor(t,d){
   /* An amount box since 2026-10-17: our PayHere plan now does partial refunds, and a founder
      approves every request. See refundRequestFor. */
   const request=refundRequestFor(t,d);
+  /* Spec 2026-11-14 §6.5: the booking only reads Refunded once ALL captured money has gone back. */
+  const due=addOnRefundDue(d);
+  const addOnDue=due.length?`<p class="refund-warning" data-testid="addon-refund-due">The trip has been refunded in full, but ${due.length===1?'add-on':'add-ons'} ${due.map(r=>`${esc(r.name)} (${money({amount:r.totalCents-r.refundedCents,currency:r.currency})})`).join(', ')} ${due.length===1?'has':'have'} not. Refund the add-on payment too.</p>`:'';
   return `<div class="block"><h4>Refunds</h4>
     <div class="kv"><span class="k">Captured</span><span class="v">${money({amount:s.captured,currency:s.currency})}</span></div>
     <div class="kv"><span class="k">Previously refunded</span><span class="v">${money({amount:s.confirmed,currency:s.currency})}</span></div>
     <div class="kv"><span class="k">Pending</span><span class="v">${money({amount:s.pending,currency:s.currency})}</span></div>
     <div class="kv"><span class="k">Refundable remaining</span><span class="v">${money({amount:s.remaining,currency:s.currency})}</span></div>
-    ${request}${rows}</div>`;
+    ${addOnDue}${request}${rows}</div>`;
 }
 
 /* detail */
@@ -4506,6 +4575,196 @@ function boardSheetHtml(t,st){
     </div>`;
 }
 
+/* ── Add-ons after booking (spec 2026-11-14 §7.2) ───────────────────────────────────────────
+   Under the legs in the itinerary block: what was booked with the trip, one card per request ops
+   sent afterwards, and the tick-box form that sends a new one. Every label and price is the API's
+   (addOnCatalogue, the request's lines), never EXTRA_LBL. The form's legs are the server's stored
+   legs (`legs`), not legRows: a request line names a booking_legs id. ── */
+const ADDON_STATE={awaiting_payment:'Awaiting payment',paying:'Paying now',paid:'Paid',expired:'Expired',cancelled:'Cancelled',cancelled_with_booking:'Cancelled with booking',part_refunded:'Part refunded',refunded:'Refunded'};
+/* One sentence per refusal the two add-on routes can send (routes/ops.ts, domain/addOns.ts). */
+const ADDON_ERR={
+  bad_request:'That did not go through. Reload the page and try again.',
+  forbidden:'Your account cannot send or cancel add-on requests.',
+  not_found:'This booking could not be found. Reload the page.',
+  unknown_add_on:'One of those add-ons is no longer on the rate card. Close the form and open it again.',
+  leg_not_found:'One of those legs is no longer on this booking. Close the form and open it again.',
+  not_private:'Add-ons can only be added to a private transfer or a private trip.',
+  booking_not_eligible:'This booking cannot take add-ons now. It has to be paid or confirmed, and not finished or cancelled.',
+  awaiting_price:'This booking is still waiting for its price. Price it first, then add the add-on.',
+  legs_missing:'This older booking has no legs saved, so an add-on cannot be put on one. Tell the founder.',
+  leg_not_driven:'That stretch is the customer’s own travel, so it cannot take an add-on.',
+  leg_passed:'The travel day of that leg has passed, so nothing more can be added to it.',
+  duplicate_add_on:'That add-on is already on that leg. Each add-on can be added once per leg.',
+  already_bought_at_booking:'The customer already bought that add-on when they booked.',
+  request_not_found:'That request could not be found. Reload the page.',
+  already_paid:'The customer has already paid this request, so it cannot be cancelled. Refund it instead.',
+  not_open:'This request is no longer open, so there is nothing to cancel.',
+  payment_in_flight:'The customer is on the payment page right now. Wait until the time shown on the request, then cancel it if they have not paid.',
+};
+/* The toast after sending: [text, kind]. `emailed` means delivered, so an unticked box and a mail
+   that failed read the same: the operator has to pass the link on. */
+const ADDON_SENT=res=>res&&res.emailed?['Request sent. Customer emailed the pay link.',undefined]:['Saved, but the customer was NOT emailed. WhatsApp them the pay link.','error'];
+/* "Waiting fee — Kandy → Ella" → ['Waiting fee','Kandy → Ella']: the API names the leg after the add-on. */
+function addOnParts(label){const s=String(label??''),i=s.indexOf(' — ');return i>0?[s.slice(0,i),s.slice(i+3)]:[s,''];}
+/* "Paying now" is not a state of its own: an awaiting request whose checkout the customer has open. */
+const addOnShown=r=>r.state==='awaiting_payment'&&r.inFlightUntil?'paying':r.state;
+/* Today in Sri Lanka (a fixed UTC+05:30), the day the server judges a leg by. */
+const slToday=()=>new Date(Date.now()+5.5*3600e3).toISOString().slice(0,10);
+/* The stored legs that can take an add-on: driven by us, and not on a day that has passed. */
+function addOnLegs(d){const today=slToday();return (d?.legs||[]).filter(l=>l.kind==='leg'&&(!l.travelDate||l.travelDate>=today));}
+/* What was bought WITH the trip. booking.addOns ends with the line labels of every request that
+   is paid and not fully refunded (spec §7.6), and each of those has its own card here, so they
+   come off the END, one entry per line: a booking-time add-on of the same name stays. */
+function addOnsAtBooking(d){
+  const out=bookingAddOns(d?.booking).slice();
+  (d?.addOnRequests||[]).forEach(r=>{if(r.status==='paid'&&r.state!=='refunded')(r.lines||[]).forEach(l=>{const i=out.lastIndexOf(l.label);if(i>=0)out.splice(i,1);});});
+  return out;
+}
+/* Why an add-on cannot be ticked on a leg, or ''. The server's own rule (spec §4.3): one of each
+   per leg among requests that are open, or paid and not fully refunded; and, only where a booking
+   has a single driven leg, what was bought with the trip. */
+function addOnTaken(d,leg,item){
+  const held=(d?.addOnRequests||[]).some(r=>(r.status==='open'||(r.status==='paid'&&r.state!=='refunded'))&&(r.lines||[]).some(l=>l.legId===leg.id&&l.code===item.code));
+  if(held)return 'Already added';
+  const bought=addOnsAtBooking(d);
+  const oneLeg=(d?.legs||[]).filter(l=>l.kind==='leg').length===1;
+  return oneLeg&&bought.some(b=>b===item.label||String(b).startsWith(item.label+' — '))?'Already booked':'';
+}
+/* The lines the open form would send, leg by leg in catalogue order, labelled as the API will. */
+function addOnPicked(d,f){
+  const out=[];
+  addOnLegs(d).forEach(leg=>(d.addOnCatalogue||[]).forEach(item=>{
+    if(f.ticks[leg.id+'|'+item.code]&&!addOnTaken(d,leg,item))out.push({legId:leg.id,code:item.code,label:`${item.label} — ${shortPlace(leg.from)} → ${shortPlace(leg.to)}`,amountCents:item.priceCents});
+  }));
+  return out;
+}
+/* What to call a payment row that paid for an add-on: by the request that names it (its
+   paymentId), never by amount. An add-on payment no request names is just "Add-on". */
+function addOnPaymentName(d,p){
+  const r=(d?.addOnRequests||[]).find(x=>x.paymentId&&x.paymentId===p.id);
+  return r?'Add-on '+r.name:p.purpose==='add_on'?'Add-on':null;
+}
+/* The Payment fold's add-on rows, one per add-on payment. */
+function addOnPaymentRowsHtml(d){
+  return (d?.payments||[]).map(p=>{
+    const name=addOnPaymentName(d,p);
+    if(!name)return '';
+    const word={succeeded:'paid',pending:'not paid yet',failed:'payment failed'}[p.status]||p.status;
+    return `<div class="kv" data-testid="pay-addon"><span class="k">${esc(name)}</span><span class="v">${money({amount:p.amount,currency:p.currency})} · ${esc(word)}</span></div>`;
+  }).join('');
+}
+/* Spec §6.5: once every payment for the TRIP has gone back in full, a paid add-on is the money
+   still out, and the booking will not read Refunded until it goes back too. */
+function addOnRefundDue(d){
+  const trip=(d?.payments||[]).filter(p=>p.status==='succeeded'&&!addOnPaymentName(d,p));
+  const back=id=>(d?.refunds||[]).filter(r=>r.paymentId===id&&REFUND_SETTLED.includes(r.status)).reduce((n,r)=>n+r.amountCents,0);
+  if(!trip.length||!trip.every(p=>back(p.id)>=p.amount))return [];
+  return (d?.addOnRequests||[]).filter(r=>r.state==='paid'||r.state==='part_refunded');
+}
+function addOnRequestHtml(t,d,r,mayOperate){
+  const st=addOnShown(r),m=n=>money({amount:n,currency:r.currency});
+  const legOf=id=>(d.legs||[]).find(l=>l.id===id);
+  const lines=(r.lines||[]).map(l=>{
+    const [name,where]=addOnParts(l.label),leg=legOf(l.legId);
+    const sub=[where,leg&&leg.travelDate?fmtFull(leg.travelDate):''].filter(Boolean).join(' · ');
+    return `<div class="ao-line"><div class="ao-what"><div class="ao-name">${esc(name)}</div>${sub?`<div class="ao-sub">${esc(sub)}</div>`:''}</div><div class="ao-amt">${m(l.amountCents)}</div></div>`;
+  }).join('');
+  const total=(r.lines||[]).length>1?`<div class="ao-total" data-testid="addon-total"><span>Total</span><span>${m(r.totalCents)}</span></div>`:'';
+  /* The last day it can be paid: the day of the earliest leg it touches (addOnPayBy on the server). */
+  const payBy=(r.lines||[]).map(l=>(legOf(l.legId)||{}).travelDate).filter(Boolean).sort()[0]||null;
+  const sent=`sent ${fmtDateTime(r.createdAt)} · ${r.createdBy}`;
+  const said={
+    awaiting_payment:sent,paying:sent,
+    paid:`paid${r.paidAt?' '+fmtDateTime(r.paidAt):''} · ${r.orderId}`,
+    part_refunded:`${m(r.refundedCents)} of ${m(r.totalCents)} refunded · ${r.orderId}`,
+    refunded:`${m(r.refundedCents)} refunded · ${r.orderId}`,
+    expired:'not paid'+(payBy?' by the end of '+fmtFull(payBy):''),
+    cancelled:`by ${r.cancelledBy||'unknown actor'}${r.cancelReason?' · “'+r.cancelReason+'”':''}`,
+    cancelled_with_booking:'not paid before the booking was cancelled',
+  }[st]||'';
+  const ids=`data-id="${esc(t.id)}" data-request-id="${esc(r.id)}"`;
+  let more='';
+  if(st==='awaiting_payment'){
+    /* An inline reason box, as for cancelling a booking: this file uses no browser prompt. */
+    const asking=mayOperate&&!!state.addOnCancel&&state.addOnCancel.id===t.id&&state.addOnCancel.requestId===r.id;
+    const acts=asking
+      ?`<button class="btn btn-noshow" data-act="addoncancel" ${ids}>Cancel request</button><button class="btn" data-act="addoncancelopen" ${ids}>Keep request</button>`
+      :`${r.payLink?`<button class="btn" data-act="addoncopy" ${ids}>${ICON.copy} Copy pay link</button>`:''}${mayOperate?`<button class="btn btn-noshow" data-act="addoncancelopen" ${ids}>Cancel request</button>`:''}`;
+    more=(payBy?`<div class="ao-sub">Customer can pay until the end of ${esc(fmtFull(payBy))}.</div>`:'')
+      +(asking?`<label class="reverse-reason">Reason <span class="req">required</span><input id="addoncancelreason" maxlength="300" autocomplete="off" placeholder="e.g. customer changed their mind"></label>`:'')
+      +(acts?`<div class="ao-acts">${acts}</div>`:'');
+  }else if(st==='paying'){
+    /* A PayHere form cannot be recalled once open, so the server holds the request for 30 minutes
+       from the last attempt (spec §4.5). The time is the browser's, like every time in the sheet. */
+    const at=new Date(r.inFlightUntil);
+    more=`<div class="ao-acts">${mayOperate?'<button class="btn btn-noshow" disabled>Cancel request</button>':''}<span class="ao-sub">Can be cancelled after ${_pad(at.getHours())}:${_pad(at.getMinutes())} if they don’t pay.</span></div>`;
+  }else if(st==='paid'){
+    more='<div class="ao-driver">Tell the driver about this add-on.</div>';
+  }
+  return `<div class="ao-req st-${esc(st)}" data-testid="addon-request" data-request="${esc(r.name)}">
+    ${lines}${total}
+    <div class="ao-meta"><span class="pill ao-st st-${esc(st)}" data-testid="addon-state">${esc(ADDON_STATE[st]||st)}</span><span>Request ${esc(r.name)} · ${esc(said)}</span></div>
+    ${more}</div>`;
+}
+/* The form the owner chose on 2026-11-14: one row per leg, a tick-box per add-on, one request for
+   everything ticked. Every leg's boxes stay in the page (a shut row is only hidden) and each box
+   has an id: morphSheet never re-renders a checkbox, so one that came and went would keep a stale
+   tick. An add-on that is already taken gets its own id, so a box that BECOMES taken is replaced. */
+function addOnFormHtml(t,d,f){
+  const cur=d.booking.currency,m=n=>money({amount:n,currency:cur});
+  const picked=addOnPicked(d,f),sum=picked.reduce((n,l)=>n+l.amountCents,0);
+  const rows=addOnLegs(d).map(leg=>{
+    const open=!!f.legs[leg.id],n=picked.filter(l=>l.legId===leg.id).length;
+    const opts=(d.addOnCatalogue||[]).map(item=>{
+      const taken=addOnTaken(d,leg,item),key=leg.id+'|'+item.code;
+      return taken
+        ?`<label class="ao-opt taken"><input type="checkbox" id="ao-${esc(leg.id)}-${esc(item.code)}-taken" disabled${taken==='Already added'?' checked':''}><span class="nm">${esc(item.label)}</span><span class="pr">${taken}</span></label>`
+        :`<label class="ao-opt"><input type="checkbox" id="ao-${esc(leg.id)}-${esc(item.code)}" data-addon-leg="${esc(leg.id)}" data-addon-code="${esc(item.code)}"${f.ticks[key]?' checked':''}><span class="nm">${esc(item.label)}</span><span class="pr">${m(item.priceCents)}</span></label>`;
+    }).join('');
+    return `<div class="ao-leg${open?' open':''}${n?' has':''}" data-testid="addon-leg">
+      <button type="button" class="ao-leg-h" data-act="addonleg" data-id="${esc(t.id)}" data-leg-id="${esc(leg.id)}" aria-expanded="${open}"><span class="nm">${esc(shortPlace(leg.from))} → ${esc(shortPlace(leg.to))}${leg.travelDate?` <span>· ${esc(fmtFull(leg.travelDate))}</span>`:''}</span><span class="ct">${n?n+' ticked':open?'Hide add-ons':'Show add-ons'}</span></button>
+      <div class="ao-leg-b"${open?'':' hidden'}>${opts}</div></div>`;
+  }).join('');
+  return `<div class="ao-form" data-testid="addon-form">
+    <div class="ao-form-t">New add-on request</div>
+    <div class="ao-sub">Today’s rate-card prices. One of each add-on per leg.</div>
+    <div class="ao-cap">Tick the add-ons, leg by leg</div>
+    <div class="ao-legs">${rows}</div>
+    <p class="ao-note">Tick under more than one leg and it is still one request and one payment.</p>
+    ${picked.length?`<div class="ao-cap">In this request</div><div class="ao-picked" data-testid="addon-picked">${picked.map(l=>`<div><span>${esc(l.label)}</span><span>${m(l.amountCents)}</span></div>`).join('')}</div>`:''}
+    <div class="ao-sum"><span>${picked.length>1?'Customer pays online, in one payment':'Customer pays online'}</span><b data-testid="addon-form-total">${m(sum)}</b></div>
+    <label class="ao-email"><input type="checkbox" id="addonNotify" checked><span>Email the customer the pay link<small>You can also copy the link for WhatsApp after sending.</small></span></label>
+    <p class="ao-note">The amount is fixed once sent. To change it, cancel the request and send a new one.</p>
+    <div class="ao-acts"><button class="btn btn-go" data-act="addonsend" data-id="${esc(t.id)}"${picked.length?'':' disabled'}>Send request${picked.length?' · '+m(sum):''}</button><button class="btn" data-act="addonopen" data-id="${esc(t.id)}">Cancel</button></div>
+  </div>`;
+}
+function addOnsHtmlFor(t,d){
+  const booked=addOnsAtBooking(d),reqs=Array.isArray(d?.addOnRequests)?d.addOnRequests:[];
+  const mayOperate=!!(state.caps&&state.caps.includes('bookings:operate'));
+  /* The API sends the catalogue only when a request can be created on this booking (§4.1). */
+  const canAdd=mayOperate&&Array.isArray(d?.addOnCatalogue)&&d.addOnCatalogue.length>0;
+  if(!booked.length&&!reqs.length&&!canAdd)return '';
+  const f=canAdd&&state.addOn&&state.addOn.id===t.id?state.addOn:null;
+  const bookedRows=booked.map(x=>{
+    const [name,where]=addOnParts(x);
+    return `<div class="ao-line" data-testid="addon-booked"><div class="ao-what"><div class="ao-name">${esc(name)}</div>${where?`<div class="ao-sub">${esc(where)}</div>`:''}</div><span class="ao-tag">Booked with the trip</span></div>`;
+  }).join('');
+  return `<div class="addons" data-testid="sheet-addons">
+    <div class="ao-head"><h4>Add-ons</h4>${canAdd&&!f?`<button class="btn btn-go" data-act="addonopen" data-id="${esc(t.id)}">+ Add-on</button>`:''}</div>
+    ${bookedRows}${reqs.map(r=>addOnRequestHtml(t,d,r,mayOperate)).join('')}${f?addOnFormHtml(t,d,f):''}</div>`;
+}
+/* A tick lives in state, because the total, the "In this request" list and the Send button are
+   all drawn from it; the box itself is the browser's (see addOnFormHtml). */
+document.addEventListener('change',e=>{
+  const el=e.target;
+  if(!el.matches||!el.matches('#sheet [data-addon-leg]'))return;
+  const f=state.addOn;
+  if(!f||f.id!==state.detail)return;
+  const key=el.dataset.addonLeg+'|'+el.dataset.addonCode;
+  if(el.checked)f.ticks[key]=true;else delete f.ticks[key];
+  renderSheet();
+});
+
 /* Why ops moved a pickup (requirements 2026-10-26 R1) — one label per server code
    (SCHEDULE_REASONS); opsUi.schedule.test.ts fails if they drift. */
 const SCHED_REASONS={customer_changed_plans:'Customer changed plans',customer_entered_wrong:'Customer entered the wrong date/time',flight_changed:'Flight changed',our_mistake:'Our mistake',other:'Other'};
@@ -4599,8 +4858,6 @@ function renderSheet(){
       <div class="followup"><div><b>Payment not received yet.</b> ${arrive} once the customer has paid directly.${t.chan==='website'?'':" Nudge them if it's overdue."}</div></div>
       ${(linkBtn||settle)?`<div class="sheet-actions">${linkBtn}${settle}</div>`:''}</div>`;
   }
-  const extras=bookingAddOns(d?.booking);
-  const extrasRow=extras.length?`<div class="kv"><span class="k">Extras</span><span class="v">${extras.map(x=>esc(x)).join(' · ')}</span></div>`:'';
   const promo=bookingPromo(d?.booking);
   const promoRow=promo?`<div class="kv"><span class="k">Promo</span><span class="v">${esc(promo)}</span></div>`:'';
   /* What the customer wrote in the booking page's free-form "Anything we should know?" box: often
@@ -4649,7 +4906,7 @@ function renderSheet(){
   /* Money only rises when there is something to do: a refund waiting for a founder, stuck at
      PayHere, or failed opens the Refund fold and says so in its summary. */
   const REFUND_ATTN=[['manual_pending','awaiting approval'],['api_processing','processing — check PayHere'],['api_failed','failed']];
-  const refundSum=REFUND_ATTN.map(([k,w])=>{const n=(d?.refunds||[]).filter(r=>r.status===k).length;return n?`${n} ${n===1?'refund':'refunds'} ${w}`:'';}).filter(Boolean).join(' · ');
+  const refundSum=REFUND_ATTN.map(([k,w])=>{const n=(d?.refunds||[]).filter(r=>r.status===k).length;return n?`${n} ${n===1?'refund':'refunds'} ${w}`:'';}).concat(addOnRefundDue(d).length?'add-on payment still needs refunding':'').filter(Boolean).join(' · ');
   const isTrip=d?.booking?.mode==='trip';
   morphSheet(sh,head+`
     <div class="sheet-b">
@@ -4658,7 +4915,7 @@ function renderSheet(){
           ${pendingBlock?`<div class="ord-0">${pendingBlock}</div>`:''}
           <div class="block ord-2" data-testid="sheet-itinerary"><h4>${isTrip?'Itinerary':'Route'}</h4>
             <div style="margin-bottom:6px">${legsHtmlFor(d)}</div>
-            ${extrasRow}
+            ${addOnsHtmlFor(t,d)}
             ${canSchedule?`<div class="sched-row"><button class="btn" data-act="schedopen" data-id="${esc(t.id)}">${t.date?'Change date &amp; time':'Set date &amp; time'}</button></div>`:''}
             ${canSchedule&&state.schedOpen===t.id?scheduleFormHtml(t,d):''}
           </div>
@@ -4682,6 +4939,7 @@ function renderSheet(){
               ${promoRow}
               ${t.paid&&t.balance>0?`<div class="kv"><span class="k">Paid so far</span><span class="v">${money({amount:t.paidCents,currency:t.currency})}</span></div>`:''}
               <div class="kv"><span class="k">Channel</span><span class="v">${chanLabel(t.chan)}</span></div>
+              ${addOnPaymentRowsHtml(d)}
               ${cashDue(t)?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Pay on the day — ${money({amount:t.cashDue,currency:t.currency})} in US dollars cash to the Ceylon Hop team, at the first pickup. ${canSettle?"Record it here when it's collected.":"A founder or finance records it when it's collected."}</p>${settle?`<div class="sheet-actions">${settle}</div>`:''}`
               :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}.</p>`:''}
               ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
@@ -4721,6 +4979,8 @@ async function openDetail(id, opts){
   state.detail=id;state.detailData=null;state.routeBookingId=id;
   /* Folds start fresh every time a booking is opened, not only when the id changes. */
   state.folds={};state.foldsFor=id;
+  /* So does a half-filled add-on form, or a cancel that was never confirmed. */
+  state.addOn=null;state.addOnCancel=null;
   if(!opts.fromUrl)syncUrl(state.route,state.routeQuoteId,id,'push');
   renderSheet();
   /* fresh booking → fresh scroll; morphdom otherwise preserves the previous booking's position */
@@ -5114,7 +5374,7 @@ document.addEventListener('click',async e=>{
      "Advance" wrote two stage changes. One mutation at a time; the pressed control wears a
      spinner. The refund actions keep their own finer-grained refundBusy key (per refund row);
      this is the outer guard that covers the rest of the sheet. */
-  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave'];
+  const MUTATES=['closedone','advance','noshow','toggle','addnote','cancelbooking','markpaid','refundrequest','refundconfirm','refundexecute','refundcancel','schedsave','addonsend','addoncancel'];
   const guarded=MUTATES.includes(act);
   if(guarded){
     if(sheetBusy)return;
@@ -5174,6 +5434,59 @@ document.addEventListener('click',async e=>{
         toast(...SCHED_SAVED(res,payload.notifyCustomer));
         await refreshDetail(id);await refreshRow(id);
       }catch(err){window.opsReportError&&window.opsReportError('booking schedule',err);toast('Could not save the date','error');}
+      break;}
+    /* Add-ons after booking (spec 2026-11-14 §7.2). The form and the cancel box are keyed by the
+       booking they were opened on, so neither can show on another booking's sheet. */
+    case 'addonopen':{state.addOn=state.addOn&&state.addOn.id===id?null:{id,legs:{},ticks:{}};
+      /* One leg to choose from: open it, there is nothing else to look at. */
+      const only=state.addOn?addOnLegs(state.detailData):[];if(only.length===1)state.addOn.legs[only[0].id]=true;
+      renderSheet();break;}
+    case 'addonleg':{const f=state.addOn;if(!f||f.id!==id)break;const k=el.dataset.legId;f.legs[k]=!f.legs[k];renderSheet();break;}
+    case 'addonsend':{
+      /* A ride-board van has no booking behind it (the same belt-and-braces as the list above). */
+      if(isBoard(t)||!state.caps||!state.caps.includes('bookings:operate'))break;
+      const f=state.addOn;
+      const picked=f&&f.id===id&&state.detailData?addOnPicked(state.detailData,f):[];
+      if(!picked.length)break;
+      const payload={lines:picked.map(l=>({legId:l.legId,code:l.code})),notifyCustomer:!!($('#addonNotify')||{}).checked};
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/add-ons`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify(payload)});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        if(!r.ok)toast(ADDON_ERR[res.error]||'Could not send the add-on request','error');
+        else{
+          /* Only the form that sent it: by now the operator may have this form open on another booking. */
+          if(state.addOn===f)state.addOn=null;
+          toast(...ADDON_SENT(res));
+        }
+        /* Re-read either way: a refusal usually means the sheet was stale (someone else added it,
+           the leg's day passed). reloadRefundDetail keeps the refund ledger, and paints only if
+           this booking is still the one open. */
+        await reloadRefundDetail(id).catch(()=>{});
+      }catch(err){window.opsReportError&&window.opsReportError('add-on request',err);toast('Could not send the add-on request','error');}
+      break;}
+    case 'addoncopy':{const req=((state.detailData&&state.detailData.addOnRequests)||[]).find(x=>x.id===el.dataset.requestId);if(!req||!req.payLink){toast('No pay link for this request','error');break;}navigator.clipboard&&navigator.clipboard.writeText(req.payLink).catch(()=>{});toast('Pay link copied');break;}
+    case 'addoncancelopen':{const rid=el.dataset.requestId;const on=state.addOnCancel&&state.addOnCancel.id===id&&state.addOnCancel.requestId===rid;state.addOnCancel=on?null:{id,requestId:rid};renderSheet();break;}
+    case 'addoncancel':{
+      if(isBoard(t)||!state.caps||!state.caps.includes('bookings:operate'))break;
+      const rid=el.dataset.requestId;
+      const reasonEl=$('#addoncancelreason');
+      const reason=((reasonEl&&reasonEl.value)||'').trim();
+      if(!reason){toast('Give a reason first. It is saved against the request.','error');if(reasonEl)reasonEl.focus();break;}
+      try{
+        const r=await fetch(`/admin/ops/bookings/${encodeURIComponent(id)}/add-ons/${encodeURIComponent(rid)}/cancel`,{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({reason})});
+        if(r.status===401){showLogin();break;}
+        const res=await r.json().catch(()=>({}));
+        /* Cancelled, or refused because the request has moved on: the box goes, and it has to be
+           emptied first (morphSheet keeps a field that still holds text). Any other failure keeps
+           what the operator typed. */
+        if(r.ok||['already_paid','not_open','payment_in_flight','request_not_found'].includes(res.error)){
+          clearInput(reasonEl);
+          if(state.addOnCancel&&state.addOnCancel.requestId===rid)state.addOnCancel=null;
+        }
+        toast(r.ok?'Request cancelled':ADDON_ERR[res.error]||'Could not cancel the request',r.ok?undefined:'error');
+        await reloadRefundDetail(id).catch(()=>{});
+      }catch(err){window.opsReportError&&window.opsReportError('add-on cancel',err);toast('Could not cancel the request','error');}
       break;}
     case 'addnote':{const inp=$('#noteinput');const text=inp&&inp.value.trim();if(!text)break;const line=`[${nowStamp()}] ${text}`;const next=t.opsNotesRaw?t.opsNotesRaw+'\n'+line:line;try{await api.post(`/bookings/${id}/flags`,{opsNotes:next});clearInput(inp);toast('Note added');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking addnote',err);toast('Could not add note','error');}}break;}
     case 'paylink':{const link=state.detailData&&state.detailData.payLink;if(!link){toast('No payment link for this booking','error');break;}navigator.clipboard&&navigator.clipboard.writeText(link).catch(()=>{});toast('Payment link copied');break;}
