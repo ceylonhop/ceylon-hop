@@ -1,7 +1,7 @@
 import type { Booking } from '../db/bookingRepo';
 import { describe, it, expect } from 'vitest';
 import { FakeEmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, type AssignedQuote } from './opsNotifications';
+import { sendQuoteAssigned, teamPaidEmail, teamBalancePaidEmail, teamCancelledEmail, teamRefundedEmail, teamRescueEmail, teamUnpricedEmail, teamAddOnPaidEmail, type AssignedQuote, type TeamAddOnPaidArgs } from './opsNotifications';
 import { sampleBooking, sampleVariants } from './__fixtures__/sampleBookings';
 
 const quote = (over: Partial<AssignedQuote> = {}): AssignedQuote => ({
@@ -568,5 +568,77 @@ describe('sendRideSeatHeld — the Post it block on a new ride', () => {
     const msg = await started({ shareBaseUrl: undefined });
     expect(msg.html).not.toContain('story.png');
     expect(msg.text).not.toContain('POST IT');
+  });
+});
+
+// Add-ons after booking (spec 2026-11-14 §6.4, §7.5). An add-on is something the driver has to
+// DO, and no driver is recorded anywhere, so the team is told to pass it on. The subject must
+// never start "Paid:": that prefix is the owner's Gmail forwarding filter for trip money.
+describe('teamAddOnPaidEmail', () => {
+  const one: TeamAddOnPaidArgs = {
+    orderId: 'CH-7QK2P-A1', totalCents: 1000, currency: 'USD', requestedBy: 'ops@ceylonhop.com',
+    lines: [{ label: 'Sightseeing stops (up to 3h) — Colombo Fort → Kandy', amountCents: 1000, travelDate: '2026-08-09' }],
+  };
+
+  it('has exactly the agreed subject, which is not the "Paid:" filter anchor', () => {
+    const m = teamAddOnPaidEmail(sampleBooking('single'), one, 'https://ops.example');
+    expect(m.subject).toBe('Add-on paid, tell the driver: CH-7QK2P');
+    expect(m.subject.startsWith('Paid:')).toBe(false);
+  });
+
+  it('says who paid, for what on which leg and when, the amount, the order, who asked for it, and to tell the driver', () => {
+    const m = teamAddOnPaidEmail(sampleBooking('single'), one, 'https://ops.example');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Priya Fernando paid for an add-on');
+      expect(part).toContain('Tell the driver for this leg. Nothing was sent to the driver automatically.');
+      expect(part).toContain('Sightseeing stops (up to 3h) — Colombo Fort → Kandy');
+      expect(part).toContain('Sun 9 Aug · pickup 08:30');
+      expect(part).toContain('$10.00');
+      expect(part).toContain('CH-7QK2P-A1');
+      expect(part).toContain('ops@ceylonhop.com');
+      expect(part).toContain('CH-7QK2P');
+      expect(part).toContain('AC car · 2 pax');
+      expect(part).toContain('+94771234567');
+    }
+    expect(m.html).toContain('https://ops.example/ops?booking=sample-id');
+    expect(m.html).toContain('Open the booking');
+    expect(m.text).toContain('Open the booking: https://ops.example/ops?booking=sample-id');
+  });
+
+  it('lists every line of a request with its own amount, and the total', () => {
+    const trip = sampleBooking('trip');
+    const b = { ...trip, input: { ...trip.input, serviceType: 'private' } } as typeof trip;
+    const m = teamAddOnPaidEmail(b, {
+      ...one, orderId: 'CH-TRIP1-A2', totalCents: 2900,
+      lines: [
+        { label: 'Sightseeing stops (up to 3h) — Sigiriya → Kandy', amountCents: 1000, travelDate: '2026-08-11' },
+        { label: 'Wait for Safari — Kandy → Ella', amountCents: 1900, travelDate: null },
+      ],
+    }, '');
+    for (const part of [m.html, m.text]) {
+      expect(part).toContain('Priya Fernando paid for 2 add-ons');
+      expect(part).toContain('Sightseeing stops (up to 3h) — Sigiriya → Kandy');
+      expect(part).toContain('Tue 11 Aug');
+      expect(part).toContain('$10.00');
+      expect(part).toContain('Wait for Safari — Kandy → Ella');
+      expect(part).toContain('$19.00');
+      expect(part).toContain('$29.00');
+      expect(part).toContain('CH-TRIP1-A2');
+      // A trip's legs carry no pickup time of their own, so none is claimed.
+      expect(part).not.toContain('pickup');
+    }
+  });
+
+  it('says where to look when there is no ops base URL, and escapes what it prints', () => {
+    const b = sampleBooking('single');
+    const m = teamAddOnPaidEmail(
+      { ...b, input: { ...b.input, customer: { ...b.input.customer, firstName: '<b>Priya</b>' } } } as typeof b,
+      { ...one, requestedBy: '<i>ops</i>@x.com', lines: [{ label: 'Waiting fee — <u>Fort</u> → Kandy', amountCents: 1000, travelDate: null }] },
+      '',
+    );
+    expect(m.html).toContain('Find it under Bookings in the ops dashboard.');
+    expect(m.html).not.toContain('<b>Priya</b>');
+    expect(m.html).not.toContain('<i>ops</i>');
+    expect(m.html).not.toContain('<u>Fort</u>');
   });
 });

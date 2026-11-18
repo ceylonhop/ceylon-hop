@@ -35,6 +35,8 @@ import { amountDueNowContract } from './bookingAmountDueNow.test';
 import { paymentArrangementContract } from './bookingPaymentArrangement.test';
 import { PostgresAddOnRepo } from './postgresAddOnRepo';
 import { addOnRepoContract } from './addOnRepo.test';
+import { addOnSettlementContract } from './addOnSettlement.test';
+import { AddOnError } from './addOnRepo';
 import { bookingAddOnsListContract } from './bookingAddOnsList.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
@@ -1887,6 +1889,76 @@ describe.skipIf(!TEST_URL)('PostgresAddOnRepo (integration)', () => {
     expect([first.to, second.to]).toEqual(['Ella', 'Galle']);
     await db.execute(dsql`update booking_legs set removed_at = now() where id = ${first.id}`);
     expect(await repo.listLegs(b.id)).toEqual([second]);
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres add-on settlement (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  addOnSettlementContract('contract', async () => {
+    const db = await migrated();
+    const bookings = new PostgresBookingRepo(db);
+    return {
+      bookings,
+      payments: new PostgresPaymentRepo(db),
+      events: new PostgresPaymentEventRepo(db),
+      addOns: new PostgresAddOnRepo(db),
+      settlement: (failureHook) => new PostgresPaymentSettlementRepo(db, bookings, failureHook),
+    };
+  });
+
+  // Postgres only: a real race between two connections. Whichever takes the request's row lock
+  // first wins, and the loser must see what the winner committed. Run several times so both
+  // orders are likely to occur; every run must end in one of the two allowed states.
+  it('a concurrent cancel and settle end as cancelled + orphaned, or paid + cancel refused, never a mix', async () => {
+    const db = await migrated();
+    const bookings = new PostgresBookingRepo(db);
+    const payments = new PostgresPaymentRepo(db);
+    const addOns = new PostgresAddOnRepo(db);
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    for (let run = 0; run < 12; run++) {
+      const created = await bookings.create({
+        ...sample,
+        input: { ...sample.input, date: new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10) },
+      } as NewBooking);
+      await bookings.setStatus(created.id, 'payment_pending');
+      await bookings.setStatus(created.id, 'paid');
+      const [leg] = await addOns.listLegs(created.id);
+      const request = await addOns.createRequest({
+        bookingId: created.id, lines: [{ legId: leg.id, code: 'waiting', label: 'Waiting fee — Colombo Airport → Ella', amountCents: 1000 }],
+        currency: 'USD', rateCardVersion: 'card-v1', createdBy: 'ops@ceylonhop.com', now: new Date(), fullyRefundedPaymentIds: [],
+      });
+      const payment = await payments.create({
+        bookingId: created.id, provider: 'payhere', orderId: `${created.reference}-A1`, amount: 1000, currency: 'USD',
+        idempotencyKey: `checkout:${created.id}:addon:${request.id}`, purpose: 'add_on',
+      });
+      await addOns.attachPayment(request.id, payment.id);
+      const settle = () => settlement.acceptVerifiedEvent({
+        provider: 'payhere', merchantId: '1234567', orderId: payment.orderId, providerTxnId: `PAY-RACE-${payment.id}`,
+        amountCents: 1000, currency: 'USD', status: 'succeeded', providerStatusCode: '2', receivedAt: new Date(),
+        payloadSha256: 'e'.repeat(64), sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      });
+      // No checkout attempt is recorded on the row, so the in-flight hold never applies here.
+      const cancel = () => addOns.cancel(request.id, { by: 'ops@ceylonhop.com', reason: 'race', now: new Date(), inFlightAfter: new Date(0) })
+        .then(() => 'cancelled' as const, (e: unknown) => e);
+      // Odd runs start the cancel first, even runs the settlement.
+      const cancelling = run % 2 ? cancel() : undefined;
+      const settling = settle();
+      const cancelled = await (cancelling ?? cancel());
+      const outcome = await settling;
+
+      const after = await addOns.get(request.id);
+      expect((await payments.findByOrderId(payment.orderId))?.status).toBe('succeeded');
+      if (cancelled === 'cancelled') {
+        expect(outcome.kind).toBe('add_on_orphaned');
+        expect(after).toMatchObject({ status: 'cancelled', paidAt: null });
+      } else {
+        expect(cancelled).toBeInstanceOf(AddOnError);
+        expect((cancelled as AddOnError).code).toBe('already_paid');
+        expect(outcome.kind).toBe('add_on_settled');
+        expect(after?.status).toBe('paid');
+        expect(after?.cancelledAt).toBeNull();
+      }
+    }
   });
 });
 

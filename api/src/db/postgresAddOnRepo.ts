@@ -56,6 +56,30 @@ async function withLines(db: Reader, rows: RequestRow[]): Promise<AddOnRequest[]
   return rows.map((row) => toRequest(row, lines.get(row.id) ?? []));
 }
 
+// ── Settlement only (spec 2026-11-14 §6.3) ─────────────────────────────────────────────────────
+// Used by PostgresPaymentSettlementRepo inside ITS transaction, after it has locked the payment
+// and the booking. Not part of AddOnRepo: nothing else may mark a request paid.
+type SettlementTx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** Locks the request a payment row belongs to and returns it as it stands under that lock. A
+ *  cancel that committed while settlement waited is therefore seen, and one that arrives later
+ *  waits here until settlement commits, then finds the request paid. */
+export async function lockAddOnRequestForSettlement(
+  tx: SettlementTx,
+  paymentId: string,
+): Promise<{ id: string; status: string } | null> {
+  const [row] = await tx
+    .select({ id: bookingAddOnRequests.id, status: bookingAddOnRequests.status })
+    .from(bookingAddOnRequests)
+    .where(eq(bookingAddOnRequests.paymentId, paymentId))
+    .for('update');
+  return row ?? null;
+}
+
+export async function markAddOnRequestPaidForSettlement(tx: SettlementTx, requestId: string, paidAt: Date): Promise<void> {
+  await tx.update(bookingAddOnRequests).set({ status: 'paid', paidAt }).where(eq(bookingAddOnRequests.id, requestId));
+}
+
 export class PostgresAddOnRepo implements AddOnRepo {
   constructor(private readonly db: Db) {}
 

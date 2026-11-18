@@ -55,7 +55,7 @@ type Line = { id: string; legId: string; code: string; label: string; amountCent
 type RequestJson = {
   id: string; seq: number; name: string; status: string; state: string; totalCents: number; currency: string;
   orderId: string; payable: boolean; payLink: string | null; inFlightUntil: string | null; refundedCents: number;
-  createdBy: string; createdAt: string; paidAt: string | null;
+  paymentId: string | null; createdBy: string; createdAt: string; paidAt: string | null;
   cancelledBy: string | null; cancelledAt: string | null; cancelReason: string | null; lines: Line[];
 };
 type Leg = { id: string; seq: number; kind: string; from: string; to: string; viaStops: string[]; travelDate: string | null };
@@ -156,7 +156,7 @@ describe('add-ons after booking: the ops API', () => {
         id: expect.any(String), seq: 1, name: 'A1', status: 'open', state: 'awaiting_payment',
         totalCents: price.sightseeing, currency: 'USD', orderId: `${b.reference}-A1`,
         payable: true, payLink: expect.stringMatching(/^https:\/\/pay\.example\/manage\.html\?t=.+#add-ons$/),
-        inFlightUntil: null, refundedCents: 0,
+        inFlightUntil: null, refundedCents: 0, paymentId: null,
         createdBy: 'o@x.com', createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T.+Z$/), paidAt: null,
         cancelledBy: null, cancelledAt: null, cancelReason: null,
         lines: [{ id: expect.any(String), legId: kandyElla!.id, code: 'sightseeing', label: 'Sightseeing stops (up to 3h) — Kandy → Ella', amountCents: price.sightseeing }],

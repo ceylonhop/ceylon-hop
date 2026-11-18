@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  paymentVerdict, caseTimeline, caseGaps, normaliseCaseRef, LOG_START, DECLINES_START, DUPLICATE_CLOSE_ACTOR,
+  paymentVerdict, caseTimeline, caseGaps, caseAddOnPayments, normaliseCaseRef, LOG_START, DECLINES_START, DUPLICATE_CLOSE_ACTOR,
   type CaseEvidence, type CasePayment,
 } from './paymentCase';
 import { DUPLICATE_CLOSED_BY } from '../services/duplicateBookings';
@@ -521,5 +521,111 @@ describe('caseTimeline', () => {
     expect(rows.some((r) => r.kind === 'payment_created')).toBe(false);
     expect(rows.find((r) => r.kind === 'cancelled')).toMatchObject({ by: 'o@x.com', reason: 'trip off', paidOn: null });
     expect(rows.filter((r) => r.kind === 'refund').map((r) => r.kind === 'refund' && r.step)).toEqual(['requested', 'confirmed']);
+  });
+});
+
+// Add-ons after booking (spec 2026-11-14 §7.3). An add-on is paid on its own payment row, order
+// REF-A<n>. It is real money on the booking, but it is not the trip's: the verdict stays the
+// trip's, and the add-on payments are listed in their own group.
+describe('add-on payments', () => {
+  const addOn = (over: Partial<CasePayment> = {}): CasePayment => gateway({
+    id: 'pa1', orderId: 'CH-AAAA2-A1', purpose: 'add_on', amount: 1000, idempotencyKey: 'checkout:b1:addon:r1',
+    status: 'succeeded', createdAt: T('10:00:00'), lastAttemptAt: T('10:00:00'), settledAt: T('10:05:00'),
+    settlementSource: 'webhook', gatewayPaymentId: 'PAY-A1', ...over,
+  });
+  const addOnNotice = (code: string, at: Date, over: Partial<PaymentEvent> = {}) =>
+    notice(code, at, { paymentId: 'pa1', providerTxnId: code === '2' ? 'PAY-A1' : '0', amount: 1000, ...over });
+  // The paid-by-card story, then an add-on: checkout, a decline, a second checkout, approval.
+  const withPaidAddOn = (base: CaseEvidence = paidByCard()): CaseEvidence => ({
+    ...base,
+    payments: [...base.payments, addOn()],
+    notices: [...base.notices, addOnNotice('-2', T('10:02:00')), addOnNotice('2', T('10:05:00'))],
+    log: [
+      ...base.log,
+      log('checkout', 'succeeded', T('10:00:00'), { orderId: 'CH-AAAA2-A1', attempt: 1 }),
+      log('webhook', 'failed', T('10:02:00'), { orderId: 'CH-AAAA2-A1', httpStatus: 200 }),
+      log('checkout', 'succeeded', T('10:03:00'), { orderId: 'CH-AAAA2-A1', attempt: 2 }),
+      log('webhook', 'settled', T('10:05:00'), { orderId: 'CH-AAAA2-A1', httpStatus: 200 }),
+    ],
+  });
+
+  it('a pasted add-on order id opens the booking', () => {
+    expect(normaliseCaseRef(' ch-ab12c-a1 ')).toEqual({ kind: 'booking', ref: 'CH-AB12C' });
+    expect(normaliseCaseRef('CH-AB12C-A12')).toEqual({ kind: 'booking', ref: 'CH-AB12C' });
+    // Only a booking reference carries one, and only as a whole suffix.
+    expect(normaliseCaseRef('Q-7F3KX-A1')).toBeNull();
+    expect(normaliseCaseRef('CH-AB12C-A')).toBeNull();
+    expect(normaliseCaseRef('CH-AB12C-A1-A1')).toBeNull();
+    expect(normaliseCaseRef('CH-AB12C-A1X')).toBeNull();
+  });
+
+  it('a paid add-on beside a paid trip is the trip paid once, not paid twice', () => {
+    const plain = paymentVerdict(paidByCard());
+    const v = paymentVerdict(withPaidAddOn());
+    expect(v).toMatchObject({ kind: 'paid', amount: 5000, payhere: { paymentId: '320048289427' }, captures: null, warnings: [] });
+    // The add-on's own checkouts and decline are not the trip's.
+    expect(v).toEqual(plain);
+  });
+
+  it('a deposit, an add-on, then the balance is still one sale', () => {
+    const v = paymentVerdict(withPaidAddOn(depositAndBalance()));
+    expect(v).toMatchObject({ kind: 'paid', amount: 5000, payhere: { paymentId: 'PAY-D' } });
+  });
+
+  it('an add-on paid on a pay-on-the-day booking leaves the trip’s cash still due', () => {
+    const base = evidence({ booking: { status: 'confirmed', paymentArrangement: 'on_the_day' } });
+    const v = paymentVerdict(withPaidAddOn(base));
+    expect(v).toMatchObject({ kind: 'never_started', warnings: ['cash_due_on_the_day'], checkouts: 0, declineNotices: 0 });
+  });
+
+  it('an unpaid or declined add-on changes nothing about a paid trip', () => {
+    const base = paidByCard();
+    const e: CaseEvidence = {
+      ...base,
+      payments: [...base.payments, addOn({ status: 'failed', settledAt: null, settlementSource: null, gatewayPaymentId: null })],
+      notices: [...base.notices, addOnNotice('-2', T('10:02:00'))],
+      log: [...base.log, log('checkout', 'succeeded', T('10:00:00'), { orderId: 'CH-AAAA2-A1' }), log('webhook', 'failed', T('10:02:00'), { orderId: 'CH-AAAA2-A1' })],
+    };
+    expect(paymentVerdict(e)).toEqual(paymentVerdict(paidByCard()));
+  });
+
+  it('a refund of the add-on payment is not the trip’s money going back', () => {
+    const e = withPaidAddOn();
+    e.refunds.push(refund({ id: 'ra1', paymentId: 'pa1', amountCents: 1000, status: 'manual_confirmed', confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }));
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'paid', refund: null });
+  });
+
+  it('a refund of the trip payment is still judged against the trip’s captures only', () => {
+    const e = withPaidAddOn();
+    e.refunds.push(refund({ status: 'manual_confirmed', amountCents: 2000, confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }));
+    expect(paymentVerdict(e)).toMatchObject({ kind: 'money_back', refund: { state: 'confirmed', refundedCents: 2000, capturedCents: 5000 } });
+  });
+
+  it('lists each add-on payment in its own group: order, amount, state, when paid, what went back', () => {
+    const e = withPaidAddOn();
+    e.payments.push(addOn({ id: 'pa2', orderId: 'CH-AAAA2-A2', amount: 1900, idempotencyKey: 'checkout:b1:addon:r2', status: 'pending', createdAt: T('11:00:00'), settledAt: null, settlementSource: null, gatewayPaymentId: null }));
+    e.refunds.push(
+      refund({ id: 'ra1', paymentId: 'pa1', amountCents: 400, status: 'manual_confirmed', confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }),
+      refund({ id: 'ra2', paymentId: 'pa1', amountCents: 600, status: 'manual_pending' }),
+      refund({ id: 'rt1', paymentId: 'p1', amountCents: 2000, status: 'manual_confirmed', confirmedBy: 'f@x.com', confirmedAt: T('14:00:00') }),
+    );
+    expect(caseAddOnPayments(e)).toEqual([
+      {
+        orderId: 'CH-AAAA2-A1', amount: 1000, currency: 'USD', status: 'succeeded', createdAt: T('10:00:00').toISOString(),
+        paidAt: T('10:05:00').toISOString(), payherePaymentId: 'PAY-A1', method: 'VISA', refundedCents: 400,
+      },
+      {
+        orderId: 'CH-AAAA2-A2', amount: 1900, currency: 'USD', status: 'pending', createdAt: T('11:00:00').toISOString(),
+        paidAt: null, payherePaymentId: null, method: null, refundedCents: 0,
+      },
+    ]);
+    expect(caseAddOnPayments(paidByCard())).toEqual([]);
+  });
+
+  it('the timeline calls the add-on’s approval an add-on payment, never "paid again"', () => {
+    const rows = caseTimeline(withPaidAddOn());
+    const notes = rows.filter((r) => r.kind === 'notice').map((r) => r.kind === 'notice' && [r.code, r.note]);
+    expect(notes).toEqual([['-2', null], ['2', null], ['-2', null], ['2', 'add_on_paid']]);
+    expect(rows.filter((r) => r.kind === 'payment_created').map((r) => r.kind === 'payment_created' && r.orderId)).toEqual(['CH-AAAA2', 'CH-AAAA2-A1']);
   });
 });

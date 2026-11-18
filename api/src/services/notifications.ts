@@ -1385,6 +1385,57 @@ export async function sendAddOnRequest(
   });
 }
 
+// ── Add-on confirmed (the request's payment landed) ────────────────────────
+// Spec 2026-11-14 §6.4, §7.5. The receipt for an add-on paid after booking. It lists the add-on
+// lines and what was paid for them, and nothing about the trip's own money: that is unchanged.
+export interface AddOnPaidEmail {
+  requestId: string;
+  totalCents: number;
+  currency: string;
+  lines: AddOnRequestEmail['lines'];
+}
+
+export async function sendAddOnPaid(
+  booking: Booking,
+  paid: AddOnPaidEmail,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const total = money(paid.totalCents, paid.currency);
+  const several = paid.lines.length > 1;
+  const lede = 'We’ve received your payment. Our team will tell your driver.';
+  const unchanged = 'Nothing else about your trip has changed.';
+  const html = page(
+    brandHeader() +
+      introBlock(several ? 'Add-ons confirmed' : 'Add-on confirmed', TEAL_DEEP, `Thanks, ${first}. Your ${several ? 'add-ons are' : 'add-on is'} confirmed`, lede) +
+      addOnLinesRow(paid.lines, paid.currency) +
+      totalBlock('Paid', total) +
+      (links.manage ? manageButton(links.manage) : '') +
+      `<tr><td style="padding:14px 34px 0;font-size:14px;line-height:1.6;color:${MUTED}">${esc(unchanged)}</td></tr>` +
+      `<tr><td style="padding:6px 34px 0;font-size:13px;line-height:1.6;color:${FAINT}">Booking ${esc(booking.reference)} &middot; Questions? <a href="${WA_URL}" style="color:${TEAL_DEEP}">WhatsApp us</a></td></tr>` +
+      footer(),
+  );
+  const text = textShell(several ? 'your add-ons are confirmed' : 'your add-on is confirmed', lede, booking, [
+    '',
+    ...paid.lines.map((l) => `${l.label}${l.travelDate ? ` · ${fmtDate(l.travelDate)}` : ''}: ${money(l.amountCents, paid.currency)}`),
+    `Paid: ${total}`,
+    '',
+    unchanged,
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: several
+      ? `Add-ons confirmed · ${booking.reference}`
+      : `Add-on confirmed: ${paid.lines[0]?.label ?? 'your add-on'} · ${booking.reference}`,
+    html,
+    text,
+    // Keyed on the request, like the request email: each receipt is its own ledger row.
+    tracking: { ...emailTracking(booking, 'add_on_paid'), trackingKey: `${booking.id}:add_on_paid:${paid.requestId}` },
+  });
+}
+
 // ── Customer quote (an ops-built proposal sent to the customer) ────────────
 // Renders from a decoupled view-model, NOT a DB Quote — the (future) send endpoint maps a
 // quote into this shape. Deliberately a clean proposal: itinerary + one total + validity +

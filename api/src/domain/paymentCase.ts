@@ -3,6 +3,7 @@ import type { PaymentEvent } from '../db/paymentEventRepo';
 import type { Payment, PaymentProvenance } from '../db/paymentRepo';
 import type { Refund } from '../db/refundRepo';
 import { isBalanceAfterDeposit } from '../db/paymentSettlementRepo';
+import { tripPayments } from './balance';
 
 // ============================================================================
 // The ops payment lookup's judgement (spec docs/superpowers/specs/2026-09-26-ops-payment-lookup-
@@ -65,7 +66,8 @@ export type CaseRow =
     }
   | {
       at: string; source: 'payment_events'; kind: 'notice'; code: string; message: string | null; method: string | null;
-      paymentId: string; amount: number; currency: string; note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | null; repeats: number | null;
+      paymentId: string; amount: number; currency: string;
+      note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | 'add_on_paid' | null; repeats: number | null;
     }
   | { at: string; source: 'notification_log'; kind: 'email'; emailKind: string; deliveryTracked: boolean }
   | {
@@ -74,6 +76,22 @@ export type CaseRow =
     };
 
 export type CasePayment = Payment & PaymentProvenance;
+
+// One payment for add-ons added after booking (spec 2026-11-14 §7.3), order id `<ref>-A<n>`. Its
+// money is not the trip's, so it is listed apart from the verdict and never judged as a second
+// capture of the trip.
+export interface CaseAddOnPayment {
+  orderId: string;
+  amount: number;
+  currency: string;
+  status: 'pending' | 'succeeded' | 'failed';
+  createdAt: string | null;
+  paidAt: string | null;
+  payherePaymentId: string | null;
+  method: string | null;
+  /** Confirmed refunds on this payment. */
+  refundedCents: number;
+}
 
 export interface CaseEvidence {
   booking: {
@@ -93,11 +111,13 @@ const CASE_REF = /^(CH|Q)-[A-Z0-9]{3,12}$/;
 
 // A pasted ref, as the lookup box receives it. Manual payments use `<ref>-MANUAL` as their order id;
 // a deposit and its balance use `<ref>-D` / `<ref>-B` (spec 2026-10-07 §4) — what PayHere's dashboard
-// shows. Only a booking reference carries those two; a quote has no payment of its own.
+// shows. Only a booking reference carries those two; a quote has no payment of its own. An add-on
+// request's payment is `<ref>-A<n>` (spec 2026-11-14 §6.2), also on a booking reference only.
 export function normaliseCaseRef(raw: string): { kind: 'booking' | 'quote'; ref: string } | null {
   let ref = String(raw ?? '').trim().toUpperCase();
   if (ref.endsWith('-MANUAL')) ref = ref.slice(0, -'-MANUAL'.length);
   else if (/^CH-[A-Z0-9]{3,12}-[DB]$/.test(ref)) ref = ref.slice(0, -2);
+  else if (/^CH-[A-Z0-9]{3,12}-A\d+$/.test(ref)) ref = ref.replace(/-A\d+$/, '');
   if (!CASE_REF.test(ref)) return null;
   return { kind: ref.startsWith('Q-') ? 'quote' : 'booking', ref };
 }
@@ -128,6 +148,10 @@ interface Money {
   chargeback: PaymentEvent | null;
 }
 
+// Add-on payments (spec 2026-11-14 §7.3) are left out of everything the verdict is built from:
+// their rows, their notices, their checkout-log rows and their refunds. They get their own group.
+const isAddOn = (p: CasePayment) => p.purpose === 'add_on';
+
 function moneyOf(e: CaseEvidence): Money {
   // The card payment the case is about is the FIRST one (full or deposit). A deposit booking's
   // balance is the second half of the same sale (spec 2026-10-07): counted in captured money,
@@ -135,20 +159,21 @@ function moneyOf(e: CaseEvidence): Money {
   // (`pending`/`failed`) attempt of the other kind beside the one that was paid (spec §5.1,
   // 2026-10-08): the succeeded row is the case, the abandoned one is history. Two SUCCEEDED first
   // payments stay one case with both rows' notices, so they still read `paid_twice`.
-  const firsts = e.payments.filter((p) => !isManual(p) && p.purpose !== 'balance');
+  const payments = tripPayments(e.payments);
+  const firsts = payments.filter((p) => !isManual(p) && p.purpose !== 'balance');
   const paidFirsts = firsts.filter((p) => p.status === 'succeeded');
   const gateway = paidFirsts[0] ?? firsts[0] ?? null;
   const caseIds = new Set((paidFirsts.length ? paidFirsts : gateway ? [gateway] : []).map((p) => p.id));
   // A balance is the other half of the sale only by the rule settlement uses (isBalanceAfterDeposit:
   // beside exactly one succeeded deposit, within the total). Any other succeeded balance is a
   // second capture: its notices join the case so it reads `paid_twice`.
-  const balances = e.payments.filter((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded');
+  const balances = payments.filter((p) => !isManual(p) && p.purpose === 'balance' && p.status === 'succeeded');
   const pairs = (p: CasePayment) =>
-    isBalanceAfterDeposit(p, e.payments.filter((o) => o.id !== p.id && o.status === 'succeeded'), e.booking.total);
+    isBalanceAfterDeposit(p, payments.filter((o) => o.id !== p.id && o.status === 'succeeded'), e.booking.total);
   const balance = balances.length === 1 && pairs(balances[0]) ? balances[0] : null;
   const strayBalances = balances.filter((p) => p !== balance);
   for (const p of strayBalances) caseIds.add(p.id);
-  const manual = e.payments.find(isManual) ?? null;
+  const manual = payments.find(isManual) ?? null;
   const gwNotices = e.notices.filter((n) => caseIds.has(n.paymentId)).sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt));
   // A chargeback on the balance payment is a chargeback on this sale.
   const chargeback = [...gwNotices, ...e.notices.filter((n) => balance && n.paymentId === balance.id)]
@@ -192,7 +217,8 @@ function isCancelled(b: CaseEvidence['booking']): boolean {
 }
 
 function refundOf(e: CaseEvidence, m: Money): Verdict['refund'] {
-  const live = e.refunds.filter((r) => r.status !== 'cancelled');
+  const addOnIds = new Set(e.payments.filter(isAddOn).map((p) => p.id));
+  const live = e.refunds.filter((r) => r.status !== 'cancelled' && !addOnIds.has(r.paymentId));
   if (!live.length) return null;
   const state = live.some((r) => r.status === 'api_processing') ? 'processing'
     : live.some((r) => r.status === 'manual_pending') ? 'requested'
@@ -228,7 +254,9 @@ function warningsOf(e: CaseEvidence, m: Money): WarningCode[] {
 export function paymentVerdict(e: CaseEvidence): Verdict | null {
   if (e.unavailable.length) return null;
   const m = moneyOf(e);
-  const log = [...e.log].sort(byAt);
+  // An add-on's checkouts and PayHere answers are logged under its own order id: not the trip's.
+  const addOnOrders = new Set(e.payments.filter(isAddOn).map((p) => p.orderId));
+  const log = e.log.filter((r) => !r.orderId || !addOnOrders.has(r.orderId)).sort(byAt);
   const checkouts = log.filter((r) => r.action === 'checkout' && r.outcome === 'succeeded');
   // A decline notice is a failed webhook with no reason: charged_back and stale_attempt carry one.
   const declines = log.filter((r) => r.action === 'webhook' && r.outcome === 'failed' && !r.reason);
@@ -335,6 +363,29 @@ export function caseGaps(e: CaseEvidence, verdict: Verdict | null): GapCode[] {
   return gaps;
 }
 
+/** The add-on payments on the booking, oldest first. Card money is read the way the verdict reads
+ *  it: from PayHere's own stored success notice, with the row as the fallback. */
+export function caseAddOnPayments(e: CaseEvidence): CaseAddOnPayment[] {
+  return e.payments.filter(isAddOn).map((p) => {
+    const success = e.notices
+      .filter((n) => n.paymentId === p.id && codeOf(n) === '2')
+      .sort((a, b) => ms(a.receivedAt) - ms(b.receivedAt))[0];
+    return {
+      orderId: p.orderId,
+      amount: p.amount,
+      currency: p.currency,
+      status: success ? 'succeeded' : p.status,
+      createdAt: iso(p.createdAt),
+      paidAt: iso(success?.receivedAt ?? (p.status === 'succeeded' ? p.settledAt : null)),
+      payherePaymentId: success?.providerTxnId ?? p.gatewayPaymentId,
+      method: success?.sanitizedPayload.method ?? null,
+      refundedCents: e.refunds
+        .filter((r) => r.paymentId === p.id && CONFIRMED_REFUND.has(r.status))
+        .reduce((sum, r) => sum + r.amountCents, 0),
+    };
+  });
+}
+
 export function caseTimeline(e: CaseEvidence): CaseRow[] {
   const rows: Array<{ t: number; row: CaseRow }> = [];
   const push = (d: Date, row: CaseRow) => rows.push({ t: ms(d), row });
@@ -384,12 +435,16 @@ export function caseTimeline(e: CaseEvidence): CaseRow[] {
   }
 
   const firstSuccess = m.successes[0] ?? null;
+  const addOnIds = new Set(e.payments.filter(isAddOn).map((p) => p.id));
   const loggedDeclines = e.log.filter((r) => r.action === 'webhook' && r.outcome === 'failed' && !r.reason).length;
   const storedDeclines = e.notices.filter((n) => codeOf(n) === '-2').length;
   for (const n of [...e.notices].sort((a, x) => ms(a.receivedAt) - ms(x.receivedAt))) {
     const code = codeOf(n);
-    let note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | null = null;
-    if (m.balance && n.paymentId === m.balance.id) {
+    let note: 'paid_again' | 'balance_paid' | 'earlier_attempt' | 'add_on_paid' | null = null;
+    if (addOnIds.has(n.paymentId)) {
+      // An add-on's own payment: never a second capture of the trip, nor one of its attempts.
+      if (code === '2') note = 'add_on_paid';
+    } else if (m.balance && n.paymentId === m.balance.id) {
       // The other half of a deposit sale, not a second capture.
       if (code === '2') note = 'balance_paid';
     } else if (firstSuccess && n.providerTxnId !== firstSuccess.providerTxnId) {

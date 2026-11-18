@@ -960,3 +960,119 @@ describe('runWatchdog — email quota', () => {
     expect(a!.title).toContain('70 of 100');
   });
 });
+
+// Add-ons after booking (spec 2026-11-14 §7.8; owner rule: never chase an abandoned or declined
+// checkout for an add-on). An add-on is paid on its own payment row on a booking that is already
+// going ahead, so its row must never start a chase, and never answer for the trip's own payment.
+describe('runWatchdog and add-on payments', () => {
+  const emailDeps = { baseUrl: 'https://ceylonhop.com', linkSecret: 'sek' };
+
+  // A booking that is going ahead, its confirmation sent, with an add-on checkout on it.
+  async function securedWithAddOn(state: 'pending' | 'failed', arrangement?: 'on_the_day') {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    const log = new InMemoryNotificationLogRepo();
+    const b = await bookings.create(sample);
+    await bookings.setStatus(b.id, 'payment_pending');
+    if (arrangement) {
+      await bookings.setPaymentArrangement(b.id, arrangement);
+      await bookings.setStatus(b.id, 'confirmed');
+    } else {
+      const trip = await payments.create({ bookingId: b.id, provider: 'payhere', orderId: b.reference, amount: 5000, currency: 'USD', idempotencyKey: `checkout:${b.id}` });
+      await payments.markSucceeded(trip.id);
+      await bookings.setStatus(b.id, 'paid');
+      await log.markSent(b.id, 'confirmation');
+    }
+    const addOn = await payments.create({
+      bookingId: b.id, provider: 'payhere', orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD',
+      idempotencyKey: `checkout:${b.id}:addon:r1`, purpose: 'add_on',
+    });
+    await payments.touchAttempt(addOn.id);
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: b.id, orderId: addOn.orderId, attempt: 1 }, new Date());
+    if (state === 'failed') {
+      await payments.markFailed(addOn.id);
+      await checkoutEvents.record({ action: 'webhook', outcome: 'failed', source: 'server', bookingId: b.id, orderId: addOn.orderId }, new Date());
+    }
+    return { bookings, payments, checkoutEvents, log, booking: b };
+  }
+
+  it.each(['pending', 'failed'] as const)('a %s add-on payment on a paid booking starts no chase, no alert and no email', async (state) => {
+    const { bookings, payments, checkoutEvents, log } = await securedWithAddOn(state);
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    for (const min of [31, 60, 180]) {
+      const res = await runWatchdog(later(min), { bookings, payments, checkoutEvents, log, alerts, email, ...emailDeps });
+      expect(res.stuckPending).toBe(0);
+      expect(res.recoveryEmails).toBe(0);
+      expect(res.paidUnconfirmed).toBe(0);
+    }
+    expect(alerts.sent).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it.each(['pending', 'failed'] as const)('a %s add-on payment on a confirmed pay-on-the-day booking starts no chase either', async (state) => {
+    const { bookings, payments, checkoutEvents, log } = await securedWithAddOn(state, 'on_the_day');
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const res = await runWatchdog(later(45), { bookings, payments, checkoutEvents, log, alerts, email, ...emailDeps });
+    expect(res.stuckPending).toBe(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  // The trip's own payment is what the watch is about. A booking still awaiting it cannot have an
+  // add-on today (a request needs a secured booking), so these pin the rule rather than a live case.
+  async function unpaidTripWithAddOn(addOnState: 'succeeded' | 'pending' = 'succeeded') {
+    const { bookings, booking } = await seed('payment_pending');
+    const payments = new InMemoryPaymentRepo();
+    const trip = await payments.create({ bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 5000, currency: 'USD', idempotencyKey: `checkout:${booking.id}` });
+    await payments.touchAttempt(trip.id);
+    const addOn = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-A1`, amount: 1000, currency: 'USD',
+      idempotencyKey: `checkout:${booking.id}:addon:r1`, purpose: 'add_on',
+    });
+    if (addOnState === 'succeeded') await payments.markSucceeded(addOn.id);
+    const createdAt = new Date(booking.createdAt);
+    const at = (minutes: number) => new Date(createdAt.getTime() + minutes * MIN);
+    return { bookings, booking, payments, trip, addOn, at };
+  }
+
+  it('a paid add-on does not silence the watch on a trip payment that is still unanswered', async () => {
+    const { bookings, payments, booking } = await unpaidTripWithAddOn();
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(later(31), { bookings, payments, log: new InMemoryNotificationLogRepo(), alerts });
+    expect(res.stuckPending).toBe(1);
+    expect(alerts.sent.map((a) => a.kind)).toEqual(['watchdog_stuck_pending']);
+    expect(alerts.sent[0].body).toContain(booking.reference);
+  });
+
+  it('an add-on’s own answer in the checkout log does not close the trip’s unanswered attempt', async () => {
+    const { bookings, payments, booking, addOn, at } = await unpaidTripWithAddOn();
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, orderId: booking.reference, attempt: 1 }, at(1));
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, orderId: addOn.orderId, attempt: 1 }, at(2));
+    await checkoutEvents.record({ action: 'webhook', outcome: 'settled', source: 'server', bookingId: booking.id, orderId: addOn.orderId }, at(3));
+    const alerts = new FakeAlertAdapter();
+    const res = await runWatchdog(at(40), { bookings, payments, checkoutEvents, log: new InMemoryNotificationLogRepo(), alerts });
+    expect(res.stuckPending).toBe(1);
+    expect(alerts.sent.map((a) => a.kind)).toEqual(['watchdog_stuck_pending']);
+  });
+
+  it('an unanswered add-on checkout does not re-open the watch on a trip payment PayHere already declined', async () => {
+    const { bookings, payments, booking, trip, addOn, at } = await unpaidTripWithAddOn('pending');
+    const checkoutEvents = new InMemoryBookingCheckoutEventRepo();
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, orderId: booking.reference, attempt: 1 }, at(1));
+    await payments.markFailed(trip.id);
+    await checkoutEvents.record({ action: 'webhook', outcome: 'failed', source: 'server', bookingId: booking.id, orderId: booking.reference }, at(2));
+    await checkoutEvents.record({ action: 'checkout', outcome: 'succeeded', source: 'server', bookingId: booking.id, orderId: addOn.orderId, attempt: 2 }, at(10));
+    const alerts = new FakeAlertAdapter();
+    const email = new FakeEmailAdapter();
+    const res = await runWatchdog(at(60), { bookings, payments, checkoutEvents, log: new InMemoryNotificationLogRepo(), alerts, email, ...emailDeps });
+    expect(res.stuckPending).toBe(0);
+    expect(res.recoveryEmails).toBe(0);
+    expect(alerts.sent).toHaveLength(0);
+    expect(email.sent).toHaveLength(0);
+  });
+});

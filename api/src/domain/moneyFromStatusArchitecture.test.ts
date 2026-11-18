@@ -103,6 +103,7 @@ const ALLOWLIST: Allowed[] = [
   { file: 'db/addOnRepo.ts', match: "return r.status === 'paid' && !(", why: "Add-on request status (its own 'paid' is set when its payment settles); not a booking status." },
   { file: 'db/addOnRepo.ts', match: "if (status === 'paid') return 'already_paid'", why: 'Add-on request status: a paid request is refunded, not cancelled; not a booking status.' },
   { file: 'domain/addOns.ts', match: "if (req.status === 'paid') {", why: 'Add-on request status; how much was refunded is then read from the ledger. Not a booking status.' },
+  { file: 'routes/bookings.ts', match: "if (request.status === 'paid') return { ok: false, status: 409", why: 'Add-on request status: a paid request is not handed a second checkout; not a booking status.' },
   { file: 'db/bookingRepo.ts', match: "filter((r) => r.status === 'paid')", why: "Add-on request status: which requests' lines join booking.addOns; refunds are then read from the ledger. Not a booking status." },
   { file: 'db/postgresBookingRepo.ts', match: "eq(bookingAddOnRequests.status, 'paid')", why: 'Add-on request status, the same read in SQL; refunds are summed from the ledger beside it. Not a booking status.' },
 

@@ -11,9 +11,10 @@ import {
 } from '../db/paymentSettlementRepo';
 import { wasDelivered } from '../adapters/email';
 import type { PaymentRepo } from '../db/paymentRepo';
-import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, sendBalanceReceived, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
+import { sendBookingConfirmation, sendDetailsNeeded, sendPaymentFailed, sendDepositReceived, sendBalanceReceived, sendAddOnPaid, needsDetails, manageUrl, roadLines, routeText, travelWhenText } from '../services/notifications';
 import { money as fmtMoney } from '../services/opsEmail';
-import { teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
+import { teamAddOnPaidEmail, teamBalancePaidEmail, teamPaidEmail, teamRescueEmail } from '../services/opsNotifications';
+import type { AddOnRepo } from '../db/addOnRepo';
 import type { Booking } from '../db/bookingRepo';
 import type { Ga4Reporter } from '../services/analytics/ga4Reporter';
 import type { QuoteRepo } from '../db/quoteRepo';
@@ -189,6 +190,9 @@ export function webhookRoutes(deps: {
   // Partner experiences (spec 2026-10-06 D15): the team's paid email names what the customer asked about.
   experiences?: ExperienceRepo;
   experienceInterests?: ExperienceInterestRepo;
+  // Add-ons after booking (spec 2026-11-14 §6.4): the stored legs, for the date each paid add-on
+  // is on. Unset → the add-on emails simply carry no leg dates.
+  addOns?: Pick<AddOnRepo, 'listLegs'>;
 }) {
   const { settlements, adapter, email, conciergeTasks, notificationLog, baseUrl, linkSecret } = deps;
   const alerts: AlertAdapter = deps.alerts ?? { send: async () => {} };
@@ -304,6 +308,10 @@ export function webhookRoutes(deps: {
     }
 
     if (outcome.kind === 'failed') {
+      // A declined ADD-ON payment (spec 2026-11-14 §6.4) sends nothing: no "payment failed" email
+      // and no rescue alert. Both are the trip's, and the trip is already secured; the Pay button
+      // is still on the customer's page (owner rule: never chase an add-on checkout).
+      if (outcome.payment.purpose === 'add_on') return c.json({ ok: true, status: 'failed' }, 200);
       // Immediate best-effort nudge so the customer can retry. Idempotent (once per booking),
       // and never fails the webhook — PayHere must not retry over a mail hiccup.
       const failed = outcome.booking;
@@ -411,6 +419,81 @@ export function webhookRoutes(deps: {
           console.error(`ga4 balance report failed for ${b.reference}:`, err instanceof Error ? err.message : String(err));
         });
       }
+      return c.json({ ok: true }, 200);
+    }
+
+    // An add-on request was paid (spec 2026-11-14 §6.4). The booking itself is untouched, so
+    // nothing the trip's settlement does runs: no confirmation, no concierge task, no quote claim.
+    // The customer gets a receipt for the add-on; the team is told to tell the driver, because no
+    // driver is recorded anywhere and nothing reaches one automatically. All best-effort.
+    if (outcome.kind === 'add_on_settled') {
+      const b = outcome.booking;
+      const request = outcome.request;
+      const legs = deps.addOns ? await deps.addOns.listLegs(b.id).catch(() => []) : [];
+      const lines = request.lines.map((l) => ({
+        label: l.label,
+        amountCents: l.amountCents,
+        travelDate: legs.find((leg) => leg.id === l.legId)?.travelDate ?? null,
+      }));
+      try {
+        await sendAddOnPaid(b, { requestId: request.id, totalCents: request.totalCents, currency: request.currency, lines }, email, {
+          manage: manageUrl(b, baseUrl, linkSecret),
+        });
+      } catch (err) {
+        console.error(`add-on receipt failed for ${outcome.payment.orderId}:`, err);
+        void alerts.send({
+          severity: 'critical',
+          kind: 'confirmation_email_failed',
+          title: `Add-on receipt failed for ${b.reference}`,
+          body: `The add-on payment ${outcome.payment.orderId} on booking ${b.reference} is PAID but the customer got no receipt. Error: ${err instanceof Error ? err.message : String(err)}`,
+          dedupeKey: outcome.payment.orderId,
+        });
+      }
+      try {
+        const team = teamAddOnPaidEmail(
+          b,
+          { orderId: outcome.payment.orderId, totalCents: request.totalCents, currency: request.currency, requestedBy: request.createdBy, lines },
+          deps.opsBaseUrl ?? '',
+        );
+        await alerts.send({
+          severity: 'info',
+          kind: 'add_on_paid',
+          // NOT "Paid: ": that subject prefix is the owner's Gmail filter for trip money.
+          title: team.subject,
+          body: `${b.input.customer.firstName} ${b.input.customer.lastName} paid ${fmtMoney(request.totalCents, request.currency)} for ${lines.map((l) => l.label).join('; ')} (order ${outcome.payment.orderId}). Tell the driver for this leg. Nothing was sent to the driver automatically.`,
+          email: team,
+          dedupeKey: outcome.payment.orderId,
+        });
+      } catch (err) {
+        console.error(`team add-on notification failed for ${outcome.payment.orderId}:`, err);
+      }
+      if (deps.ga4) {
+        void deps.ga4.reportPayment(b, outcome.payment, event.receivedAt).catch((err) => {
+          console.error(`ga4 add-on report failed for ${outcome.payment.orderId}:`, err instanceof Error ? err.message : String(err));
+        });
+      }
+      return c.json({ ok: true }, 200);
+    }
+
+    // Money arrived for an add-on nobody wants any more (spec 2026-11-14 §6.4): ops cancelled the
+    // request, or the booking is cancelled, refunded or a no-show. The payment is recorded, so
+    // the refund tool can reach it; nothing was added and the customer got no receipt. A human
+    // has to give it back, so this is loud.
+    if (outcome.kind === 'add_on_orphaned') {
+      const orderId = outcome.payment.orderId;
+      const amount = fmtMoney(outcome.payment.amount, outcome.payment.currency);
+      const why = !outcome.request
+        ? 'no add-on request is tied to this payment'
+        : outcome.request.status !== 'open'
+          ? `its add-on request is ${outcome.request.status}`
+          : `the booking is ${outcome.booking.status.replace('_', ' ')}`;
+      void alerts.send({
+        severity: 'critical',
+        kind: 'add_on_orphaned',
+        title: `Add-on payment to refund: ${orderId} (${amount})`,
+        body: `Order ${orderId} captured ${amount} for an add-on on booking ${outcome.booking.reference}, but ${why}. The add-on was NOT added and the customer got no receipt. Refund this payment from the booking in ops.`,
+        dedupeKey: orderId,
+      });
       return c.json({ ok: true }, 200);
     }
 
