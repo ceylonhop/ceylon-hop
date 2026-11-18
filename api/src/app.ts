@@ -279,6 +279,8 @@ export function createApp(deps: AppDeps = {}) {
   // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
   // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
   if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
+  // It also lists the add-ons paid for after booking, as the Postgres load joins them (spec 2026-11-14 §7.6).
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachAddOns({ addOns, payments, refunds });
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Partner experiences (spec 2026-10-06). The in-memory interest repo reads the booking, quote and
   // experience repos so its leads queue and stats apply the same owner filter the SQL does.

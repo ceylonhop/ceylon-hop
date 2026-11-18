@@ -10,6 +10,8 @@ import type { PaymentArrangement } from '../domain/paymentMethod';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import type { PaymentRepo } from './paymentRepo';
 import type { QuoteRepo } from './quoteRepo';
+import { addOnRequestStands, type AddOnRepo } from './addOnRepo';
+import { REFUNDED_STATUSES, type RefundRepo } from './refundRepo';
 import { chosenAddOns } from '../quote/paySelection';
 import { addOnsFor } from '../quote/quoteAlternative';
 import type { LineItem, QuoteRequest, QuoteResult } from '../quote/types';
@@ -459,13 +461,45 @@ export class InMemoryBookingRepo implements BookingRepo {
     this.quotes = quotes;
   }
 
-  // The stored booking as a read returns it: plus `addOns` when its quote charged any. A booking
-  // with none comes back as the very object stored, exactly as before.
+  private addOnSources?: {
+    addOns: Pick<AddOnRepo, 'listByBooking'>;
+    payments: Pick<PaymentRepo, 'findByBookingId'>;
+    refunds: Pick<RefundRepo, 'list'>;
+  };
+
+  /** Lets a booking list the add-ons paid for after booking exactly as the Postgres load does:
+   *  from the requests, each one's payment, and the refunds against it. */
+  attachAddOns(sources: NonNullable<InMemoryBookingRepo['addOnSources']>): void {
+    this.addOnSources = sources;
+  }
+
+  // The stored booking as a read returns it: plus `addOns` when its quote charged any, then the
+  // ones paid for after booking. A booking with none comes back as the very object stored, exactly
+  // as before.
   private async present(b: Booking): Promise<Booking> {
     const q = this.quotes ? await this.quotes.findByConvertedBookingId(b.id) : null;
     const fromQuote = q ? addOnsFor(q, b) : [];
-    const addOns = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
+    const atBooking = fromQuote.length ? fromQuote : snapshotAddOns(this.websitePricing.get(b.id) ?? null);
+    const addOns = [...atBooking, ...(await this.paidAddOnLabels(b.id))];
     return addOns.length ? { ...b, addOns } : b;
+  }
+
+  // Add-ons bought after booking (spec 2026-11-14 §7.6): the lines of every PAID request whose
+  // payment has not gone back in full, in request order. Only confirmed refunds count, summed per
+  // payment, which is the rule the Postgres load applies in its one query.
+  private async paidAddOnLabels(bookingId: string): Promise<string[]> {
+    const src = this.addOnSources;
+    if (!src) return [];
+    const paid = (await src.addOns.listByBooking(bookingId)).filter((r) => r.status === 'paid');
+    if (paid.length === 0) return [];
+    const refunded = new Map<string, number>();
+    for (const r of await src.refunds.list(bookingId)) {
+      if (REFUNDED_STATUSES.includes(r.status)) refunded.set(r.paymentId, (refunded.get(r.paymentId) ?? 0) + r.amountCents);
+    }
+    const fullyRefunded = (await src.payments.findByBookingId(bookingId))
+      .filter((p) => (refunded.get(p.id) ?? 0) >= p.amount)
+      .map((p) => p.id);
+    return paid.filter((r) => addOnRequestStands(r, fullyRefunded)).flatMap((r) => r.lines.map((line) => line.label));
   }
 
   private async withPromoLock<T>(codeId: string, fn: () => Promise<T>): Promise<T> {

@@ -37,6 +37,7 @@ import { PostgresAddOnRepo } from './postgresAddOnRepo';
 import { addOnRepoContract } from './addOnRepo.test';
 import { addOnSettlementContract } from './addOnSettlement.test';
 import { AddOnError } from './addOnRepo';
+import { bookingAddOnsListContract } from './bookingAddOnsList.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
 
@@ -1958,5 +1959,22 @@ describe.skipIf(!TEST_URL)('Postgres add-on settlement (integration)', () => {
         expect(after?.cancelledAt).toBeNull();
       }
     }
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres booking add-ons list (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  bookingAddOnsListContract('contract', async () => {
+    const db = await migrated();
+    return {
+      bookings: new PostgresBookingRepo(db),
+      addOns: new PostgresAddOnRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      refunds: new PostgresRefundRepo(db),
+      // Settlement marks a request paid (the payment step); until then the test writes what it will.
+      markPaid: async (requestId, at) => {
+        await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
+      },
+    };
   });
 });
