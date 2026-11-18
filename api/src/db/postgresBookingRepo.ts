@@ -12,7 +12,12 @@ import {
   quotes,
   bookingStatusEvents,
   bookingScheduleEvents,
+  bookingAddOnRequests,
+  bookingAddOns,
+  refunds,
 } from './schema';
+import { compareAddOnLines } from './addOnRepo';
+import { REFUNDED_STATUSES } from './refundRepo';
 import { addOnsFor } from '../quote/quoteAlternative';
 import type { PayLinkSelection } from '../quote/paySelection';
 import type { SharedSeatCount } from '../domain/scheduledSeats';
@@ -393,7 +398,7 @@ export class PostgresBookingRepo implements BookingRepo {
     const tripIds = idsFor('trip'); const sharedIds = idsFor('shared');
     const singleIds = rows.filter((r) => r.mode !== 'trip' && r.mode !== 'shared').map((r) => r.id);
     const promoIds = [...new Set(rows.flatMap((r) => (r.promoCodeId ? [r.promoCodeId] : [])))];
-    const [trips, shareds, transfers, linkedQuotes, codes] = await Promise.all([
+    const [trips, shareds, transfers, linkedQuotes, codes, paidLines] = await Promise.all([
       tripIds.length ? this.db.select().from(tripRequests).where(inArray(tripRequests.bookingId, tripIds)) : [],
       sharedIds.length ? this.db.select().from(sharedRequests).where(inArray(sharedRequests.bookingId, sharedIds)) : [],
       singleIds.length ? this.db.select().from(transferRequests).where(inArray(transferRequests.bookingId, singleIds)) : [],
@@ -405,7 +410,37 @@ export class PostgresBookingRepo implements BookingRepo {
         .where(and(inArray(quotes.convertedBookingId, rows.map((r) => r.id)), isNull(quotes.deletedAt))),
       // The promo codes' names, only when a booking here carried one — same round-trip as the rest.
       promoIds.length ? this.db.select({ id: promoCodes.id, code: promoCodes.code }).from(promoCodes).where(inArray(promoCodes.id, promoIds)) : [],
+      // Add-ons bought after booking (spec 2026-11-14 §7.6): the lines of every PAID request whose
+      // payment has not gone back in full. One statement for the whole set, beside the rest. Only
+      // confirmed refunds count, summed per payment; a refund still pending has moved no money.
+      // The refunds are matched on booking_id as well as payment_id because booking_id is the
+      // column the refunds table indexes.
+      this.db
+        .select({
+          bookingId: bookingAddOns.bookingId,
+          requestSeq: bookingAddOnRequests.seq,
+          legSeq: bookingLegs.seq,
+          code: bookingAddOns.code,
+          label: bookingAddOns.label,
+        })
+        .from(bookingAddOns)
+        .innerJoin(bookingAddOnRequests, eq(bookingAddOnRequests.id, bookingAddOns.requestId))
+        .innerJoin(bookingLegs, eq(bookingLegs.id, bookingAddOns.legId))
+        .leftJoin(payments, eq(payments.id, bookingAddOnRequests.paymentId))
+        .where(and(
+          inArray(bookingAddOns.bookingId, rows.map((r) => r.id)),
+          eq(bookingAddOnRequests.status, 'paid'),
+          or(
+            isNull(payments.id),
+            sql`(select coalesce(sum(${refunds.amountCents}), 0) from ${refunds} where ${refunds.bookingId} = ${bookingAddOns.bookingId} and ${refunds.paymentId} = ${payments.id} and ${inArray(refunds.status, [...REFUNDED_STATUSES])}) < ${payments.amount}`,
+          ),
+        )),
     ]);
+    // Request order, then each request's own line order (leg, then code), as PostgresAddOnRepo reads them.
+    const paidAddOnsBy = new Map<string, string[]>();
+    for (const line of paidLines.sort((a, b) => a.requestSeq - b.requestSeq || compareAddOnLines(a, b))) {
+      paidAddOnsBy.set(line.bookingId, [...(paidAddOnsBy.get(line.bookingId) ?? []), line.label]);
+    }
     const codeBy = new Map(codes.map((c) => [c.id, c.code]));
     const tripBy = new Map(trips.map((t) => [t.bookingId, t]));
     const sharedBy = new Map(shareds.map((t) => [t.bookingId, t]));
@@ -422,7 +457,8 @@ export class PostgresBookingRepo implements BookingRepo {
       // The booking's quote names them; a website booking has none, so its own snapshot does.
       const linked = quoteBy.get(row.id);
       const fromQuote = linked ? addOnsFor(linked, built) : undefined;
-      const addOns = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
+      const atBooking = fromQuote?.length ? fromQuote : snapshotAddOns(row.pricingSnapshotJson);
+      const addOns = [...atBooking, ...(paidAddOnsBy.get(row.id) ?? [])];
       return addOns.length ? { ...booking, addOns } : booking;
     });
   }
