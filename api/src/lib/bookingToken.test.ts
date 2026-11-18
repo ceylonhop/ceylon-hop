@@ -305,6 +305,56 @@ describe('pay-return token legs', () => {
   });
 });
 
+// Add-ons after booking (spec 2026-11-14 §6.2). An add-on is paid on a booking that is already
+// paid, so its return must say WHICH payment it is about: the request's number rides in the token.
+describe('pay-return token for an add-on request', () => {
+  const S = 'leg-secret';
+  const ID = '11111111-2222-3333-4444-555555555555';
+
+  it('carries the request number on both legs', () => {
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S, 'return', 3), S)).toEqual({ bookingId: ID, leg: 'return', addOnSeq: 3 });
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S, 'cancel', 3), S)).toEqual({ bookingId: ID, leg: 'cancel', addOnSeq: 3 });
+  });
+
+  it('a trip return token names no add-on', () => {
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S), S)).toEqual({ bookingId: ID, leg: 'return' });
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, S, 'cancel'), S)).toEqual({ bookingId: ID, leg: 'cancel' });
+  });
+
+  it('still resolves to its booking through verifyPayReturnToken', () => {
+    expect(verifyPayReturnToken(signPayReturnToken(ID, S, 'return', 1), S)).toBe(ID);
+  });
+
+  // PayHere stores the return URL and its length limit is undocumented: the add-on URL must not
+  // be longer than the one already proven in production.
+  it('is exactly as long as a trip return token for requests 1 to 9', () => {
+    const trip = signPayReturnToken(ID, S).length;
+    for (const seq of [1, 5, 9]) {
+      expect(signPayReturnToken(ID, S, 'return', seq).length).toBe(trip);
+      expect(signPayReturnToken(ID, S, 'cancel', seq).length).toBe(trip);
+    }
+  });
+
+  it('refuses a tampered token, another secret, and a request number that is not a positive whole number', () => {
+    const t = signPayReturnToken(ID, S, 'return', 2);
+    expect(verifyPayReturnLeg(`${t.slice(0, -2)}xx`, S)).toBeNull();
+    expect(verifyPayReturnLeg(signPayReturnToken(ID, 'other', 'return', 2), S)).toBeNull();
+    const forged = (payload: unknown) => {
+      const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
+      return `${body}.${createHmac('sha256', S).update(body).digest('hex')}`;
+    };
+    expect(verifyPayReturnLeg(forged({ v: 1, purpose: 'aret', b: ID, a: 0 }), S)).toBeNull();
+    expect(verifyPayReturnLeg(forged({ v: 1, purpose: 'aret', b: ID, a: '1' }), S)).toBeNull();
+    expect(verifyPayReturnLeg(forged({ v: 1, purpose: 'aret', b: ID }), S)).toBeNull();
+  });
+
+  it('cannot be spent as a booking or checkout token', () => {
+    const t = signPayReturnToken(ID, S, 'return', 1);
+    expect(verifyBookingToken(t, S)).toBeNull();
+    expect(verifyCheckoutToken(t, ID, S, Date.now())).toBe(false);
+  });
+});
+
 // Security review 2026-10-25: the signature length was checked in UTF-16 characters, then
 // timingSafeEqual compared UTF-8 bytes. A same-length signature with one multibyte character
 // passed the first check and made the second THROW — a 500 and a critical alert per request,

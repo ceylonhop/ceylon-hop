@@ -22,6 +22,7 @@ import { reconcileBookingTracking, type BookingTrackingFinding } from './booking
 import { emailQuotaAlert, emailSentToday, type UsageSource } from './emailQuota';
 import { utcDay } from './usageMeter';
 import { NOTIFICATIONS_TICK, NOTIFICATIONS_STALE_MS } from './scheduler';
+import { tripPayments } from '../domain/balance';
 
 // Spec 2026-10-13 §6 — what the quota rule below needs: the shared usage counters and the plan's cap.
 export interface WatchdogEmailQuota {
@@ -78,13 +79,20 @@ const isGatewayPayment = (p: Payment): boolean => p.provider === 'payhere' || p.
 //
 // `events` is this booking's slice of one batched read (runWatchdog), or undefined when no log is
 // wired or the read failed — then the payment row decides, as it did before the log existed.
+//
+// The watch is about the TRIP's payment. An add-on paid after booking is never chased (owner rule),
+// so its payment row and its rows in the checkout log are left out: a paid add-on must not answer
+// for an unpaid trip, and an add-on checkout must not start a watch.
 function pendingWatchStartedAt(
   booking: Booking,
-  rows: Payment[] | null,
-  events: BookingCheckoutEvent[] | undefined,
+  allRows: Payment[] | null,
+  allEvents: BookingCheckoutEvent[] | undefined,
 ): Date | null {
-  if (rows === null) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
+  if (allRows === null) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
 
+  const rows = tripPayments(allRows);
+  const addOnOrders = new Set(allRows.filter((p) => p.purpose === 'add_on').map((p) => p.orderId));
+  const events = allEvents?.filter((e) => !e.orderId || !addOnOrders.has(e.orderId));
   const gateway = rows.filter(isGatewayPayment);
   if (!gateway.length) return booking.channel === 'whatsapp' ? null : new Date(booking.createdAt);
   if (gateway.some((p) => p.status === 'succeeded')) return null;

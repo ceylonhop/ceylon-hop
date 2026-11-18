@@ -289,6 +289,23 @@ export class InMemoryAddOnRepo implements AddOnRepo {
     this.rows.set(row.id, { ...row, status: 'paid', paidAt: new Date(paidAt) });
   }
 
+  /** The request a payment row belongs to, as it stands right now. Settlement's read: synchronous,
+   *  so nothing can change the request between this read and markPaidForSettlement. */
+  findByPaymentIdForSettlement(paymentId: string): AddOnRequest | null {
+    const row = [...this.rows.values()].find((r) => r.paymentId === paymentId);
+    return row ? structuredClone(row) : null;
+  }
+
+  // Settlement is all-or-nothing: when it fails part-way, the request goes back with the payment.
+  snapshotForSettlement(): Map<string, AddOnRequest> {
+    return structuredClone(this.rows);
+  }
+
+  restoreForSettlement(snapshot: Map<string, AddOnRequest>): void {
+    this.rows.clear();
+    for (const [id, row] of snapshot) this.rows.set(id, structuredClone(row));
+  }
+
   private async exclusive<T>(work: () => Promise<T>): Promise<T> {
     const previous = this.tail;
     let release = () => {};

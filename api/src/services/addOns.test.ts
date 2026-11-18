@@ -201,6 +201,36 @@ describe('add-ons after booking: the service', () => {
     });
   });
 
+  // The ops pane labels a payment row "Add-on A1" by matching it to its request (spec §7.2).
+  it('a request names its own payment row once a checkout made one, and null before that', async () => {
+    const b = await paid();
+    const [leg, other] = await drivenLegs(b);
+    const sent = await send(b, [{ legId: leg!.id, code: 'waiting' }]);
+    expect(sent.request.paymentId).toBeNull();
+    expect((await view(b)).addOnRequests[0]!.paymentId).toBeNull();
+
+    const p = await addOnPayment(b, sent.request);
+    const second = await send(b, [{ legId: other!.id, code: 'waiting' }]);
+    const views = (await view(b)).addOnRequests;
+    expect(views.map((r) => [r.name, r.paymentId])).toEqual([['A1', p.id], ['A2', null]]);
+    expect(second.request.paymentId).toBeNull();
+    // Never the trip's own payment.
+    const tripPayment = (await payments.findByBookingId(b.id)).find((x) => x.purpose === 'full')!;
+    expect(views.some((r) => r.paymentId === tripPayment.id)).toBe(false);
+  });
+
+  it('keeps naming its payment after it is paid, and after it is cancelled', async () => {
+    const b = await paid();
+    const [leg, other] = await drivenLegs(b);
+    const first = await send(b, [{ legId: leg!.id, code: 'waiting' }]);
+    const paidRow = await settle(b, first.request);
+    const second = await send(b, [{ legId: other!.id, code: 'waiting' }]);
+    const abandoned = await addOnPayment(b, second.request);
+    const res = await cancelAddOnRequest(deps, b, second.request.id, { by: 'o@x.com', reason: 'changed mind', now: new Date() });
+    expect(res.ok && res.request.paymentId).toBe(abandoned.id);
+    expect((await view(b)).addOnRequests.map((r) => [r.state, r.paymentId])).toEqual([['paid', paidRow.id], ['cancelled', abandoned.id]]);
+  });
+
   it('reads refunds off the add-on’s own payment: part refunded, then refunded', async () => {
     const b = await paid();
     const [leg] = await drivenLegs(b);

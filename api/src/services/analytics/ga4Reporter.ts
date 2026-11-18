@@ -11,6 +11,7 @@ import type { Refund } from '../../db/refundRepo';
 import type { RideList, RideMember } from '../../domain/rideList';
 import { isTeamEmail } from '../testBookings';
 import { boardHit, purchaseHit, refundHit, type Ga4PurchaseName } from './ga4Hits';
+import { tripPayments } from '../../domain/balance';
 
 /** Measurement Protocol accepts timestamps at most 72 h old; older events can never be sent. */
 export const MP_BACKDATE_MS = 72 * 60 * 60 * 1000;
@@ -138,7 +139,9 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
 
     reportPayment: (booking, payment, settledAt) => swallow('reportPayment', undefined, async () => {
       if (!deps.adapter || isTeamEmail(booking.input.customer.email, deps.teamEmails)) return;
-      const siblings = await deps.payments.findByBookingId(booking.id);
+      // "Second payment" is a question about the TRIP's payments (deposit, then balance). An add-on
+      // paid earlier is its own money and must not turn the trip's first payment into a balance.
+      const siblings = tripPayments(await deps.payments.findByBookingId(booking.id));
       const secondPayment = siblings.some((p) => p.id !== payment.id && p.status === 'succeeded');
       const hit = purchaseHit({
         booking, payment, settledAt,
@@ -161,6 +164,7 @@ export function createGa4Reporter(deps: Ga4ReporterDeps): Ga4Reporter {
         secondPayment: sent.txn !== null && sent.txn !== booking.reference,
         eventName: deps.eventName,
         ...(sent.clientId ? { clientId: sent.clientId } : {}),
+        ...(sent.txn ? { transactionId: sent.txn } : {}),
       });
       await attempt(`refund:${refund.id}`, 'refund', hit);
     }, { key: `refund:${refund.id}`, ref: booking.reference }),
