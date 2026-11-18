@@ -58,10 +58,14 @@ const row = (over = {}) => ({
   amount: 23600, currency: 'USD', stage: 'paid', paymentStatus: 'paid',
   vehiclePhotoReceived: false, customerUpdated: false, opsNotes: '', ...over,
 });
+// What the API appends to booking.addOns since step 7 (#1184, spec §7.6): the line labels of every
+// request that is paid and not fully refunded, in request order, after the booking-time add-ons.
+const paidLabels = (requests) => requests.filter((r) => r.status === 'paid' && r.state !== 'refunded').flatMap((r) => r.lines.map((l) => l.label));
+const AT_BOOKING = ['Waiting fee — Negombo → Kandy'];
 const detail = (over = {}) => ({
   booking: {
     id: 'b1', reference: 'CH-V72WB', mode: 'trip', status: 'confirmed', total: 23600, currency: 'USD', createdAt: '2026-11-09T08:00:00.000Z',
-    addOns: ['Waiting fee — Negombo → Kandy'],
+    addOns: [...AT_BOOKING, ...paidLabels(over.addOnRequests || [])],
     input: { serviceType: 'private', pax: 2, vehicleType: 'car', customer: CUSTOMER,
       stops: ['Negombo', 'Kandy', 'Ella', 'Yala', 'Mirissa', 'Galle'], dates: [day(-2), day(5), null, day(9), null], gaps: [2] },
   },
@@ -186,6 +190,68 @@ test.describe('the Add-ons section', () => {
     await expect(section(page)).toHaveCount(0);
   });
 
+  // Since step 7 (#1184) booking.addOns is the booking-time labels FOLLOWED BY the line labels of
+  // every request that is paid and not fully refunded. Those requests have their own cards, so the
+  // "Booked with the trip" rows must leave them out, and must not lose a real booking-time add-on.
+  test.describe('a paid request is not also listed as booked with the trip', () => {
+    const paid = { status: 'paid', state: 'paid', payable: false, payLink: null, paidAt: '2026-11-12T14:05:00.000Z' };
+    const SIGHT = SIGHT_L2.label;
+    const booked = (page) => section(page).locator('[data-testid="addon-booked"]');
+    const names = (page) => booked(page).locator('.ao-what');
+
+    test('one booking-time add-on plus a paid request: one tagged row, and the Paid card', async ({ page }) => {
+      const d = detail({ addOnRequests: [req(3, { ...paid, paymentId: 'pay-a3' })] });
+      expect(d.booking.addOns).toEqual(['Waiting fee — Negombo → Kandy', SIGHT]);
+      await boot(page, { detail: d });
+      await expect(booked(page)).toHaveCount(1);
+      await expect(names(page)).toHaveText(['Waiting feeNegombo → Kandy']);
+      await expect(pill(page, 'A3')).toHaveText('Paid');
+      await expect(card(page, 'A3').locator('.ao-name')).toHaveText('Sightseeing stops (up to 3h)');
+    });
+
+    test('the same add-on bought with the trip AND paid later: the booking-time one stays, in its place', async ({ page }) => {
+      const d = detail({ addOnRequests: [req(3, { ...paid, paymentId: 'pay-a3' })] });
+      // The label twice: once from the booking, once (last) from the paid request.
+      d.booking.addOns = [SIGHT, 'Waiting fee — Negombo → Kandy', SIGHT];
+      await boot(page, { detail: d });
+      await expect(booked(page)).toHaveCount(2);
+      // Taken off the END: the first two entries are the booking's own, in their order.
+      await expect(names(page)).toHaveText(['Sightseeing stops (up to 3h)Kandy → Ella', 'Waiting feeNegombo → Kandy']);
+      await expect(pill(page, 'A3')).toHaveText('Paid');
+    });
+
+    test('a part-refunded request comes out too; a refunded, an open and a cancelled one take nothing with them', async ({ page }) => {
+      const LUGGAGE = 'Luggage rack — Kandy → Ella', FLEX = 'Flexi ticket — Kandy → Ella', WAIT = 'Waiting fee — Negombo → Kandy';
+      const d = detail({ addOnRequests: [
+        // Open, with the same label as a booking-time add-on: not in booking.addOns, removes nothing.
+        req(1, { lines: [line(1, L1, 'waiting', WAIT, 1000)] }),
+        req(5, { status: 'cancelled', state: 'cancelled', payable: false, payLink: null, cancelledBy: 'o@x.com', cancelledAt: '2026-11-12T15:00:00.000Z', cancelReason: 'Sent twice', lines: [line(5, L1, 'waiting', WAIT, 1000)] }),
+        req(7, { ...paid, state: 'part_refunded', refundedCents: 200, totalCents: 500, paymentId: 'pay-a7', lines: [line(7, L2, 'luggage', LUGGAGE, 500)] }),
+        // Fully refunded: the API leaves it out of booking.addOns, so the Flexi ticket there is the booking's own.
+        req(8, { ...paid, state: 'refunded', refundedCents: 1200, totalCents: 1200, paymentId: 'pay-a8', lines: [line(8, L2, 'flex', FLEX, 1200)] }),
+      ] });
+      d.booking.addOns = [WAIT, FLEX, LUGGAGE];
+      await boot(page, { detail: d });
+      await expect(pill(page, 'A7')).toHaveText('Part refunded');
+      await expect(pill(page, 'A8')).toHaveText('Refunded');
+      await expect(names(page)).toHaveText(['Waiting feeNegombo → Kandy', 'Flexi ticketKandy → Ella']);
+    });
+
+    test('on a one-leg booking the form says "Already added" for it, never "Already booked"', async ({ page }) => {
+      const d = singleDetail();
+      const seat = req(3, { ...paid, paymentId: 'pay-a3', totalCents: 800, lines: [line(3, L2, 'front', 'Child seat — Kandy → Ella', 800)] });
+      d.addOnRequests = [seat];
+      d.booking.addOns = ['Waiting fee', ...paidLabels([seat])];
+      await boot(page, { detail: d }, { rows: [row({ mode: 'single', route: 'Kandy → Ella', amount: 9000 })] });
+      await expect(names(page)).toHaveText(['Waiting fee']);
+      await addBtn(page).click();
+      await expect(opt(page, 'Kandy → Ella', 'Child seat')).toContainText('Already added');
+      await expect(opt(page, 'Kandy → Ella', 'Child seat').locator('input')).toBeChecked();
+      await expect(opt(page, 'Kandy → Ella', 'Waiting fee')).toContainText('Already booked');
+      await expect(opt(page, 'Kandy → Ella', 'Waiting fee').locator('input')).not.toBeChecked();
+    });
+  });
+
   test('every state has its pill and its own words', async ({ page }) => {
     const until = new Date(Date.now() + 20 * 60 * 1000).toISOString();
     const paid = { status: 'paid', payable: false, payLink: null, paidAt: '2026-11-12T14:05:00.000Z' };
@@ -204,6 +270,9 @@ test.describe('the Add-ons section', () => {
 
     const want = { A1: 'Awaiting payment', A2: 'Paying now', A3: 'Paid', A4: 'Expired', A5: 'Cancelled', A6: 'Cancelled with booking', A7: 'Part refunded', A8: 'Refunded', A9: 'Awaiting payment' };
     for (const [name, text] of Object.entries(want)) await expect(pill(page, name), name).toHaveText(text);
+    // The paid and the part-refunded request are in booking.addOns too; only the booking-time one is tagged.
+    expect(store.detail.booking.addOns).toHaveLength(3);
+    await expect(section(page).locator('[data-testid="addon-booked"]')).toHaveCount(1);
 
     // Paying now: the customer has PayHere open, so Cancel is locked until the time it frees up.
     const a2 = card(page, 'A2');
@@ -682,7 +751,7 @@ test.describe('layout', () => {
       req(5, { status: 'cancelled', state: 'cancelled', payable: false, payLink: null, cancelledBy: LONG, cancelledAt: '2026-11-12T15:00:00.000Z', cancelReason: 'The customer changed their mind after talking to the hotel about the tea factory visit' }),
       req(6, { state: 'cancelled_with_booking', payable: false, payLink: null }),
     ] });
-    d.booking.addOns = ['Waiting fee — Negombo → Kandy', 'Sightseeing stops (up to 3h) — Bandaranaike International Airport → Kandy'];
+    d.booking.addOns = ['Waiting fee — Negombo → Kandy', 'Sightseeing stops (up to 3h) — Bandaranaike International Airport → Kandy', ...paidLabels(d.addOnRequests)];
     return d;
   };
   const openFormWithTicks = async (page) => {

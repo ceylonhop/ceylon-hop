@@ -4612,13 +4612,21 @@ const addOnShown=r=>r.state==='awaiting_payment'&&r.inFlightUntil?'paying':r.sta
 const slToday=()=>new Date(Date.now()+5.5*3600e3).toISOString().slice(0,10);
 /* The stored legs that can take an add-on: driven by us, and not on a day that has passed. */
 function addOnLegs(d){const today=slToday();return (d?.legs||[]).filter(l=>l.kind==='leg'&&(!l.travelDate||l.travelDate>=today));}
+/* What was bought WITH the trip. booking.addOns ends with the line labels of every request that
+   is paid and not fully refunded (spec §7.6), and each of those has its own card here, so they
+   come off the END, one entry per line: a booking-time add-on of the same name stays. */
+function addOnsAtBooking(d){
+  const out=bookingAddOns(d?.booking).slice();
+  (d?.addOnRequests||[]).forEach(r=>{if(r.status==='paid'&&r.state!=='refunded')(r.lines||[]).forEach(l=>{const i=out.lastIndexOf(l.label);if(i>=0)out.splice(i,1);});});
+  return out;
+}
 /* Why an add-on cannot be ticked on a leg, or ''. The server's own rule (spec §4.3): one of each
    per leg among requests that are open, or paid and not fully refunded; and, only where a booking
    has a single driven leg, what was bought with the trip. */
 function addOnTaken(d,leg,item){
   const held=(d?.addOnRequests||[]).some(r=>(r.status==='open'||(r.status==='paid'&&r.state!=='refunded'))&&(r.lines||[]).some(l=>l.legId===leg.id&&l.code===item.code));
   if(held)return 'Already added';
-  const bought=Array.isArray(d?.booking?.addOns)?d.booking.addOns:[];
+  const bought=addOnsAtBooking(d);
   const oneLeg=(d?.legs||[]).filter(l=>l.kind==='leg').length===1;
   return oneLeg&&bought.some(b=>b===item.label||String(b).startsWith(item.label+' — '))?'Already booked':'';
 }
@@ -4731,7 +4739,7 @@ function addOnFormHtml(t,d,f){
   </div>`;
 }
 function addOnsHtmlFor(t,d){
-  const booked=bookingAddOns(d?.booking),reqs=Array.isArray(d?.addOnRequests)?d.addOnRequests:[];
+  const booked=addOnsAtBooking(d),reqs=Array.isArray(d?.addOnRequests)?d.addOnRequests:[];
   const mayOperate=!!(state.caps&&state.caps.includes('bookings:operate'));
   /* The API sends the catalogue only when a request can be created on this booking (§4.1). */
   const canAdd=mayOperate&&Array.isArray(d?.addOnCatalogue)&&d.addOnCatalogue.length>0;
