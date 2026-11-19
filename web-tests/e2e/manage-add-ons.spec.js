@@ -103,10 +103,12 @@ test('the pay link’s #add-ons scrolls to the card even though it renders after
   await offline(page, withReqs([REQ_A]));
   await page.goto(PAGE + '#add-ons');
   await expect(page.locator('#add-ons')).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
-  const top = await page.locator('#add-ons').evaluate((el) => el.getBoundingClientRect().top);
-  expect(top).toBeGreaterThanOrEqual(0);
-  expect(top).toBeLessThan(60);
+  // site.css scrolls smoothly, so the card is read where it comes to REST: one read as soon as the
+  // page has moved catches it mid-glide (CI, 2026-11-19: 118px, then 83px on the retry).
+  const top = () => page.locator('#add-ons').evaluate((el) => el.getBoundingClientRect().top);
+  await expect.poll(top).toBeLessThan(60);
+  expect(await top()).toBeGreaterThanOrEqual(0);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 });
 
 test('no hash, no scroll', async ({ page }) => {
