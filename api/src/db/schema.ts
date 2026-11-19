@@ -788,6 +788,30 @@ export const rideOps = pgTable('ride_ops', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Per-leg ops steps (spec 2026-11-19, migration 0080): ride_ops, one row per driven leg of a
+// private multi-stop trip. Before this the trip had one status, so completing leg 1 closed the
+// whole booking. No row = an untouched leg, which counts as 'paid'. 'no_show' is deliberately not
+// a leg status: it closes the whole booking and stays on ride_ops.
+export const rideOpsLegs = pgTable(
+  'ride_ops_legs',
+  {
+    legId: uuid('leg_id')
+      .primaryKey()
+      .references(() => bookingLegs.id),
+    fulfilmentStatus: text('fulfilment_status').notNull().default('paid'),
+    vehiclePhotoReceived: boolean('vehicle_photo_received').notNull().default(false),
+    customerUpdated: boolean('customer_updated').notNull().default(false),
+    vehicleConfirmedAt: timestamp('vehicle_confirmed_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    check(
+      'ride_ops_legs_status_valid',
+      sql`${t.fulfilmentStatus} in ('paid', 'vehicle_confirmed', 'pickup_confirmed', 'on_trip', 'completed')`,
+    ),
+  ],
+);
+
 // Dedup ledger for scheduled customer notifications (M14): one row per (booking, kind)
 // means the cron tick can run as often as it likes without ever double-sending.
 // Display names for ops staff, captured from the Google profile at sign-in so the assign

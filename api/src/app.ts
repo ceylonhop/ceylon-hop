@@ -44,6 +44,7 @@ import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
 import { devEmailRoutes } from './routes/devEmails';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
+import type { RideOpsLegRepo } from './db/rideOpsLegRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
@@ -118,6 +119,9 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
+  // Per-leg ops steps (spec 2026-11-19). Storage only so far: nothing reads it until the leg
+  // endpoints land, but it is wired now so that step cannot ship reading an in-memory fallback.
+  rideOpsLegs?: RideOpsLegRepo;
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;

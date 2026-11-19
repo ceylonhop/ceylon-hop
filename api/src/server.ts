@@ -26,6 +26,7 @@ import { PostgresUsageCounterRepo } from './db/postgresUsageCounterRepo';
 import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
+import { PostgresRideOpsLegRepo } from './db/postgresRideOpsLegRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
@@ -189,6 +190,7 @@ const app = createApp({
   // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
   paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),
+  rideOpsLegs: new PostgresRideOpsLegRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,
