@@ -69,6 +69,7 @@ const ALLOWLIST: Allowed[] = [
   { file: 'db/schema.ts', match: "${t.status} in ('draft'", why: 'bookings.status CHECK constraint: the full status list, not a money question.' },
   { file: 'db/schema.ts', match: "${t.fromStatus} in ('draft'", why: 'booking_status_events.from_status CHECK constraint: the full status list.' },
   { file: 'db/schema.ts', match: "${t.toStatus} in ('draft'", why: 'booking_status_events.to_status CHECK constraint: the full status list.' },
+  { file: 'db/schema.ts', match: "${t.fulfilmentStatus} in ('paid'", why: 'ride_ops_legs.fulfilment_status CHECK constraint: the ops stages of one leg, not booking status.' },
 
   // Trip / lifecycle decisions: whether the trip is going ahead, not whether money was taken.
   { file: 'db/bookingRepo.ts', match: 'export const SCHEDULE_EDITABLE_STATUSES', why: 'Lifecycle: when the customer may set the pickup date/time; not money.' },
