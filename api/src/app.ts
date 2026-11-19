@@ -567,6 +567,7 @@ export function createApp(deps: AppDeps = {}) {
       email,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
       addOns,
+      refunds,
     }),
   );
   app.route(
