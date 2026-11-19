@@ -54,6 +54,13 @@ describe('opsView', () => {
     expect(toOpsRow(base, { paid: false }).paidAt).toBeNull();
   });
 
+  it('an add-on payment is not when the trip was paid', () => {
+    const addOn = { status: 'succeeded', amount: 1000, purpose: 'add_on', settledAt: new Date('2026-06-20T08:00:00Z') };
+    expect(toOpsRow(base, { paid: false, payments: [addOn] }).paidAt).toBeNull();
+    const full = { status: 'succeeded', amount: 12100, purpose: 'full', settledAt: new Date('2026-06-21T08:30:00Z') };
+    expect(toOpsRow(base, { paid: true, payments: [addOn, full] }).paidAt).toBe('2026-06-21T08:30:00.000Z');
+  });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });

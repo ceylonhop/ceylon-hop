@@ -32,7 +32,7 @@ import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
 import { scheduleProblem, SCHEDULE_REASONS } from '../domain/bookingSchedule';
-import { isBalanceOpen, paidCents } from '../domain/balance';
+import { isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
 import { loadBookingInterests } from '../experiences/bookingInterests';
@@ -288,7 +288,7 @@ export function opsRoutes(deps: OpsDeps) {
       deps.refunds ? deps.refunds.pendingCentsByBookingIds(ids) : Promise.resolve(new Map<string, number>()),
     ]);
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
-    const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    const paidIds = new Set(tripPayments(allPayments).filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const paymentsById = new Map<string, typeof allPayments>();
     for (const p of allPayments) paymentsById.set(p.bookingId, [...(paymentsById.get(p.bookingId) ?? []), p]);
     const rows: OpsBookingRow[] = [];
