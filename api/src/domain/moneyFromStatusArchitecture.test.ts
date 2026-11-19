@@ -106,6 +106,7 @@ const ALLOWLIST: Allowed[] = [
   { file: 'routes/bookings.ts', match: "if (request.status === 'paid') return { ok: false, status: 409", why: 'Add-on request status: a paid request is not handed a second checkout; not a booking status.' },
   { file: 'db/bookingRepo.ts', match: "filter((r) => r.status === 'paid')", why: "Add-on request status: which requests' lines join booking.addOns; refunds are then read from the ledger. Not a booking status." },
   { file: 'db/postgresBookingRepo.ts', match: "eq(bookingAddOnRequests.status, 'paid')", why: 'Add-on request status, the same read in SQL; refunds are summed from the ledger beside it. Not a booking status.' },
+  { file: 'services/addOns.ts', match: "filter((r) => r.status === 'paid').flatMap((r) => r.lines.map((l) => l.code))", why: "Add-on request status: which codes were bought after booking, so a repeat is duplicate_add_on, not already_bought_at_booking. Not a booking status." },
 
   { file: 'domain/promoCode.ts', match: 'export const PROMO_PAID_STATUSES = [', why: 'Promo use is committed once the trip goes ahead at the promo price; a confirmed pay-on-the-day trip commits the use whether or not cash has arrived (controller ruling 2026-10-29).' },
 

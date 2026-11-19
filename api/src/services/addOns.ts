@@ -153,7 +153,7 @@ const manageLinkFor = (deps: AddOnDeps, booking: Booking): string | null =>
 
 /** The last day a request can be paid: the day of the earliest leg it touches. Null when none of
  *  its legs has a date yet (it is then payable until the trip is completed). */
-export function addOnPayBy(request: Pick<AddOnRequest, 'lines'>, legs: StoredLeg[]): string | null {
+export function addOnPayBy(request: { lines: Array<{ legId: string }> }, legs: StoredLeg[]): string | null {
   const days = request.lines
     .map((line) => legs.find((leg) => leg.id === line.legId)?.travelDate)
     .filter((day): day is string => !!day)
@@ -163,11 +163,12 @@ export function addOnPayBy(request: Pick<AddOnRequest, 'lines'>, legs: StoredLeg
 
 /** A booking's stored legs, its add-on requests as the ops pane shows them, and (only when a new
  *  request can be created) the add-ons on offer at today's prices. A caller that is already
- *  reading the booking's payments hands that read over, so they are not read twice. */
+ *  reading the booking's payments hands that read over, so they are not read twice. `catalogue:
+ *  false` leaves the catalogue (and the rate card read behind it) out. */
 export async function addOnRequestViews(
   deps: AddOnDeps,
   booking: Booking,
-  opts: { now?: Date; payments?: Promise<Payment[]> } = {},
+  opts: { now?: Date; payments?: Promise<Payment[]>; catalogue?: boolean } = {},
 ): Promise<AddOnViews> {
   const now = opts.now ?? new Date();
   const facts = bookingFacts(booking);
@@ -178,7 +179,8 @@ export async function addOnRequestViews(
     deps.addOns.listByBooking(booking.id),
     opts.payments ?? deps.payments.findByBookingId(booking.id),
     deps.refunds ? deps.refunds.list(booking.id) : [],
-    isPrivateBooking(facts) ? deps.rateCard() : null,
+    // The customer's page has no use for the catalogue, so it skips the card read.
+    opts.catalogue !== false && isPrivateBooking(facts) ? deps.rateCard() : null,
   ]);
   const ctx: ViewContext = {
     booking, legs, payments, refunded: refundedByPayment(refunds), manageLink: manageLinkFor(deps, booking), now,
@@ -222,7 +224,10 @@ export async function createAddOnRequest(
   if (legs.filter((leg) => leg.kind === 'leg').length === 1) {
     const bought = booking.addOns ?? [];
     const has = (label: string) => bought.some((b) => b === label || b.startsWith(`${label} — `));
-    if (input.lines.some((line) => has(itemOf(line.code)!.label))) return { ok: false, error: 'already_bought_at_booking' };
+    // booking.addOns also lists add-ons paid after booking; asking again for one of those is a
+    // duplicate (the repo's rule, below), not "bought with the trip".
+    const paidCodes = (await deps.addOns.listByBooking(booking.id)).filter((r) => r.status === 'paid').flatMap((r) => r.lines.map((l) => l.code));
+    if (input.lines.some((line) => !paidCodes.includes(line.code) && has(itemOf(line.code)!.label))) return { ok: false, error: 'already_bought_at_booking' };
   }
 
   const [payments, refunds] = await Promise.all([

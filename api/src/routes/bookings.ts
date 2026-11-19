@@ -33,9 +33,11 @@ import { websitePricingSnapshot, sharedPricingSnapshot, SCHEDULE_EDITABLE_STATUS
 import { customerScheduleFill, scheduleProblem } from '../domain/bookingSchedule';
 import { IllegalTransitionError } from '../domain/status';
 import type { PaymentRepo, Payment } from '../db/paymentRepo';
+import type { RefundRepo } from '../db/refundRepo';
 import { balanceDueCents, isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
 import type { AddOnRepo, AddOnRequest } from '../db/addOnRepo';
-import { addOnIdempotencyKey, addOnOrderId, isAddOnRequestPayable } from '../domain/addOns';
+import { addOnIdempotencyKey, addOnOrderId, isAddOnRequestPayable, type AddOnRequestState } from '../domain/addOns';
+import { addOnPayBy, addOnRequestViews, type AddOnDeps } from '../services/addOns';
 import type { PaymentAdapter } from '../adapters/payments';
 import type { DepartureRepo } from '../db/departureRepo';
 import { sharedProductFor, sharedRouteLabel } from '../db/departureRepo';
@@ -220,6 +222,18 @@ export interface CustomerBookingView {
   scheduleSetBy?: 'staff' | 'customer';
 }
 
+/** One add-on request as the customer's page sees it (spec 2026-11-14 §7.4). */
+export interface CustomerAddOnRequest {
+  id: string;
+  state: AddOnRequestState;
+  totalCents: number;
+  currency: string;
+  payable: boolean;
+  /** The last day it can be paid (YYYY-MM-DD): its earliest dated leg. Null when none is dated. */
+  payBy: string | null;
+  lines: Array<{ label: string; amountCents: number }>;
+}
+
 export function projectBooking(b: Booking, payments: Payment[] = []): CustomerBookingView {
   const dueNow = b.amountDueNow ?? b.total;
   const road = roadRow(b)?.[1];
@@ -348,6 +362,9 @@ export function bookingRoutes(deps: {
   // Add-ons after booking (spec 2026-11-14 §6.2). Unset → no add-on request can be found, so the
   // add-on checkout lane answers 404 and everything else behaves as before.
   addOns?: AddOnRepo;
+  // Confirmed refunds, so a request whose payment went back reads as refunded, not paid. Unset →
+  // none is known.
+  refunds?: RefundRepo;
 }) {
   const { bookings, payments, adapter, departures, maps, conciergeTasks, quotes } = deps;
   const zonesRepo = deps.zones ?? new InMemoryZonesRepo();
@@ -436,6 +453,31 @@ export function bookingRoutes(deps: {
       return { ok: false, status: 409, body: { error: 'add_on_not_payable' } };
     }
     return { ok: true, request };
+  }
+
+  // The add-on requests the customer's page shows (spec 2026-11-14 §7.4): the same views ops sees,
+  // cut down to what the customer needs. Cancelled ones are left out.
+  async function customerAddOnRequests(booking: Booking, paymentRows: Promise<Payment[]>): Promise<CustomerAddOnRequest[]> {
+    if (!deps.addOns) return [];
+    const addOnDeps: AddOnDeps = {
+      addOns: deps.addOns,
+      payments,
+      ...(deps.refunds ? { refunds: deps.refunds } : {}),
+      // Never read here: the customer's view asks for no catalogue.
+      rateCard: () => liveRateCard(zonesRepo, revisionsRepo),
+    };
+    const views = await addOnRequestViews(addOnDeps, booking, { payments: paymentRows, catalogue: false });
+    return views.addOnRequests
+      .filter((req) => req.state !== 'cancelled')
+      .map((req) => ({
+        id: req.id,
+        state: req.state,
+        totalCents: req.totalCents,
+        currency: req.currency,
+        payable: req.payable,
+        payBy: addOnPayBy(req, views.legs),
+        lines: req.lines.map((l) => ({ label: l.label, amountCents: l.amountCents })),
+      }));
   }
 
   // Every refusal and server error on a create or a checkout, recorded in one place so a new
@@ -1126,9 +1168,11 @@ function invalidRequest(error: ZodError) {
     const booking = await deps.bookings.get(id);
     if (!booking) return c.json({ error: 'not_found' }, 404);
     const last = (await deps.bookings.listScheduleEvents(booking.id)).at(-1);
+    const paymentRows = payments.findByBookingId(booking.id);
     // ga4Item: the item manage.html's browser `purchase` carries (ga4Hits.ts browserItem).
     return c.json({
-      ...projectBooking(booking, await payments.findByBookingId(booking.id)),
+      ...projectBooking(booking, await paymentRows),
+      addOnRequests: await customerAddOnRequests(booking, paymentRows),
       ...(last ? { scheduleSetBy: last.actorType } : {}),
       ga4Item: browserItem(booking),
     }, 200);
@@ -1221,7 +1265,7 @@ function invalidRequest(error: ZodError) {
           kind: 'schedule_set_by_customer',
           title: `Date set: ${result.booking.reference} by the customer`,
           body: `${result.booking.reference}: pickup set to ${fill.next.date}${fill.next.time ? ` ${fill.next.time}` : ''} on the manage page.`,
-          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(await payments.findByBookingId(id))),
+          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(tripPayments(await payments.findByBookingId(id)))),
           // A later time-only fill is a new event, not a repeat of the first.
           dedupeKey: `${result.booking.id}:${fill.next.date}:${fill.next.time ?? ''}`,
         });
@@ -1229,7 +1273,12 @@ function invalidRequest(error: ZodError) {
         console.error(`Date set alert failed for ${result.booking.reference}:`, err);
       }
     }
-    const view = { ...projectBooking(result.booking, await payments.findByBookingId(id)), scheduleSetBy: 'customer' as const };
+    const paymentRows = payments.findByBookingId(id);
+    const view = {
+      ...projectBooking(result.booking, await paymentRows),
+      addOnRequests: await customerAddOnRequests(result.booking, paymentRows),
+      scheduleSetBy: 'customer' as const,
+    };
     return c.json({ view, emailed }, 200);
   });
 

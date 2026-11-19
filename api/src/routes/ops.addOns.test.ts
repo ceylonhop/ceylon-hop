@@ -430,6 +430,24 @@ describe('add-ons after booking: the ops API', () => {
         expect((await create(b.id, { lines: [{ legId: leg!.id, code: 'luggage' }], notifyCustomer: false })).status).toBe(200);
       });
 
+      // booking.addOns also lists add-ons paid AFTER booking: asking again for one of those is the
+      // repo's duplicate rule, not "bought with the trip".
+      it('answers duplicate_add_on, not already_bought_at_booking, for an add-on paid after booking', async () => {
+        const engine: QuoteRequest = {
+          product: 'private', vehicle: 'car', pax: 2, bags: 2,
+          legs: [{ from: 'Colombo Airport (CMB)', to: 'Galle', distanceKm: 150 }],
+          extras: [{ code: 'sightseeing' }],
+        };
+        const b = await booked(single(), 'paid', snapshot(engine));
+        const [leg] = await driven(b.id);
+        const req = await sent(b.id, [{ legId: leg!.id, code: 'luggage' }]);
+        addOns.markPaidForSettlement(req.id, new Date());
+        expect((await bookings.get(b.id))!.addOns).toEqual(['Sightseeing stops (up to 3h)', 'Luggage rack — Colombo Airport (CMB) → Galle']);
+        const again = (code: string) => create(b.id, { lines: [{ legId: leg!.id, code }], notifyCustomer: false });
+        expect(await refusal(again('luggage'))).toEqual([409, 'duplicate_add_on']);
+        expect(await refusal(again('sightseeing'))).toEqual([409, 'already_bought_at_booking']);
+      });
+
       it('lets it through on a multi-leg booking, where the add-on cannot be tied to a leg', async () => {
         const engine: QuoteRequest = {
           product: 'private', vehicle: 'car', pax: 2, bags: 2,

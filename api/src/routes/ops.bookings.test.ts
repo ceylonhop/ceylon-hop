@@ -387,6 +387,38 @@ describe('ops bookings list — payments are fetched in one batch, not per booki
   });
 });
 
+// An add-on paid after booking is its own money (tripPayments): on a pay-on-the-day booking whose
+// only succeeded payment is an add-on, the trip is still unpaid and the row must say so.
+describe('ops bookings list — an add-on payment is not the trip being paid', () => {
+  it('reports unpaid with no paidAt when only an add-on settled; a trip payment beside it still reads paid', async () => {
+    const bookings = new InMemoryBookingRepo();
+    const payments = new InMemoryPaymentRepo();
+    const app = createApp({ bookings, payments, rideOps: new InMemoryRideOpsRepo(), auth, adminApiKey: 'adminkey' });
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const b = await seed(bookings);
+      await bookings.setStatus(b.id, 'payment_pending');
+      ids.push(b.id);
+    }
+    await bookings.setPaymentArrangement(ids[0], 'on_the_day');
+    const addOn = async (id: string) => {
+      const p = await payments.create({ bookingId: id, provider: 'fake', orderId: `a-${id}`, amount: 1000, currency: 'USD', idempotencyKey: `a-${id}`, purpose: 'add_on' });
+      await payments.markSucceeded(p.id);
+    };
+    await addOn(ids[0]);
+    const trip = await payments.create({ bookingId: ids[1], provider: 'fake', orderId: `o-${ids[1]}`, amount: 12100, currency: 'USD', idempotencyKey: `k-${ids[1]}` });
+    await payments.markSucceeded(trip.id);
+    await bookings.setStatus(ids[1], 'paid');
+    await addOn(ids[1]);
+
+    const rows: { id: string; paymentStatus: string; paidCents: number; paidAt: string | null }[] =
+      await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json();
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get(ids[0])).toMatchObject({ paymentStatus: 'unpaid', paidCents: 0, paidAt: null });
+    expect(byId.get(ids[1])).toMatchObject({ paymentStatus: 'paid', paidCents: 12100 });
+  });
+});
+
 // Test bookings (2026-09-24): every ops row says whether its customer email is one of the
 // team's (TEAM_EMAILS), so the queue can label it and leave it out of its counts.
 describe('ops bookings rows — isTest', () => {
