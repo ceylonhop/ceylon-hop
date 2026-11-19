@@ -236,6 +236,31 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     expect(body.verdict.warnings).toEqual(['cash_due_on_the_day']);
   });
 
+  it('a pay-on-the-day booking whose only payment is an add-on is not paid in the other-bookings list', async () => {
+    const s = setup();
+    const addOnOnly = async (nb: NewBooking) => {
+      const b = await s.bookings.create(nb);
+      await s.bookings.setStatus(b.id, 'payment_pending');
+      await s.bookings.setPaymentArrangement(b.id, 'on_the_day');
+      await s.bookings.setStatus(b.id, 'confirmed');
+      const p = await s.payments.create({ bookingId: b.id, provider: 'fake', orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `addon:${b.id}`, purpose: 'add_on' });
+      await s.payments.markSucceeded(p.id);
+      return b;
+    };
+    const other = await addOnOnly(draft);
+    const looked = await addOnOnly(draft);
+    const body = await (await s.get(looked.reference)).json();
+    expect(body.otherBookings.rows.find((r: { id: string }) => r.id === other.id)).toMatchObject({ paid: false });
+    // A trip payment beside an add-on still reads paid.
+    const paidOne = await s.bookings.create(draft);
+    const trip = await s.payments.create({ bookingId: paidOne.id, provider: 'payhere', orderId: paidOne.reference, amount: 12100, currency: 'USD', idempotencyKey: `checkout:${paidOne.id}` });
+    await s.payments.markSucceeded(trip.id);
+    const addOn = await s.payments.create({ bookingId: paidOne.id, provider: 'fake', orderId: `${paidOne.reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `addon:${paidOne.id}`, purpose: 'add_on' });
+    await s.payments.markSucceeded(addOn.id);
+    const again = await (await s.get(looked.reference)).json();
+    expect(again.otherBookings.rows.find((r: { id: string }) => r.id === paidOne.id)).toMatchObject({ paid: true });
+  });
+
   it('never hands out links, tokens or raw payload fingerprints', async () => {
     const s = setup();
     const b = await paidBooking(s);

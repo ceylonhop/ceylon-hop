@@ -136,7 +136,7 @@ export function toOpsRow(
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
   const balance = balanceDueCents(b, ledger);
-  const settled = ledger.flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
+  const settled = tripPayments(ledger).flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
   const t = travel(b);
   const c = b.input.customer;
   return {
