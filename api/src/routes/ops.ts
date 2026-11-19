@@ -9,6 +9,8 @@ import { pricedVehicle } from '../quote/vehicle';
 import type { QuoteRequest } from '../quote/types';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
+import type { RideOpsLegRepo } from '../db/rideOpsLegRepo';
+import { drivenLegs, isPerLegTrip, legOpsViews, tripMilestone } from '../services/tripLegOps';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
@@ -46,6 +48,8 @@ export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
+  // Per-leg ops steps (spec 2026-11-19): a private multi-stop trip's legs each have their own row.
+  rideOpsLegs: RideOpsLegRepo;
   opsUserProfiles: OpsUserProfileRepo;
   auth: OpsAuthConfig;
   // Add-ons after booking (spec 2026-11-14 §7.1): the requests themselves, and the two repos the
@@ -281,12 +285,16 @@ export function opsRoutes(deps: OpsDeps) {
     // queue booking, closed ones included. A payments query per booking, awaited in sequence,
     // was a ~100 ms round-trip per row from Render to the database (2026-09-22) — the whole
     // reason the page took many seconds to paint its first row.
-    const [ops, allPayments, waiting] = await Promise.all([
+    const [ops, allPayments, waiting, storedLegs] = await Promise.all([
       deps.rideOps.listByBookingIds(ids),
       deps.payments.findByBookingIds(ids),
       // Batched with the two above for the same reason: one read for the whole queue.
       deps.refunds ? deps.refunds.pendingCentsByBookingIds(ids) : Promise.resolve(new Map<string, number>()),
+      // Per-leg ops steps: the stored legs of every private trip in the queue, one read.
+      deps.addOns.listLegsForBookings(all.filter(isPerLegTrip).map((b) => b.id)),
     ]);
+    // …and their ops rows, one more read for the whole queue (it needs the leg ids).
+    const legRows = await deps.rideOpsLegs.listByLegIds([...storedLegs.values()].flatMap((legs) => drivenLegs(legs).map((l) => l.id)));
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
     const paidIds = new Set(tripPayments(allPayments).filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const paymentsById = new Map<string, typeof allPayments>();
@@ -296,6 +304,7 @@ export function opsRoutes(deps: OpsDeps) {
       const row = toOpsRow(b, {
         rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
         payments: paymentsById.get(b.id) ?? [], refundWaitingCents: waiting.get(b.id) ?? 0,
+        legOps: legOpsViews(b, storedLegs.get(b.id) ?? [], legRows),
       });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
@@ -447,7 +456,12 @@ export function opsRoutes(deps: OpsDeps) {
       confirmationChannel: i.confirmationChannel,
     }));
     const reminders = notifications.filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2');
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders, ...addOnViews });
+    // Per-leg ops steps (spec 2026-11-19): each driven leg's own stage and ticks. One extra read,
+    // for a private trip only — it needs the stored legs' ids, which arrive with the add-on views.
+    const legOps = isPerLegTrip(b)
+      ? legOpsViews(b, addOnViews.legs, await deps.rideOpsLegs.listByLegIds(drivenLegs(addOnViews.legs).map((l) => l.id)))
+      : [];
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders, legOps, ...addOnViews });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
@@ -485,6 +499,59 @@ export function opsRoutes(deps: OpsDeps) {
     });
     await maybeEmailForStage(deps, id, body.data.to);
     return c.json(updated);
+  });
+
+  // Per-leg ops steps (spec 2026-11-19). Resolves the leg a per-leg route names: the booking must
+  // be a private multi-stop trip that is still going ahead, and the leg one of its driven legs.
+  const CLOSED_FOR_LEGS: readonly BookingStatus[] = ['cancelled', 'refunded', 'no_show'];
+  async function perLegTarget(bookingId: string, legId: string) {
+    const booking = await deps.bookings.get(bookingId);
+    if (!booking) return { error: 'not_found', status: 404 } as const;
+    if (!isPerLegTrip(booking)) return { error: 'not_per_leg', status: 409 } as const;
+    const legs = drivenLegs(await deps.addOns.listLegs(bookingId));
+    if (!legs.some((l) => l.id === legId)) return { error: 'leg_not_found', status: 404 } as const;
+    if (CLOSED_FOR_LEGS.includes(booking.status)) return { error: 'booking_closed', status: 409 } as const;
+    return { booking, legs } as const;
+  }
+
+  // Move ONE leg along. The booking's own status follows the legs: confirmed once the first leg's
+  // vehicle is, in progress from the first pickup, completed only when the last leg is — so
+  // finishing leg 1 no longer closes a trip with legs still to run.
+  r.post('/bookings/:id/legs/:legId/status', requireCap('bookings:operate'), async (c) => {
+    const body = z.object({ to: z.string() }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const id = c.req.param('id');
+    const legId = c.req.param('legId');
+    const target = await perLegTarget(id, legId);
+    if ('error' in target) return c.json({ error: target.error }, target.status);
+    let updated;
+    try {
+      updated = await deps.rideOpsLegs.setStatus(legId, body.data.to as never);
+    } catch {
+      return c.json({ error: 'illegal_transition' }, 400);
+    }
+    // Best-effort, like the booking-level route: the operator's action is the durable fact. Each
+    // milestone up to the one the legs now add up to is offered in order, because the booking
+    // can only move one step at a time and a leg may have been worked ahead of the others.
+    const rows = await deps.rideOpsLegs.listByLegIds(target.legs.map((l) => l.id));
+    const reached = tripMilestone(legOpsViews(target.booking, target.legs, rows).map((l) => l.stage));
+    const ladder: RideStatus[] = ['vehicle_confirmed', 'on_trip', 'completed'];
+    for (const step of reached ? ladder.slice(0, ladder.indexOf(reached) + 1) : []) {
+      await mirrorToBooking(deps, id, step, { actorId: c.get('identity').email, requestId: c.get('requestId') });
+    }
+    return c.json(updated);
+  });
+
+  r.post('/bookings/:id/legs/:legId/flags', requireCap('bookings:operate'), async (c) => {
+    const body = z.object({
+      vehiclePhotoReceived: z.boolean().optional(),
+      customerUpdated: z.boolean().optional(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const legId = c.req.param('legId');
+    const target = await perLegTarget(c.req.param('id'), legId);
+    if ('error' in target) return c.json({ error: target.error }, target.status);
+    return c.json(await deps.rideOpsLegs.setFlags(legId, body.data));
   });
 
   r.post('/bookings/:id/flags', requireCap('bookings:operate'), async (c) => {

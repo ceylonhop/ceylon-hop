@@ -111,6 +111,7 @@ export function rideListToOpsRow(
     travelDate: list.date,
     travelTime: departureTime(list),
     legs: [],
+    legOps: [],
     pax: seats,
     // Board vans have no ride_ops overlay — these flags exist only for bookings.
     vehiclePhotoReceived: false,

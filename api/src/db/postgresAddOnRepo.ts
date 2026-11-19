@@ -99,6 +99,27 @@ export class PostgresAddOnRepo implements AddOnRepo {
       .orderBy(bookingLegs.seq);
   }
 
+  async listLegsForBookings(bookingIds: string[]): Promise<Map<string, StoredLeg[]>> {
+    const out = new Map<string, StoredLeg[]>();
+    if (bookingIds.length === 0) return out;
+    const rows = await this.db
+      .select({
+        bookingId: bookingLegs.bookingId,
+        id: bookingLegs.id,
+        seq: bookingLegs.seq,
+        kind: bookingLegs.kind,
+        from: bookingLegs.fromPlace,
+        to: bookingLegs.toPlace,
+        viaStops: bookingLegs.viaStops,
+        travelDate: bookingLegs.travelDate,
+      })
+      .from(bookingLegs)
+      .where(and(inArray(bookingLegs.bookingId, bookingIds), isNull(bookingLegs.removedAt)))
+      .orderBy(bookingLegs.seq);
+    for (const { bookingId, ...leg } of rows) out.set(bookingId, [...(out.get(bookingId) ?? []), leg]);
+    return out;
+  }
+
   async createRequest(input: {
     bookingId: string;
     lines: Array<{ legId: string; code: string; label: string; amountCents: number }>;

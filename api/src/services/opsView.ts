@@ -7,6 +7,7 @@ import { roadRow } from './notifications';
 import { balanceDueCents, paidCents, tripPayments } from '../domain/balance';
 import type { PaymentArrangement } from '../domain/paymentMethod';
 import { deriveLegsForMode } from '../domain/bookingLegs';
+import type { LegOpsView } from './tripLegOps';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -67,6 +68,9 @@ export interface OpsBookingRow {
    *  travel day on a chauffeur trip. Empty on every other row. The queue files a trip under its
    *  next leg from these (spec 2026-11-06); `travelDate` stays the START date. */
   legs: Array<{ date: string | null; from: string; to: string }>;
+  /** Per-leg ops steps (spec 2026-11-19): each driven leg of a private multi-stop trip with its own
+   *  stage and ticks. Empty on every other row, and on an older trip with no stored legs. */
+  legOps: LegOpsView[];
   pax: number;
   vehiclePhotoReceived: boolean;
   customerUpdated: boolean;
@@ -132,7 +136,7 @@ function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number; legOps?: LegOpsView[] },
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
   const balance = balanceDueCents(b, ledger);
@@ -149,7 +153,7 @@ export function toOpsRow(
     cashDueCents: b.paymentArrangement ? balance : 0,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
-    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, legs: legs(b), pax: pax(b),
+    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, legs: legs(b), legOps: opts.legOps ?? [], pax: pax(b),
     vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
     customerUpdated: opts.rideOps?.customerUpdated ?? false,
     opsNotes: opts.rideOps?.opsNotes ?? null,
