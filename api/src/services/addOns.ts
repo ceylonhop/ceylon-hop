@@ -222,7 +222,10 @@ export async function createAddOnRequest(
   if (legs.filter((leg) => leg.kind === 'leg').length === 1) {
     const bought = booking.addOns ?? [];
     const has = (label: string) => bought.some((b) => b === label || b.startsWith(`${label} — `));
-    if (input.lines.some((line) => has(itemOf(line.code)!.label))) return { ok: false, error: 'already_bought_at_booking' };
+    // booking.addOns also lists add-ons paid after booking; asking again for one of those is a
+    // duplicate (the repo's rule, below), not "bought with the trip".
+    const paidCodes = (await deps.addOns.listByBooking(booking.id)).filter((r) => r.status === 'paid').flatMap((r) => r.lines.map((l) => l.code));
+    if (input.lines.some((line) => !paidCodes.includes(line.code) && has(itemOf(line.code)!.label))) return { ok: false, error: 'already_bought_at_booking' };
   }
 
   const [payments, refunds] = await Promise.all([

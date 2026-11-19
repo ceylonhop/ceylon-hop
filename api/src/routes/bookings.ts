@@ -1221,7 +1221,7 @@ function invalidRequest(error: ZodError) {
           kind: 'schedule_set_by_customer',
           title: `Date set: ${result.booking.reference} by the customer`,
           body: `${result.booking.reference}: pickup set to ${fill.next.date}${fill.next.time ? ` ${fill.next.time}` : ''} on the manage page.`,
-          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(await payments.findByBookingId(id))),
+          email: teamScheduleSetEmail(result.booking, current, deps.opsBaseUrl ?? '', paidCents(tripPayments(await payments.findByBookingId(id)))),
           // A later time-only fill is a new event, not a repeat of the first.
           dedupeKey: `${result.booking.id}:${fill.next.date}:${fill.next.time ?? ''}`,
         });
