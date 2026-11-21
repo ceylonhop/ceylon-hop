@@ -83,6 +83,18 @@ export function addOnRepoContract(name: string, make: () => Promise<AddOnRepoHar
     };
 
     describe('listLegs', () => {
+      // Per-leg ops steps (spec 2026-11-19): the ops queue reads many trips' legs in one go.
+      it('listLegsForBookings returns each booking’s legs exactly as listLegs does', async () => {
+        const h = await make();
+        const a = await h.bookings.create(trip());
+        const b = await h.bookings.create(single());
+        const many = await h.repo.listLegsForBookings([a.id, b.id, randomUUID()]);
+        expect([...many.keys()].sort()).toEqual([a.id, b.id].sort());
+        expect(many.get(a.id)).toEqual(await h.repo.listLegs(a.id));
+        expect(many.get(b.id)).toEqual(await h.repo.listLegs(b.id));
+        expect(await h.repo.listLegsForBookings([])).toEqual(new Map());
+      });
+
       it('returns a trip’s stored legs in seq order, gaps included', async () => {
         const h = await make();
         const { legs } = await seed(h);

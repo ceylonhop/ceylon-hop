@@ -44,7 +44,7 @@ import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
 import { devEmailRoutes } from './routes/devEmails';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
-import type { RideOpsLegRepo } from './db/rideOpsLegRepo';
+import { InMemoryRideOpsLegRepo, type RideOpsLegRepo } from './db/rideOpsLegRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
@@ -119,8 +119,7 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
-  // Per-leg ops steps (spec 2026-11-19). Storage only so far: nothing reads it until the leg
-  // endpoints land, but it is wired now so that step cannot ship reading an in-memory fallback.
+  // Per-leg ops steps (spec 2026-11-19): one fulfilment row per driven leg of a private trip.
   rideOpsLegs?: RideOpsLegRepo;
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
@@ -273,6 +272,7 @@ export function createApp(deps: AppDeps = {}) {
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
+  const rideOpsLegs = deps.rideOpsLegs ?? new InMemoryRideOpsLegRepo();
   const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   // Constructed BEFORE the quote repo so the in-memory pair share one store: the fake quote repo
@@ -682,7 +682,7 @@ export function createApp(deps: AppDeps = {}) {
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
   }));
   app.route('/admin/ops', opsRoutes({
-    bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
+    bookings, payments, rideOps, rideOpsLegs, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
     email, notificationLog, rideLists, quotes, paymentEvents, refunds, addOns, zones, rateRevisions,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
