@@ -102,6 +102,18 @@ describe('momentum + momentumText', () => {
     ], NOW);
     expect(m).toEqual({ travellers: 3, closingThisWeek: 1, oneToGo: 1 });
   });
+  it('counts a traveller on several rides once, with the most seats they hold on any one', () => {
+    // The live board, 2026-11-21: Claudia held 2 seats on each of three rides and counted as 6.
+    const claudia = (seats) => ({ name: 'Claudia', country: 'PT', photoUrl: 'https://img/claudia', seats });
+    const alex = { name: 'Alexandra', country: 'CZ', photoUrl: null, seats: 1 };
+    const m = F.momentum([
+      ride({ committed: 2, members: [claudia(2)] }),
+      ride({ committed: 3, members: [claudia(2), alex] }),
+      ride({ committed: 1, members: [claudia(1)] }),
+      ride({ committed: 2, confirmed: true, members: [{ name: 'Eve', country: 'US', photoUrl: null, seats: 2 }] }),
+    ], NOW);
+    expect(m.travellers).toBe(3);
+  });
   it('words it, leaving out the parts that are zero', () => {
     expect(F.momentumText({ travellers: 9, closingThisWeek: 3, oneToGo: 1 }))
       .toEqual({ head: '9 travellers on the board right now', sub: '3 rides close this week · 1 needs just one more' });
