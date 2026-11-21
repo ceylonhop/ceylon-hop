@@ -335,11 +335,11 @@ describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout
     return createApp({ adapter, bookingBaseUrl: SITE, payBaseUrl: PAY, ...extra });
   }
 
-  async function fieldsFor(app: ReturnType<typeof createApp>, body: unknown) {
+  async function fieldsFor(app: ReturnType<typeof createApp>, body: unknown, origin?: string) {
     const b = await book(app);
     const res = await app.request(`/bookings/${b.id}/checkout`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${b.checkoutToken}`, 'content-type': 'application/json', ...(origin ? { origin } : {}) },
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(200);
@@ -390,6 +390,21 @@ describe('POST /bookings/:id/checkout — return URLs for a manage-page checkout
       const { body } = await fieldsFor(payhereApp(), req);
       expect(body).not.toHaveProperty('manageToken');
     }
+  });
+
+  // manage.html is also served on the pay host (the ops drawer's links are built there). A
+  // customer who paid from that copy goes back to it, not to the customer site (staging,
+  // 2026-11-21: the two are different hosts and the return landed on the wrong one).
+  it('sends a customer who paid from the pay host’s manage page back to the pay host', async () => {
+    const { fields } = await fieldsFor(payhereApp(), { returnTo: 'manage' }, PAY);
+    expect(fields.return_url).toMatch(/^https:\/\/pay\.example\.com\/manage\.html\?rt=[^&]+$/);
+    expect(fields.cancel_url).toMatch(/^https:\/\/pay\.example\.com\/manage\.html\?rt=[^&]+&c=1$/);
+  });
+
+  it('never returns to an origin that is not one of ours', async () => {
+    const { fields } = await fieldsFor(payhereApp(), { returnTo: 'manage' }, 'https://evil.example');
+    expect(fields.return_url.startsWith(`${SITE}/manage.html?`)).toBe(true);
+    expect(fields.cancel_url.startsWith(`${SITE}/manage.html?`)).toBe(true);
   });
 
   it('ignores a client-supplied URL alongside the manage intent', async () => {

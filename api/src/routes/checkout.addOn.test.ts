@@ -36,12 +36,15 @@ function spy() {
   return { adapter, box };
 }
 
-async function world(opts: { status?: Status; date?: string } = {}) {
+async function world(opts: { status?: Status; date?: string; payBaseUrl?: string } = {}) {
   const bookings = new InMemoryBookingRepo();
   const payments = new InMemoryPaymentRepo();
   const addOns = new InMemoryAddOnRepo(bookings, payments);
   const { adapter, box } = spy();
-  const app = createApp({ bookings, payments, addOns, adapter, bookingBaseUrl: 'https://site.example.com' });
+  const app = createApp({
+    bookings, payments, addOns, adapter, bookingBaseUrl: 'https://site.example.com',
+    ...(opts.payBaseUrl ? { payBaseUrl: opts.payBaseUrl } : {}),
+  });
 
   // A paid private transfer: the trip's own payment has succeeded.
   const paidBooking = async (nb: NewBooking = single(opts.date)) => {
@@ -74,14 +77,17 @@ async function world(opts: { status?: Status; date?: string } = {}) {
   if (status === 'completed') await bookings.setStatus(created.id, 'completed');
 
   const b = { id: created.id, reference: created.reference };
-  const checkout = (body: unknown, bookingId: string = b.id) =>
+  const checkout = (body: unknown, bookingId: string = b.id, origin?: string) =>
     app.request(`/bookings/${bookingId}/checkout`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${signCheckoutToken(bookingId, SECRET, Date.now())}`, 'content-type': 'application/json' },
+      headers: {
+        authorization: `Bearer ${signCheckoutToken(bookingId, SECRET, Date.now())}`, 'content-type': 'application/json',
+        ...(origin ? { origin } : {}),
+      },
       body: JSON.stringify(body),
     });
-  const addOnCheckout = (requestId: string = request.id, extra: Record<string, unknown> = {}) =>
-    checkout({ purpose: 'add_on', addOnRequestId: requestId, returnTo: 'manage', ...extra });
+  const addOnCheckout = (requestId: string = request.id, extra: Record<string, unknown> = {}, origin?: string) =>
+    checkout({ purpose: 'add_on', addOnRequestId: requestId, returnTo: 'manage', ...extra }, b.id, origin);
   const checkoutToken = (body?: unknown, bookingId: string = b.id) =>
     app.request('/bookings/view/checkout-token', {
       method: 'POST',
@@ -246,6 +252,26 @@ describe('POST /bookings/:id/checkout: purpose add_on', () => {
     expect(verifyPayReturnLeg(rt(w.box.seen!.returnUrl!), SECRET)).toEqual({ bookingId: w.b.id, leg: 'return', addOnSeq: 1 });
     expect(verifyPayReturnLeg(rt(w.box.seen!.cancelUrl!), SECRET)).toEqual({ bookingId: w.b.id, leg: 'cancel', addOnSeq: 1 });
     expect(verifyPayReturnLeg(params.payReturnToken, SECRET)).toEqual({ bookingId: w.b.id, leg: 'return', addOnSeq: 1 });
+  });
+
+  // Staging, 2026-11-21 (CH-TPSMY): the ops pane's pay link opened manage.html on the pay host,
+  // and PayHere brought the customer back to the customer site's host instead — on staging a
+  // sign-in wall, and anywhere a tab whose sessionStorage has no manage token. The page is served
+  // on both of our hosts, so the customer goes back to the one they paid from.
+  it('brings the customer back to the host they paid from when that is the pay host', async () => {
+    const w = await world({ payBaseUrl: 'https://pay.example.com' });
+    expect((await w.addOnCheckout(w.request.id, {}, 'https://pay.example.com')).status).toBe(200);
+    expect(w.box.seen!.returnUrl).toMatch(/^https:\/\/pay\.example\.com\/manage\.html\?rt=[^&]+$/);
+    expect(w.box.seen!.cancelUrl).toMatch(/^https:\/\/pay\.example\.com\/manage\.html\?rt=[^&]+&c=1$/);
+  });
+
+  it('keeps the customer site for a checkout from the site, from no stated origin, and from anyone else’s', async () => {
+    for (const origin of ['https://site.example.com', undefined, 'https://evil.example']) {
+      const w = await world({ payBaseUrl: 'https://pay.example.com' });
+      expect((await w.addOnCheckout(w.request.id, {}, origin)).status).toBe(200);
+      expect(w.box.seen!.returnUrl).toMatch(/^https:\/\/site\.example\.com\/manage\.html\?rt=/);
+      expect(w.box.seen!.cancelUrl).toMatch(/^https:\/\/site\.example\.com\/manage\.html\?rt=/);
+    }
   });
 
   it('two requests on one booking are two payments, A1 and A2', async () => {

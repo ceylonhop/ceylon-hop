@@ -1454,7 +1454,22 @@ function invalidRequest(error: ZodError) {
               // (spec §D4), and `t` can view this booking and start its payment. The page keeps
               // `t` in the tab's sessionStorage across the round trip instead (manageToken below,
               // for the website, which has none of its own). Same two-legs rule as above.
-              const page = `${deps.manageBaseUrl.replace(/\/$/, '')}/manage.html?rt=`;
+              //
+              // manage.html is served on two of our own hosts: the customer site (manageBaseUrl)
+              // and the pay host (payBaseUrl), where the ops drawer's pay links and the add-on
+              // pay link point. The customer goes back to the copy they paid FROM: the manage
+              // token waits in that tab's sessionStorage, which is per origin, and on staging the
+              // other host is a sign-in wall (CH-TPSMY, 2026-11-21). The browser's Origin header
+              // says which copy this is; it is only ever MATCHED against the pay host, never used
+              // as the address, so no caller can steer the return anywhere else.
+              const originOf = (url: string | undefined): string | null => {
+                try { return url ? new URL(url).origin : null; } catch { return null; }
+              };
+              const paidFrom = originOf(c.req.header('origin'));
+              const fromPayHost =
+                paidFrom !== null && paidFrom === originOf(deps.payBaseUrl) && paidFrom !== originOf(deps.manageBaseUrl);
+              const base = fromPayHost ? deps.payBaseUrl! : deps.manageBaseUrl;
+              const page = `${base.replace(/\/$/, '')}/manage.html?rt=`;
               return {
                 returnUrl: `${page}${encodeURIComponent(returnToken('return'))}`,
                 cancelUrl: `${page}${encodeURIComponent(returnToken('cancel'))}&c=1`,
