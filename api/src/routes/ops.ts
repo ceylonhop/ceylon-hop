@@ -10,7 +10,7 @@ import type { QuoteRequest } from '../quote/types';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
 import type { RideOpsLegRepo } from '../db/rideOpsLegRepo';
-import { drivenLegs, isPerLegTrip, legOpsViews, tripMilestone } from '../services/tripLegOps';
+import { closedBeforePerLeg, drivenLegs, isPerLegTrip, legOpsViews, tripMilestone } from '../services/tripLegOps';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
@@ -304,7 +304,7 @@ export function opsRoutes(deps: OpsDeps) {
       const row = toOpsRow(b, {
         rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
         payments: paymentsById.get(b.id) ?? [], refundWaitingCents: waiting.get(b.id) ?? 0,
-        legOps: legOpsViews(b, storedLegs.get(b.id) ?? [], legRows),
+        legOps: closedBeforePerLeg(opsById.get(b.id)) ? [] : legOpsViews(b, storedLegs.get(b.id) ?? [], legRows),
       });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
@@ -458,7 +458,7 @@ export function opsRoutes(deps: OpsDeps) {
     const reminders = notifications.filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2');
     // Per-leg ops steps (spec 2026-11-19): each driven leg's own stage and ticks. One extra read,
     // for a private trip only — it needs the stored legs' ids, which arrive with the add-on views.
-    const legOps = isPerLegTrip(b)
+    const legOps = isPerLegTrip(b) && !closedBeforePerLeg(ops)
       ? legOpsViews(b, addOnViews.legs, await deps.rideOpsLegs.listByLegIds(drivenLegs(addOnViews.legs).map((l) => l.id)))
       : [];
     return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders, legOps, ...addOnViews });
@@ -484,6 +484,15 @@ export function opsRoutes(deps: OpsDeps) {
     const body = z.object({ to: z.string() }).safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ error: 'bad_request' }, 400);
     const id = c.req.param('id');
+    // Per-leg ops steps (spec 2026-11-19): a private multi-stop trip moves one leg at a time, on
+    // the leg route. Advancing it here was the bug — "Mark completed" after leg 1 closed the whole
+    // trip. A no-show is the one booking-level move left: it closes the trip whichever leg it is.
+    if (body.data.to !== 'no_show') {
+      const booking = await deps.bookings.get(id);
+      if (booking && isPerLegTrip(booking) && drivenLegs(await deps.addOns.listLegs(id)).length > 0) {
+        return c.json({ error: 'per_leg_trip' }, 409);
+      }
+    }
     let updated;
     try {
       updated = await deps.rideOps.setStatus(id, body.data.to as never);
@@ -507,7 +516,7 @@ export function opsRoutes(deps: OpsDeps) {
   async function perLegTarget(bookingId: string, legId: string) {
     const booking = await deps.bookings.get(bookingId);
     if (!booking) return { error: 'not_found', status: 404 } as const;
-    if (!isPerLegTrip(booking)) return { error: 'not_per_leg', status: 409 } as const;
+    if (!isPerLegTrip(booking) || closedBeforePerLeg(await deps.rideOps.get(bookingId))) return { error: 'not_per_leg', status: 409 } as const;
     const legs = drivenLegs(await deps.addOns.listLegs(bookingId));
     if (!legs.some((l) => l.id === legId)) return { error: 'leg_not_found', status: 404 } as const;
     if (CLOSED_FOR_LEGS.includes(booking.status)) return { error: 'booking_closed', status: 409 } as const;

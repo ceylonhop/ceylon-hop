@@ -22,7 +22,7 @@ function liftFn(name: string): string {
   throw new Error(`${name} never terminated`);
 }
 
-type Detail = { booking: { mode: string; input: Record<string, unknown> }; coverage?: unknown };
+type Detail = { booking: { mode: string; status?: string; input: Record<string, unknown> }; coverage?: unknown; ops?: { fulfilmentStatus: string }; legOps?: Array<{ stage: string }> };
 let legsHtmlFor: (d: Detail) => string;
 
 beforeAll(async () => {
@@ -148,5 +148,30 @@ describe('drawer legs — progress through the trip', () => {
   it('ships the styles those states need', () => {
     expect(body).toMatch(/\.legs \.leg-done[^{]*\{[^}]*line-through/);
     expect(body).toMatch(/\.legs \.leg-next[^{]*::after\{[^}]*content:"Next"/);
+  });
+});
+
+// Per-leg ops steps (spec 2026-11-19): on a private multi-stop trip each driven leg carries its own
+// stage, and done / now come from what ops recorded — not from the calendar.
+describe('drawer legs: per-leg stages', () => {
+  const input = { stops: ['Colombo', 'Kandy', 'Ella', 'Mirissa'], dates: [iso(3), iso(5), iso(7)], serviceType: 'private' };
+  const legLines = (html: string) => [...html.matchAll(/<div class="(leg[^"]*)" data-leg/g)].map((m) => m[1]);
+  const pills = (html: string) => [...html.matchAll(/data-testid="leg-stage"[^>]*><span class="pd"><\/span>([^<]*)</g)].map((m) => m[1]);
+
+  it('marks a leg done once ops completed it, though its date is still ahead, and the next one now', () => {
+    const html = legsHtmlFor({ booking: { mode: 'trip', input }, legOps: [{ stage: 'completed' }, { stage: 'vehicle_confirmed' }, { stage: 'paid' }] });
+    expect(legLines(html)).toEqual(['leg leg-done', 'leg leg-next leg-now', 'leg']);
+    expect(pills(html)).toEqual(['Done', 'Vehicle confirmed', 'Paid']);
+  });
+
+  it('keeps the calendar states and shows no stage on a booking without per-leg rows', () => {
+    const html = legsHtmlFor({ booking: { mode: 'trip', input } });
+    expect(legLines(html)).toEqual(['leg leg-next', 'leg', 'leg']);
+    expect(pills(html)).toEqual([]);
+  });
+
+  it('marks no leg as now on a trip closed by a no-show', () => {
+    const html = legsHtmlFor({ booking: { mode: 'trip', input }, ops: { fulfilmentStatus: 'no_show' }, legOps: [{ stage: 'completed' }, { stage: 'paid' }, { stage: 'paid' }] });
+    expect(legLines(html)).toEqual(['leg leg-done', 'leg', 'leg']);
   });
 });

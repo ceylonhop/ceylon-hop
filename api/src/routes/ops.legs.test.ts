@@ -6,6 +6,7 @@ import { Hono } from 'hono';
 import { createApp } from '../app';
 import { InMemoryBookingRepo, type NewBooking } from '../db/bookingRepo';
 import { issueSessionCookie } from '../lib/opsMiddleware';
+import { InMemoryRideOpsRepo } from '../db/rideOpsRepo';
 
 const auth = { opsUsers: 'f@x.com:founder,o@x.com:ops', googleClientId: 'cid', opsSessionSecret: 'sek' };
 async function hdr(email = 'o@x.com') {
@@ -40,11 +41,13 @@ const PATH = ['vehicle_confirmed', 'pickup_confirmed', 'on_trip', 'completed'] a
 
 describe('per-leg ops steps: the ops API', () => {
   let bookings: InMemoryBookingRepo;
+  let rideOps: InMemoryRideOpsRepo;
   let app: ReturnType<typeof createApp>;
 
   beforeEach(() => {
     bookings = new InMemoryBookingRepo();
-    app = createApp({ bookings, auth });
+    rideOps = new InMemoryRideOpsRepo();
+    app = createApp({ bookings, rideOps, auth });
   });
 
   const paid = async (nb: NewBooking) => {
@@ -189,10 +192,80 @@ describe('per-leg ops steps: the ops API', () => {
     expect(rows.find((r) => r.id === s.id)!.legOps).toEqual([]);
   });
 
-  it('does not touch the booking-level ops row or its endpoint in this step', async () => {
+  // Step 3: the queue and the old button now go by the legs.
+  type Row = { id: string; stage: string; vehiclePhotoReceived: boolean; customerUpdated: boolean; legOps: LegOps[] };
+  const rowFor = async (id: string): Promise<Row> =>
+    ((await (await app.request('/admin/ops/bookings', { headers: await hdr() })).json()) as Row[]).find((r) => r.id === id)!;
+  const setBooking = async (id: string, to: string) =>
+    app.request(`/admin/ops/bookings/${id}/status`, { method: 'POST', headers: await hdr(), body: JSON.stringify({ to }) });
+
+  it("the queue row's stage is the current leg's: back to paid once leg 1 is done", async () => {
+    const b = await paid(trip());
+    const legs = (await detail(b.id)).legOps;
+    await setLeg(b.id, legs[0].legId, 'vehicle_confirmed');
+    expect((await rowFor(b.id)).stage).toBe('vehicle_confirmed');
+    await setLeg(b.id, legs[0].legId, 'pickup_confirmed');
+    await setLeg(b.id, legs[0].legId, 'on_trip');
+    await setLeg(b.id, legs[0].legId, 'completed');
+    expect((await rowFor(b.id)).stage).toBe('paid');
+    await walk(b.id, legs[1].legId);
+    await walk(b.id, legs[2].legId);
+    expect((await rowFor(b.id)).stage).toBe('completed');
+  });
+
+  it("the queue row's ticks are the current leg's", async () => {
+    const b = await paid(trip());
+    const legs = (await detail(b.id)).legOps;
+    const tick = async (legId: string) => app.request(`/admin/ops/bookings/${b.id}/legs/${legId}/flags`, {
+      method: 'POST', headers: await hdr(), body: JSON.stringify({ customerUpdated: true }),
+    });
+    await tick(legs[0].legId);
+    expect((await rowFor(b.id)).customerUpdated).toBe(true);
+    await walk(b.id, legs[0].legId);
+    expect((await rowFor(b.id)).customerUpdated).toBe(false);
+  });
+
+  it('the booking-level button can no longer advance or complete a per-leg trip', async () => {
+    const b = await paid(trip());
+    const res = await setBooking(b.id, 'vehicle_confirmed');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'per_leg_trip' });
+    const d = await detail(b.id);
+    expect(d.ops.fulfilmentStatus).toBe('paid');
+    expect(d.booking.status).toBe('paid');
+  });
+
+  it('a no-show still closes the whole trip from the booking-level button', async () => {
     const b = await paid(trip());
     const [first] = (await detail(b.id)).legOps;
-    await walk(b.id, first.legId);
-    expect((await detail(b.id)).ops.fulfilmentStatus).toBe('paid');
+    await setLeg(b.id, first.legId, 'vehicle_confirmed');
+    expect((await setBooking(b.id, 'no_show')).status).toBe(200);
+    expect((await rowFor(b.id)).stage).toBe('no_show');
+    expect((await detail(b.id)).booking.status).toBe('no_show');
+  });
+
+  // Before per-leg steps a trip was closed with the one booking-level status. Those stay closed:
+  // their legs have no rows, and reading that as "leg 1 still to do" would reopen finished trips.
+  it('a trip already completed with the old single status stays closed', async () => {
+    const b = await paid(trip());
+    for (const to of PATH) await rideOps.setStatus(b.id, to);
+    const row = await rowFor(b.id);
+    expect(row.stage).toBe('completed');
+    expect(row.legOps).toEqual([]);
+    const d = await detail(b.id);
+    expect(d.legOps).toEqual([]);
+    const leg = d.legs.find((l) => l.kind === 'leg')!;
+    const res = await setLeg(b.id, leg.id, 'vehicle_confirmed');
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'not_per_leg' });
+  });
+
+  it('a single transfer and a chauffeur trip still use the booking-level button', async () => {
+    const s = await paid(single());
+    expect((await setBooking(s.id, 'vehicle_confirmed')).status).toBe(200);
+    expect((await rowFor(s.id)).stage).toBe('vehicle_confirmed');
+    const c = await paid(trip({ serviceType: 'chauffeur' }));
+    expect((await setBooking(c.id, 'vehicle_confirmed')).status).toBe(200);
+    expect((await rowFor(c.id)).stage).toBe('vehicle_confirmed');
   });
 });
