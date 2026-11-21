@@ -84,17 +84,31 @@
     return parts.join(' ');
   }
 
-  // The line at the top of the board: real counts off the open rides, never padded.
+  // The API sends no member id, so a photo is the person; without one, first name + country.
+  function personKey(m) {
+    return m.photoUrl ? 'p:' + m.photoUrl : 'n:' + (m.name || '') + '|' + (m.country || '');
+  }
+
+  // The line at the top of the board: real counts off the open rides, never padded. A traveller
+  // on several rides is counted once, with the most seats they hold on any one of them — the
+  // same party trying three routes is still one party.
   function momentum(lists, nowMs) {
     var out = { travellers: 0, closingThisWeek: 0, oneToGo: 0 };
+    var party = {};
     (lists || []).forEach(function (L) {
       if (!L || L.sched || L.confirmed || L.cancelled) return;
       if (isFinite(L.cutoffMs) && L.cutoffMs <= nowMs) return;
-      out.travellers += L.committed || 0;
+      if (L.members && L.members.length) {
+        L.members.forEach(function (m) {
+          var k = personKey(m);
+          party[k] = Math.max(party[k] || 0, m.seats || 1);
+        });
+      } else out.travellers += L.committed || 0;
       if (isFinite(L.cutoffMs) && L.cutoffMs - nowMs < 7 * DAY) out.closingThisWeek++;
       var g = seatsToGo(L);
       if (g && g.hot) out.oneToGo++;
     });
+    Object.keys(party).forEach(function (k) { out.travellers += party[k]; });
     return out;
   }
 
@@ -104,6 +118,17 @@
     if (m.closingThisWeek) sub.push(m.closingThisWeek + (m.closingThisWeek === 1 ? ' ride closes' : ' rides close') + ' this week');
     if (m.oneToGo) sub.push(m.oneToGo + (m.oneToGo === 1 ? ' needs' : ' need') + ' just one more');
     return { head: m.travellers + (m.travellers === 1 ? ' traveller' : ' travellers') + ' on the board right now', sub: sub.join(' · ') };
+  }
+
+  // The faces beside that line: each traveller once, however many rides they are on.
+  function distinctFaces(members, max) {
+    var seen = {}, out = [];
+    (members || []).some(function (m) {
+      var key = personKey(m);
+      if (!seen[key]) { seen[key] = true; out.push(m); }
+      return out.length >= max;
+    });
+    return out;
   }
 
   // The bus the seat beats — board.js's ALT table, said in words. The comparison the July spec
@@ -139,6 +164,7 @@
     shareMessage: shareMessage,
     momentum: momentum,
     momentumText: momentumText,
+    distinctFaces: distinctFaces,
     busTime: busTime,
     stripRides: stripRides,
     countdown: countdown,

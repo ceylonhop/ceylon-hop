@@ -102,6 +102,18 @@ describe('momentum + momentumText', () => {
     ], NOW);
     expect(m).toEqual({ travellers: 3, closingThisWeek: 1, oneToGo: 1 });
   });
+  it('counts a traveller on several rides once, with the most seats they hold on any one', () => {
+    // The live board, 2026-11-21: Claudia held 2 seats on each of three rides and counted as 6.
+    const claudia = (seats) => ({ name: 'Claudia', country: 'PT', photoUrl: 'https://img/claudia', seats });
+    const alex = { name: 'Alexandra', country: 'CZ', photoUrl: null, seats: 1 };
+    const m = F.momentum([
+      ride({ committed: 2, members: [claudia(2)] }),
+      ride({ committed: 3, members: [claudia(2), alex] }),
+      ride({ committed: 1, members: [claudia(1)] }),
+      ride({ committed: 2, confirmed: true, members: [{ name: 'Eve', country: 'US', photoUrl: null, seats: 2 }] }),
+    ], NOW);
+    expect(m.travellers).toBe(3);
+  });
   it('words it, leaving out the parts that are zero', () => {
     expect(F.momentumText({ travellers: 9, closingThisWeek: 3, oneToGo: 1 }))
       .toEqual({ head: '9 travellers on the board right now', sub: '3 rides close this week · 1 needs just one more' });
@@ -110,6 +122,25 @@ describe('momentum + momentumText', () => {
   });
   it('shows nothing rather than "0 travellers"', () => {
     expect(F.momentumText({ travellers: 0, closingThisWeek: 0, oneToGo: 0 })).toBeNull();
+  });
+});
+
+describe('distinctFaces', () => {
+  // The live board, 2026-11-19: Claudia was on the first three open rides and filled three of
+  // the header's four faces.
+  const claudia = { name: 'Claudia', country: 'PT', photoUrl: 'https://img/claudia' };
+  const alex = { name: 'Alexandra', country: 'CZ', photoUrl: null };
+  const eve = { name: 'Eveliza', country: 'US', photoUrl: 'https://img/eve' };
+  it('shows a traveller on several rides once', () => {
+    expect(F.distinctFaces([claudia, { ...claudia }, { ...claudia }, alex, eve, { ...eve }], 4))
+      .toEqual([claudia, alex, eve]);
+  });
+  it('matches photo-less travellers on name + country, and keeps namesakes apart', () => {
+    const alexDe = { name: 'Alexandra', country: 'DE', photoUrl: null };
+    expect(F.distinctFaces([alex, { ...alex }, alexDe], 4)).toEqual([alex, alexDe]);
+  });
+  it('stops at the cap', () => {
+    expect(F.distinctFaces([claudia, alex, eve], 2)).toEqual([claudia, alex]);
   });
 });
 
