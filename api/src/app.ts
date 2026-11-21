@@ -743,6 +743,7 @@ export function createApp(deps: AppDeps = {}) {
     auth: opsAuthCfg,
     allowedOrigins,
     email,
+    alertLog: deps.alertLog,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
     quoteBaseUrl,
