@@ -2649,6 +2649,31 @@ async function _loadQueue(){
   // "double render". So re-render only on Bookings; elsewhere just refresh the count.
   if(state.route==='tickets')render();else setNav();
 }
+/* Background refresh. The list was fetched at boot and on entering Bookings only, so an agent who
+   stayed on Bookings never saw a booking made after that (owner 2026-11-18: CH-H9L3S, paid 08:23,
+   missing from a tab opened earlier). Refetch every few minutes and when the tab comes back into
+   view — but only when a repaint cannot cost anyone their work: not behind an open booking (its
+   forms repaint with the sheet), not while a filter dropdown or another field is in use, and not
+   for a hidden tab. The search box is the exception: Bookings focuses it on entry, so it is put
+   back after the repaint, caret included. Other pages refetch on the way back into Bookings. */
+const QUEUE_REFRESH_MS=120000;
+const canAutoRefresh=(s,doc)=>{
+  if(doc.hidden||s.route!=='tickets'||s.detail)return false;
+  const a=doc.activeElement;
+  return !(a&&a.id!=='q'&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));
+};
+function autoRefreshQueue(){
+  if($('#approot').hidden||!canAutoRefresh(state,document))return;
+  const was=document.activeElement,pos=was&&was.id==='q'?was.selectionStart:null;
+  /* Silent on failure: nobody asked for this fetch, and a 401 already shows the login screen. */
+  loadQueue().then(()=>{
+    const q=$('#q');
+    if(pos===null||!q||state.route!=='tickets'||document.activeElement===q)return;
+    q.focus({preventScroll:true});try{q.setSelectionRange(pos,pos);}catch(_){}
+  }).catch(()=>{});
+}
+setInterval(autoRefreshQueue,QUEUE_REFRESH_MS);
+document.addEventListener('visibilitychange',autoRefreshQueue);
 
 /* Rail collapse: reclaims horizontal space while working; the choice persists per browser. */
 function railCollapsed(){
