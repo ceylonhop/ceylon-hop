@@ -81,6 +81,18 @@ The booking is `in_progress` from the first pickup to the last drop-off. The boo
 allow cancelling from `in_progress` (`api/src/domain/status.ts:23`), which is why the Cancel
 button is hidden for a started trip.
 
+## As built (2026-11-21) — where the three PRs differ from the plan above
+
+- The queue's stage switch and the refusal of the booking-level button moved from step 2 to step 3
+  (#1191 is purely additive), so ops could always advance a trip between merges.
+- A trip **completed with the old single status stays closed**: it is treated as a booking-level
+  booking (no per-leg rows shown), otherwise every finished trip would have reopened at leg 1.
+- The booking-level button answers `409 per_leg_trip` for a per-leg trip; a no-show is the one
+  booking-level move left.
+- The queue still files a trip by the **calendar** (its next dated leg); the row's stage, leg line
+  and nag are the leg ops are on. The two can differ if ops are behind the calendar.
+- The drawer's History block does not list per-leg steps.
+
 ## Trips already under way when this ships
 
 A private trip that is mid-way shows its remaining legs as Paid; ops re-click them. Trips already

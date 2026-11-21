@@ -228,6 +228,21 @@ describe('a multi-stop trip files under its next leg', () => {
     expect(legNote(midTrip({ legs: [leg(iso(-5)), leg(YESTERDAY)] }))).toBe(''); // trip over
   });
 
+  // Per-leg ops steps (spec 2026-11-19): a private multi-stop trip carries each leg's own stage, and
+  // the row names the leg ops are on from that — even before the trip starts, and whatever the dates say.
+  it('names the leg ops are on when the trip is worked leg by leg', () => {
+    const legOps = [
+      { stage: 'completed', from: 'Colombo', to: 'Kandy' }, { stage: 'paid', from: 'Kandy', to: 'Ella' },
+      { stage: 'paid', from: 'Ella', to: 'Yala' }, { stage: 'paid', from: 'Yala', to: 'Galle' },
+    ];
+    expect(legNote(midTrip({ stage: 'paid', legOps }))).toBe('Leg 2 of 4 · Kandy → Ella');
+    expect(legNote(midTrip({ stage: 'paid', legOps: legOps.map((l) => ({ ...l, stage: 'paid' })) }))).toBe('Leg 1 of 4 · Colombo → Kandy');
+    // The Tomorrow copy of a back-to-back trip is about tomorrow's leg, not the one ops are on.
+    expect(legNote(midTrip({ stage: 'paid', legOps, at: TOMORROW }))).toBe('Leg 3 of 4 · Ella → Yala');
+    // A closed trip has no leg in progress: it keeps the calendar line it had before.
+    expect(legNote(midTrip({ stage: 'no_show', legOps }))).toBe('Leg 3 of 4 · Ella → Yala');
+  });
+
   it('sorts each day group by the anchor, so a trip resuming tomorrow sits among tomorrow\'s rows', () => {
     expect(html).toContain("const tkey=t=>(anchorDate(t)||'9999-99-99')");
   });
