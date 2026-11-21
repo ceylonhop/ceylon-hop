@@ -66,6 +66,8 @@ export class AddOnError extends Error {
 export interface AddOnRepo {
   /** Stored, not-removed legs in seq order. */
   listLegs(bookingId: string): Promise<StoredLeg[]>;
+  /** The same legs for many bookings in one read (the ops queue). A booking with none is absent. */
+  listLegsForBookings(bookingIds: string[]): Promise<Map<string, StoredLeg[]>>;
   /** Assigns seq under the booking row lock and refuses a duplicate (same code on the same leg in
    *  a request that is `open`, or `paid` and not in `fullyRefundedPaymentIds`). */
   createRequest(input: {
@@ -147,6 +149,15 @@ export class InMemoryAddOnRepo implements AddOnRepo {
   // The ids are this fake's own and exist only so tests have a stable key; the real ids are
   // `booking_legs.id`.
   // It cannot represent a removed leg, because nothing in the codebase removes one.
+  async listLegsForBookings(bookingIds: string[]): Promise<Map<string, StoredLeg[]>> {
+    const out = new Map<string, StoredLeg[]>();
+    for (const id of bookingIds) {
+      const legs = await this.listLegs(id);
+      if (legs.length) out.set(id, legs);
+    }
+    return out;
+  }
+
   async listLegs(bookingId: string): Promise<StoredLeg[]> {
     const b = await this.bookings.get(bookingId);
     if (!b) return [];
