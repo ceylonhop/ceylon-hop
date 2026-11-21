@@ -965,7 +965,7 @@
       if (!L.confirmed && !L.cancelled && !isClosed(L, now)) L.members.forEach(function (m) { people.push(m); });
     });
     return '<div class="rw-momentum"><span class="mo-live" aria-hidden="true"></span>' +
-      '<span class="rw-faces">' + people.slice(0, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('') + '</span>' +
+      '<span class="rw-faces">' + F.distinctFaces(people, 4).map(function (m, i) { return avatar(m, i, 'xs' + (i ? ' stack' : '')); }).join('') + '</span>' +
       '<span class="mo-txt"><b>' + esc(t.head) + '</b>' + (t.sub ? '<small>' + esc(t.sub) + '</small>' : '') + '</span></div>';
   }
 

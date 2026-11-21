@@ -106,6 +106,18 @@
     return { head: m.travellers + (m.travellers === 1 ? ' traveller' : ' travellers') + ' on the board right now', sub: sub.join(' · ') };
   }
 
+  // The faces beside that line: each traveller once, however many rides they are on. The API
+  // sends no member id, so a photo is the person; without one, first name + country.
+  function distinctFaces(members, max) {
+    var seen = {}, out = [];
+    (members || []).some(function (m) {
+      var key = m.photoUrl ? 'p:' + m.photoUrl : 'n:' + (m.name || '') + '|' + (m.country || '');
+      if (!seen[key]) { seen[key] = true; out.push(m); }
+      return out.length >= max;
+    });
+    return out;
+  }
+
   // The bus the seat beats — board.js's ALT table, said in words. The comparison the July spec
   // asks for: against the bus, never our own private car. A corridor not listed says nothing.
   var BUS = {
@@ -139,6 +151,7 @@
     shareMessage: shareMessage,
     momentum: momentum,
     momentumText: momentumText,
+    distinctFaces: distinctFaces,
     busTime: busTime,
     stripRides: stripRides,
     countdown: countdown,

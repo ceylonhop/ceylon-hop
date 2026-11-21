@@ -113,6 +113,25 @@ describe('momentum + momentumText', () => {
   });
 });
 
+describe('distinctFaces', () => {
+  // The live board, 2026-11-19: Claudia was on the first three open rides and filled three of
+  // the header's four faces.
+  const claudia = { name: 'Claudia', country: 'PT', photoUrl: 'https://img/claudia' };
+  const alex = { name: 'Alexandra', country: 'CZ', photoUrl: null };
+  const eve = { name: 'Eveliza', country: 'US', photoUrl: 'https://img/eve' };
+  it('shows a traveller on several rides once', () => {
+    expect(F.distinctFaces([claudia, { ...claudia }, { ...claudia }, alex, eve, { ...eve }], 4))
+      .toEqual([claudia, alex, eve]);
+  });
+  it('matches photo-less travellers on name + country, and keeps namesakes apart', () => {
+    const alexDe = { name: 'Alexandra', country: 'DE', photoUrl: null };
+    expect(F.distinctFaces([alex, { ...alex }, alexDe], 4)).toEqual([alex, alexDe]);
+  });
+  it('stops at the cap', () => {
+    expect(F.distinctFaces([claudia, alex, eve], 2)).toEqual([claudia, alex]);
+  });
+});
+
 describe("closesText, short form for a phone's time line", () => {
   it('says "Closes", drops the weekday, and keeps the clock', () => {
     expect(F.closesText(NOW + 9 * H + 12 * 60000, NOW, { short: true })).toEqual({ text: 'Closes in 9h 12m', live: true, urgent: true });
