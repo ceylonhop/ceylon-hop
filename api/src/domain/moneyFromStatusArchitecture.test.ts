@@ -69,6 +69,7 @@ const ALLOWLIST: Allowed[] = [
   { file: 'db/schema.ts', match: "${t.status} in ('draft'", why: 'bookings.status CHECK constraint: the full status list, not a money question.' },
   { file: 'db/schema.ts', match: "${t.fromStatus} in ('draft'", why: 'booking_status_events.from_status CHECK constraint: the full status list.' },
   { file: 'db/schema.ts', match: "${t.toStatus} in ('draft'", why: 'booking_status_events.to_status CHECK constraint: the full status list.' },
+  { file: 'db/schema.ts', match: "${t.fulfilmentStatus} in ('paid'", why: 'ride_ops_legs.fulfilment_status CHECK constraint: the ops stages of one leg, not booking status.' },
 
   // Trip / lifecycle decisions: whether the trip is going ahead, not whether money was taken.
   { file: 'db/bookingRepo.ts', match: 'export const SCHEDULE_EDITABLE_STATUSES', why: 'Lifecycle: when the customer may set the pickup date/time; not money.' },
@@ -90,7 +91,7 @@ const ALLOWLIST: Allowed[] = [
   { file: 'domain/paymentCase.ts', match: 'const PAID_STATUSES = new Set(', why: 'Payment lookup discrepancy check: status vs ledger (moneyIn); pay-on-the-day branched out first.' },
   { file: 'routes/bookings.ts', match: "outcome: status === 'paid' ? 'settled' : status", why: 'Local `status` is the return-page answer computed from succeeded ledger rows, not booking status.' },
 
-  // Not booking statuses: ride fulfilment stages and experience-interest statuses.
+  // Not booking statuses: ride fulfilment stages, experience-interest and add-on request statuses.
   { file: 'domain/rideStatus.ts', match: 'export const RIDE_STATUSES = [', why: "Ride fulfilment stages (ride_ops); 'paid' is a stage label, not a booking status." },
   { file: 'domain/rideStatus.ts', match: "vehicle_confirmed: ['pickup_confirmed', 'paid', 'no_show']", why: 'Ride fulfilment state machine; not booking status.' },
   { file: 'routes/ops.ts', match: "ride.fulfilmentStatus !== 'paid'", why: 'Ride fulfilment stage: has the Ceylon Hop team been assigned the job yet; not money.' },
@@ -99,6 +100,14 @@ const ALLOWLIST: Allowed[] = [
   { file: 'db/experienceInterestRepo.ts', match: "next.status === 'paid' && next.paymentRef == null", why: 'Experience-interest CHECK mirror: paid requires a payment ref; not a booking status.' },
   { file: 'routes/opsExperiences.ts', match: "current.status) === 'paid' && !ref", why: 'Experience-interest status: paid requires a payment ref; not a booking status.' },
   { file: 'routes/opsExperiences.ts', match: "if (lead.status !== 'paid')", why: 'Experience-interest status; not a booking status.' },
+  { file: 'db/schema.ts', match: "${t.status} in ('open', 'paid', 'cancelled')", why: "booking_add_on_requests.status CHECK: an add-on request's own status list; not a booking status." },
+  { file: 'db/addOnRepo.ts', match: "return r.status === 'paid' && !(", why: "Add-on request status (its own 'paid' is set when its payment settles); not a booking status." },
+  { file: 'db/addOnRepo.ts', match: "if (status === 'paid') return 'already_paid'", why: 'Add-on request status: a paid request is refunded, not cancelled; not a booking status.' },
+  { file: 'domain/addOns.ts', match: "if (req.status === 'paid') {", why: 'Add-on request status; how much was refunded is then read from the ledger. Not a booking status.' },
+  { file: 'routes/bookings.ts', match: "if (request.status === 'paid') return { ok: false, status: 409", why: 'Add-on request status: a paid request is not handed a second checkout; not a booking status.' },
+  { file: 'db/bookingRepo.ts', match: "filter((r) => r.status === 'paid')", why: "Add-on request status: which requests' lines join booking.addOns; refunds are then read from the ledger. Not a booking status." },
+  { file: 'db/postgresBookingRepo.ts', match: "eq(bookingAddOnRequests.status, 'paid')", why: 'Add-on request status, the same read in SQL; refunds are summed from the ledger beside it. Not a booking status.' },
+  { file: 'services/addOns.ts', match: "filter((r) => r.status === 'paid').flatMap((r) => r.lines.map((l) => l.code))", why: "Add-on request status: which codes were bought after booking, so a repeat is duplicate_add_on, not already_bought_at_booking. Not a booking status." },
 
   { file: 'domain/promoCode.ts', match: 'export const PROMO_PAID_STATUSES = [', why: 'Promo use is committed once the trip goes ahead at the promo price; a confirmed pay-on-the-day trip commits the use whether or not cash has arrived (controller ruling 2026-10-29).' },
 

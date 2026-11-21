@@ -127,6 +127,28 @@ export function bookingPromoContract(name: string, make: () => Promise<PromoEnv>
       expect(await env.bookings.promoUsage(code.id, T0)).toEqual({ paid: 0, held: 0 });
     });
 
+    // Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own payment row
+    // (purpose 'add_on'). It is not the trip's money, so it is never what uses a code. While a
+    // pay-on-the-day booking is going ahead its status counts the use; cancelled before any trip
+    // money came in, it frees the use like any unpaid cancellation, add-on payment or not.
+    it('does not count an add-on payment as the use', async () => {
+      const { env, code, book } = await setup();
+      const b = await book();
+      await env.bookings.setStatus(b.id, 'payment_pending');
+      await env.bookings.setPaymentArrangement(b.id, 'on_the_day');
+      await env.bookings.setStatus(b.id, 'confirmed');
+      const addOn = await env.payments.create({
+        bookingId: b.id, provider: 'fake', orderId: `${b.reference}-A1-${randomUUID().slice(0, 6)}`,
+        amount: 1000, currency: 'USD', idempotencyKey: `addon-${b.id}`, purpose: 'add_on',
+      });
+      await env.payments.markSucceeded(addOn.id);
+      expect(await env.bookings.promoUsage(code.id, at(3 * HOUR))).toEqual({ paid: 1, held: 0 });
+
+      await env.bookings.setStatus(b.id, 'cancelled', { reason: 'changed plans', by: 'f@x.com' });
+      expect(await env.bookings.promoUsage(code.id, at(3 * HOUR))).toEqual({ paid: 0, held: 0 });
+      expect((await env.bookings.promoBookings(code.id, at(3 * HOUR))).map((u) => u.use)).toEqual(['released']);
+    });
+
     it('treats awaiting_details as held', async () => {
       const { env, code, book } = await setup();
       const b = await book();

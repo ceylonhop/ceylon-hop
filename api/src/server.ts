@@ -26,6 +26,7 @@ import { PostgresUsageCounterRepo } from './db/postgresUsageCounterRepo';
 import { PostgresDistanceCacheRepo } from './db/postgresDistanceCacheRepo';
 import { FakeEmailAdapter, ResendEmailAdapter } from './adapters/email';
 import { PostgresRideOpsRepo } from './db/postgresRideOpsRepo';
+import { PostgresRideOpsLegRepo } from './db/postgresRideOpsLegRepo';
 import { PostgresOpsUserProfileRepo } from './db/postgresOpsUserProfileRepo';
 import { PostgresNotificationLogRepo } from './db/postgresNotificationLogRepo';
 import { PostgresQuoteRepo } from './db/postgresQuoteRepo';
@@ -41,6 +42,7 @@ import { initTracking } from './observability/track';
 import { PostgresPaymentSettlementRepo } from './db/postgresPaymentSettlementRepo';
 import { PostgresQuoteConversionRepo } from './db/postgresQuoteConversionRepo';
 import { PostgresRefundRepo } from './db/postgresRefundRepo';
+import { PostgresAddOnRepo } from './db/postgresAddOnRepo';
 import { PostgresAnalyticsDataRepo } from './db/postgresAnalyticsDataRepo';
 import { PostgresCustomerShortLinkRepo } from './db/postgresCustomerShortLinkRepo';
 import { PostgresPromoCodeRepo } from './db/postgresPromoCodeRepo';
@@ -170,6 +172,9 @@ const app = createApp({
   refunds: new PostgresRefundRepo(db, {
     transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
   }),
+  // Add-ons after booking (spec 2026-11-14). WITHOUT this line app.ts falls back to the in-memory
+  // repo: every request ops sends would vanish on restart, and its leg ids would be made up.
+  addOns: new PostgresAddOnRepo(db),
   settlements: new PostgresPaymentSettlementRepo(db, bookings, undefined, {
     transitionTrackingEnabled: config.BOOKING_TRANSITION_TRACKING_ENABLED,
   }),
@@ -185,6 +190,7 @@ const app = createApp({
   // Read-only here: the ops payment lookup lists a payment's notices. Settlement writes them itself.
   paymentEvents: new PostgresPaymentEventRepo(db),
   rideOps: new PostgresRideOpsRepo(db),
+  rideOpsLegs: new PostgresRideOpsLegRepo(db),
   opsUserProfiles: new PostgresOpsUserProfileRepo(db),
   notificationLog: new PostgresNotificationLogRepo(db),
   quotes,

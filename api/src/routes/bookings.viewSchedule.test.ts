@@ -3,6 +3,7 @@ import { createApp } from '../app';
 import { InMemoryBookingRepo } from '../db/bookingRepo';
 import { FakeEmailAdapter } from '../adapters/email';
 import { FakeAlertAdapter } from '../adapters/alerts';
+import { InMemoryPaymentRepo } from '../db/paymentRepo';
 import { signBookingToken } from '../lib/bookingToken';
 
 const SECRET = 'test-link-secret';
@@ -14,6 +15,7 @@ describe('POST /bookings/view/schedule — the customer fills a blank pickup (Ph
   let bookings: InMemoryBookingRepo;
   let email: FakeEmailAdapter;
   let alerts: FakeAlertAdapter;
+  let payments: InMemoryPaymentRepo;
   let bid: string;
   let token: string;
 
@@ -32,7 +34,8 @@ describe('POST /bookings/view/schedule — the customer fills a blank pickup (Ph
     bookings = new InMemoryBookingRepo();
     email = new FakeEmailAdapter();
     alerts = new FakeAlertAdapter();
-    app = createApp({ bookings, email, alerts, bookingLinkSecret: SECRET, bookingBaseUrl: 'https://ceylonhop.com' });
+    payments = new InMemoryPaymentRepo();
+    app = createApp({ bookings, payments, email, alerts, bookingLinkSecret: SECRET, bookingBaseUrl: 'https://ceylonhop.com' });
     bid = await paidBooking();
     token = signBookingToken(bid, SECRET);
   });
@@ -57,6 +60,26 @@ describe('POST /bookings/view/schedule — the customer fills a blank pickup (Ph
     expect(email.sent.map((m) => m.subject)).toContain(`Your pickup is set — ${body.view.reference}`);
     expect(alerts.sent).toHaveLength(1);
     expect(alerts.sent[0].email?.subject.startsWith(`Date set: ${body.view.reference}`)).toBe(true);
+  });
+
+  // An add-on paid after booking is not trip money: the team's email must not count it as paid.
+  it('the team email ignores an add-on payment: cash is still due on a pay-on-the-day booking', async () => {
+    const own = await bookings.create({
+      mode: 'single', total: 12400, amountDueNow: 12400, currency: 'USD',
+      input: { from: 'Colombo Airport (CMB)', to: 'Ella', vehicleType: 'car', adults: 2, children: 0, bags: 2,
+        customer: { firstName: 'Sam', lastName: 'Perera', email: 's@x.com', whatsapp: '+447700900000', country: 'GB' } },
+    });
+    await bookings.setStatus(own.id, 'payment_pending');
+    await bookings.setPaymentArrangement(own.id, 'on_the_day');
+    await bookings.setStatus(own.id, 'confirmed');
+    const p = await payments.create({ bookingId: own.id, provider: 'fake', orderId: `${own.reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `addon:${own.id}`, purpose: 'add_on' });
+    await payments.markSucceeded(p.id);
+    token = signBookingToken(own.id, SECRET);
+    expect((await post({ date: inDays(14), time: '09:00' })).status).toBe(200);
+    const text = alerts.sent[0].email!.text;
+    expect(text).toContain('Cash due on the day');
+    expect(text).toContain('$124.00');
+    expect(text).not.toMatch(/Paid:\s+\$10\.00/);
   });
 
   it('lets the time be added later, once', async () => {

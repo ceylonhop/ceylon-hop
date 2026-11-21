@@ -6,11 +6,12 @@ import type { BookingCheckoutEvent, BookingCheckoutEventRepo } from '../db/booki
 import type { Refund, RefundRepo } from '../db/refundRepo';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import type { BillingInput } from '../domain/singleTransfer';
+import { tripPayments } from '../domain/balance';
 import { toOpsRow } from './opsView';
 import { roadRow } from './notifications';
 import {
-  caseGaps, caseTimeline, normaliseCaseRef, paymentVerdict,
-  type CaseEvidence, type CasePayment, type CaseRow, type CaseSource, type GapCode, type Verdict,
+  caseAddOnPayments, caseGaps, caseTimeline, normaliseCaseRef, paymentVerdict,
+  type CaseAddOnPayment, type CaseEvidence, type CasePayment, type CaseRow, type CaseSource, type GapCode, type Verdict,
 } from '../domain/paymentCase';
 
 // Loads one booking's payment evidence for the ops payment lookup (spec 2026-09-26) and hands it to
@@ -79,6 +80,8 @@ export interface CaseResponse {
   quote: { id: string; reference: string; status: string } | null;
   booking: CaseBooking | null;
   verdict: Verdict | null;
+  // Payments for add-ons added after booking, apart from the trip's own (the verdict is the trip's).
+  addOnPayments: CaseAddOnPayment[];
   timeline: CaseRow[];
   gaps: GapCode[];
   unavailable: CaseSource[];
@@ -103,7 +106,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
     quote = { id: q.id, reference: q.reference, status: q.status };
     booking = q.convertedBookingId ? await deps.bookings.get(q.convertedBookingId) : null;
     if (!booking) {
-      return { kind: 'found', body: { ref: parsed.ref, quote, booking: null, verdict: null, timeline: [], gaps: [], unavailable: [], otherBookings: null } };
+      return { kind: 'found', body: { ref: parsed.ref, quote, booking: null, verdict: null, addOnPayments: [], timeline: [], gaps: [], unavailable: [], otherBookings: null } };
     }
   } else {
     booking = await deps.bookings.findByReference(parsed.ref);
@@ -185,7 +188,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
   };
   const verdict = paymentVerdict(evidence);
 
-  const row = toOpsRow(b, { paid: (paid ?? []).some((p) => p.status === 'succeeded'), teamEmails: deps.teamEmails, payments: paid ?? [] });
+  const row = toOpsRow(b, { paid: tripPayments(paid ?? []).some((p) => p.status === 'succeeded'), teamEmails: deps.teamEmails, payments: paid ?? [] });
   const c = b.input.customer;
   return {
     kind: 'found',
@@ -204,6 +207,7 @@ export async function loadPaymentCase(deps: PaymentCaseDeps, rawRef: string): Pr
         inQueue: deps.inQueue ? deps.inQueue(b.status) : false,
       },
       verdict,
+      addOnPayments: caseAddOnPayments(evidence),
       timeline: caseTimeline(evidence),
       gaps: caseGaps(evidence, verdict),
       unavailable,
@@ -221,7 +225,7 @@ async function otherBookingsOf(deps: PaymentCaseDeps, b: Booking): Promise<CaseR
       .filter((x) => x.id !== b.id);
     const shown = found.slice(0, OTHER_BOOKINGS_MAX);
     const payments = shown.length ? await deps.payments.findByBookingIds(shown.map((x) => x.id)) : [];
-    const paidIds = new Set(payments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    const paidIds = new Set(tripPayments(payments).filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     return {
       rows: shown.map((x) => {
         const row = toOpsRow(x, { paid: paidIds.has(x.id), teamEmails: deps.teamEmails, payments: payments.filter((p) => p.bookingId === x.id) });

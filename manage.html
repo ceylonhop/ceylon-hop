@@ -98,6 +98,21 @@
   .pk.ok h2{color:var(--ok)}
   .pk.info{border-color:var(--pc-line);background:var(--pc-sky)}
   .pk.info .pk-ic{background:#fff;color:var(--accent-deep)}
+  /* Add-ons the team added after booking (spec 2026-11-14 §7.4): the pickup card's frame (.pk), with
+     the lines, the total and the Pay button inside it. */
+  .ao-lines{margin-top:14px;border-top:1px solid var(--line-soft,#f0ece1);border-bottom:1px solid var(--line-soft,#f0ece1)}
+  .ao-line{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:11px 0;font-size:.9rem;font-weight:700}
+  .ao-line+.ao-line{border-top:1px solid var(--line-soft,#f0ece1)}
+  .ao-line span:first-child{min-width:0;overflow-wrap:anywhere}
+  .ao-line span:last-child{flex:none;white-space:nowrap}
+  .ao-total{display:flex;justify-content:space-between;align-items:baseline;margin-top:11px}
+  .ao-total .v{font-family:var(--display);font-weight:700;font-size:1.6rem}
+  .pk .btn.ao-pay{margin-top:13px}
+  .pk.ok .ao-names{margin:0 0 6px;font-weight:700;color:var(--ink)}
+  .ao-gone{margin:0 0 10px;font-size:.8rem;line-height:1.5;color:var(--ink-soft)}
+  /* "Add-ons · paid" under the trip total: the Balance-due row's look, so the two read as a pair. */
+  .tot.ao-paid{margin-top:8px;padding-top:8px;border-top:1px solid var(--line-soft,#f0ece1)}
+  .tot.ao-paid .v{font-size:1.15rem;color:var(--accent-deep)}
 </style>
 <script>
 window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}
@@ -591,6 +606,72 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       + (arranged ? '<div class="paysub">Please pay the Ceylon Hop team in cash at your first pickup.</div>' : '');
   }
 
+  // ---- add-ons the team added after booking (spec 2026-11-14 §7.4) --------------------------------
+  // `addOnRequests` comes with the view: cancelled ones are already left out. A payable one is a card
+  // with its own Pay; a paid one adds a line under the trip total (its label is already in Extras);
+  // one that ran out is a muted line. What a return or a refusal has to say lives here, keyed by
+  // request, so every repaint keeps saying it.
+  var addOnMsg = {};        // request id → the sentence shown in its card
+  var addOnJustPaid = null; // the request this visit's return came back paid for
+  var IC_PLUS = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12M4 10h12"/></svg>';
+  var ADD_ON_COULDNT = 'We couldn’t start your payment just now — no charge was made.';
+  var ADD_ON_FAILED = 'The add-on payment didn’t go through — no charge was made. You can try again below.';
+  var ADD_ON_NO_VERDICT = 'We haven’t heard back from your bank about the add-on payment. If PayHere showed Declined, nothing was charged — '
+    + 'you can try again below. If it showed Approved, your confirmation email is on its way.';
+  function addOnsOf(v){ return (v && v.addOnRequests) || []; }
+  function addOnById(v, id){ return addOnsOf(v).filter(function(r){ return r.id === id; })[0] || null; }
+  function addOnPayCard(r, first){
+    var msg = addOnMsg[r.id];
+    return '<div class="pk" data-add-on-card' + (first ? ' id="add-ons"' : '') + '><div class="pk-top"><span class="pk-ic">' + IC_PLUS + '</span><div>'
+      + '<h2>An add-on to pay</h2>'
+      + '<p>Our team added this to your trip, as you asked. It’s confirmed once it’s paid.</p></div></div>'
+      + '<div class="ao-lines">' + r.lines.map(function(l){
+          return '<div class="ao-line"><span>' + esc(l.label) + '</span><span>' + esc(money(l.amountCents, r.currency)) + '</span></div>';
+        }).join('') + '</div>'
+      + '<div class="ao-total"><span class="pk-lbl">To pay now</span><span class="v">' + esc(money(r.totalCents, r.currency)) + '</span></div>'
+      + (msg ? '<div class="pk-err" role="alert">' + esc(msg) + '</div>' : '')
+      + '<button class="btn btn-cta ao-pay" data-id="' + esc(r.id) + '">Pay ' + esc(money(r.totalCents, r.currency)) + '</button>'
+      + '<div class="pk-fine">' + (r.payBy ? 'Pay by the end of ' + esc(shortDate(r.payBy)) + '. ' : '') + 'Card payment through PayHere.</div></div>';
+  }
+  function addOnPaidCard(v){
+    if (!addOnJustPaid) return '';
+    var r = addOnById(v, addOnJustPaid);
+    var body = r && r.state === 'paid'
+      ? '<p class="ao-names">' + r.lines.map(function(l){ return esc(l.label); }).join('<br>') + '</p>'
+        + '<p>Confirmed. We’ve emailed your receipt for ' + esc(money(r.totalCents, r.currency)) + '.</p>'
+      : '<p>Your add-on is confirmed. We’ve emailed your receipt.</p>';
+    return '<div class="pk ok ao-paid-card"><div class="pk-top"><span class="pk-ic">' + IC_OK + '</span><div>'
+      + '<h2>Add-on paid</h2>' + body + '</div></div></div>';
+  }
+  function addOnCards(v){
+    var reqs = addOnsOf(v), first = true;
+    var html = addOnPaidCard(v);
+    reqs.forEach(function(r){
+      if (r.payable) { html += addOnPayCard(r, first); first = false; }
+    });
+    reqs.forEach(function(r){
+      if (r.state === 'expired') r.lines.forEach(function(l){ html += '<p class="ao-gone">' + esc(l.label) + ' wasn’t added.</p>'; });
+    });
+    return html;
+  }
+  // What was paid for add-ons, as its own line. Trip money stays the trip's: Total and Paid never include it.
+  function addOnPaidRow(v){
+    var paid = addOnsOf(v).filter(function(r){ return r.state === 'paid'; });
+    if (!paid.length) return '';
+    var sum = paid.reduce(function(n, r){ return n + Number(r.totalCents || 0); }, 0);
+    return '<div class="tot ao-paid"><span class="l">Add-ons · paid</span><span class="v">' + esc(money(sum, paid[0].currency)) + '</span></div>';
+  }
+  function wireAddOns(v){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-add-on-card] .ao-pay'), function(btn){
+      btn.addEventListener('click', function(){
+        var r = addOnById(v, btn.getAttribute('data-id'));
+        if (!r) return;
+        delete addOnMsg[r.id];
+        pay(v, r);
+      });
+    });
+  }
+
   function render(v, errMsg, help, quiet, tellUs){
     var due = Number(v.balanceDueCents || 0);
     var promo = !!v.promoCode && Number(v.discountCents || 0) > 0;
@@ -598,6 +679,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       '<div class="pp-hello"' + (v.firstName ? MASK : '') + '>' + (v.firstName ? 'Hi ' + esc(v.firstName) + ',' : 'Your booking') + '</div>'
       + '<h1 class="pp-title">' + esc(titleOf(v)) + '</h1>'
       + '<p class="pp-sub">' + esc(subtitleOf(v)) + '</p>'
+      + addOnCards(v)
       + pickupCard(v)
       + '<div class="ticket"><div class="t-main">'
       + '<div class="t-head"><span class="t-ref">Booking ' + esc(v.reference) + '</span>'
@@ -624,7 +706,8 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       html += (promo ? '<div class="tot tot-sub tot-disc"><span class="l">Promo ' + esc(v.promoCode) + '</span><span class="v">−'
           + esc(money(v.discountCents, v.currency)) + '</span></div>' : '')
         + '<div class="tot' + (promo ? ' tot-final' : '') + '"><span class="l">Total</span><span class="v">' + esc(money(v.totalCents, v.currency)) + '</span></div>'
-        + dueRows(v, due);
+        + dueRows(v, due)
+        + addOnPaidRow(v);
     }
 
     if (payable(v)) {
@@ -641,6 +724,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     html += '</div></div>' + waLine();
     paint(html);
     wirePickup(v);
+    wireAddOns(v);
     if (location.hash === '#pickup' && cardMode === 'open') focusCard();
     var btn = document.getElementById('paybtn');
     if (btn) btn.addEventListener('click', function(){
@@ -654,11 +738,11 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
 
   // Shown between the press and the browser leaving for payhere.lk. It no longer says "don't
   // close this page": the customer is being sent TO PayHere, not shown a window on top of us.
-  function renderLoading(v){
+  function renderLoading(v, addOn){
     paint('<div class="pp-loading"><div class="pp-spin"></div>'
       + '<h2>Taking you to PayHere…</h2>'
       + '<p>You’ll finish paying on PayHere’s own secure page, then come straight back here. We never see your card details.</p>'
-      + '<div class="amt">' + esc(money(v.amountDueNowCents, v.currency)) + '</div>'
+      + '<div class="amt">' + esc(addOn ? money(addOn.totalCents, addOn.currency) : money(v.amountDueNowCents, v.currency)) + '</div>'
       + '<p>🔒 PayHere · Sri Lanka’s Central Bank-approved gateway</p>'
       // Owner-observed on the live gateway (2026-08-05, pay.html): PayHere parks the payer on
       // "Payment Approved"/"Declined" behind a manual "Back to Site" link rather than redirecting.
@@ -673,7 +757,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
   // and then goes quiet traps the customer just the same. Any failure — the deadline, a dropped
   // connection, a body that won't parse — rejects into pay()'s catch in this page's own words (the
   // booking view rebuilt with the error named on it, Pay back), never the browser's "Failed to
-  // fetch" or abort wording. The answer exposes only what pay() reads: ok and json().
+  // fetch" or abort wording. The answer exposes only what pay() reads: ok, status and json().
   var NET_TIMEOUT_MS = 20000;
   function fetchWithDeadline(url, opts){
     opts = opts || {};
@@ -687,6 +771,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     return fetch(url, opts).then(function(r){
       return {
         ok: r.ok,
+        status: r.status,
         json: function(){
           return r.json().then(function(x){ clearTimeout(timer); return x; }, function(){ throw failed(); });
         },
@@ -694,19 +779,36 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     }, function(){ throw failed(); });
   }
 
-  function pay(v){
+  // The server says the request can no longer be paid (it ran out, or was paid already): not a
+  // failure to retry but a change in the booking, so the page re-reads it and shows where it stands.
+  function staleAddOn(x){
+    var e = new Error('add-on ' + x.error);
+    e.addOnGone = x.error;
+    return e;
+  }
+  // `addOn` (a request from the view) pays that add-on instead of the trip.
+  function pay(v, addOn){
     // A return-leg poll still running underneath must not repaint over the hand-off.
     handedOff = true;
     stopReturn();
-    renderLoading(v);
+    renderLoading(v, addOn);
     // A failure rebuilds the whole booking view with the error named on it — never a dead
     // screen, and never a button whose label has quietly become the error.
-    function fail(msg){ render(v, msg); }
+    function fail(msg){
+      if (addOn) addOnMsg[addOn.id] = msg;
+      render(v, addOn ? undefined : msg);
+    }
     // The link token authorises a checkout token, which authorises the charge. The booking
     // id comes back with it — the view projection withholds it on purpose.
-    fetchWithDeadline(A + '/bookings/view/checkout-token', { method: 'POST', headers: { authorization: 'Bearer ' + t } })
+    fetchWithDeadline(A + '/bookings/view/checkout-token', addOn
+      ? { method: 'POST', headers: { authorization: 'Bearer ' + t, 'content-type': 'application/json' }, body: JSON.stringify({ addOnRequestId: addOn.id }) }
+      : { method: 'POST', headers: { authorization: 'Bearer ' + t } })
       .then(function(r){
         return r.ok ? r.json() : r.json().catch(function(){ return {}; }).then(function(x){
+          if (addOn) {
+            if (x.error === 'add_on_not_payable' || x.error === 'already_paid') throw staleAddOn(x);
+            throw new Error(ADD_ON_COULDNT);
+          }
           // Still open, but the server couldn't price it — not "paid or closed". The catch below
           // repaints the card in its awaiting-a-price state.
           if (x.error === 'not_chargeable' && x.reason === 'awaiting_price') {
@@ -721,12 +823,24 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         // `returnTo` states INTENT, never a URL: the server builds the return address (back to
         // this page, on the manage link's own origin) from its own config — a gateway that
         // redirects wherever the request body says is a phishing primitive.
+        var checkoutBody = addOn
+          ? { purpose: 'add_on', addOnRequestId: addOn.id, returnTo: 'manage' }
+          : { returnTo: 'manage' };
         return fetchWithDeadline(A + '/bookings/' + x.bookingId + '/checkout', {
           method: 'POST',
           headers: { authorization: 'Bearer ' + x.checkoutToken, 'content-type': 'application/json' },
-          body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa({ returnTo: 'manage' }) : { returnTo: 'manage' }),
+          body: JSON.stringify(typeof window.chWithGa === 'function' ? window.chWithGa(checkoutBody) : checkoutBody),
         })
-          .then(function(r){ if (!r.ok) throw new Error('We couldn’t start your payment just now — no charge was made.'); return r.json(); });
+          .then(function(r){
+            if (r.ok) return r.json();
+            if (addOn && r.status === 409) {
+              return r.json().catch(function(){ return {}; }).then(function(b){
+                if (b.error === 'add_on_not_payable' || b.error === 'already_paid') throw staleAddOn(b);
+                throw new Error(ADD_ON_COULDNT);
+              });
+            }
+            throw new Error('We couldn’t start your payment just now — no charge was made.');
+          });
       })
       .then(function(checkout){
         if (!checkout || !checkout.checkoutUrl) throw new Error('We couldn’t start your payment just now — no charge was made.');
@@ -736,7 +850,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         if (!checkout.fields) throw new Error('We couldn’t start your payment just now — no charge was made.');
         // The last thing we know for certain: they left for the gateway. Everything after this
         // is what our own server tells us on the way back.
-        track('payment_initiated', moneyOf(v));
+        if (!addOn) track('payment_initiated', moneyOf(v));
         // The way back carries only the status token `rt`, never `t` (a bearer credential in a URL
         // PayHere stores). The return leg reads `t` from this tab's storage, so make sure it is
         // there now, whatever happened to the copy stashed at load.
@@ -746,9 +860,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         window.chSubmitToGateway(checkout);
       })
       .catch(function(e){
+        if (e && e.addOnGone) {
+          return loadView().then(function(fresh){
+            var now = addOnById(fresh, addOn.id);
+            if (e.addOnGone === 'already_paid' && now && now.state === 'paid') addOnJustPaid = now.id;
+            // Still payable after all: the refusal was not about this request, so say so on its card.
+            if (now && now.payable) addOnMsg[now.id] = ADD_ON_COULDNT;
+            render(fresh);
+          }, function(){ fail(ADD_ON_COULDNT); });
+        }
         if (e && e.awaitingPrice) return render(Object.assign({}, v, { needsPricing: true }));
-        track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
-        report('checkout start failed', e);
+        // The trip's own funnel events are the trip's: an add-on press reports errors only.
+        if (!addOn) track('payment_start_failed', { reason: String((e && e.message) || 'unknown').slice(0, 60) });
+        report(addOn ? 'add-on checkout start failed' : 'checkout start failed', e);
         fail(e.message);
       });
   }
@@ -796,6 +920,19 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     function stop(){ settled = true; clearTimeout(fallback); }
     stopReturn = stop;
 
+    // An add-on return (the server names the request): the trip is already paid, so its pay button,
+    // decline help and purchase event are not in play. The page shows the booking as it stands with
+    // a sentence about the ADD-ON in that request's own card.
+    function resumeAddOn(id, message){
+      if (!t) return renderCannotResume();
+      loadView().then(function(v){
+        if (handedOff) return;
+        lastView = v;
+        addOnMsg[id] = message;
+        render(v);
+      }).catch(function(){ renderCannotResume(); });
+    }
+
     // Put them back on their booking with the reason they are back. A booking that is no longer
     // payable (the webhook landed meanwhile) simply renders as it now stands.
     function resume(message, help, quiet, tellUs){
@@ -817,6 +954,13 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       }).then(function(x){
         if (settled) return;
         if (x.reference) returnRef = x.reference;
+        if (x.status === 'paid' && x.addOnRequestId) {
+          stop();
+          addOnJustPaid = x.addOnRequestId;
+          if (!t) return renderAddOnPaidMinimal(x.reference);
+          return loadView().then(function(v){ lastView = v; render(v); })
+            .catch(function(){ renderAddOnPaidMinimal(x.reference); });
+        }
         if (x.status === 'paid') {
           stop();
           if (!t) return renderPaidMinimal(x.reference);
@@ -824,6 +968,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
             .catch(function(){ renderPaidMinimal(x.reference); });
         }
         // A refusal must never read as an endless "confirming".
+        if (x.status === 'failed' && x.addOnRequestId) { stop(); return resumeAddOn(x.addOnRequestId, ADD_ON_FAILED); }
         if (x.status === 'failed') {
           stop();
           track('payment_failed', Object.assign(moneyOf(lastView), { leg: leg }));
@@ -831,6 +976,7 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
         }
         if (tries < budget) { setTimeout(poll, 2000); return; }
         stop();
+        if (x.addOnRequestId) return resumeAddOn(x.addOnRequestId, ADD_ON_NO_VERDICT);
         track(cameFromCancel ? 'payment_cancelled' : 'payment_unconfirmed', Object.assign(moneyOf(lastView), { leg: leg, tries: tries }));
         // Nothing terminal arrived. If the booking is already back on screen, retire the
         // "checking" line in place rather than re-rendering under someone about to press Pay.
@@ -861,6 +1007,15 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
     paint('<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
       + '<h1 class="st-title">You’re booked.</h1>'
       + '<p class="st-sub">Payment received. Your confirmation is on its way by email.</p>'
+      + (reference ? '<p class="st-sub">Booking ref <strong>' + esc(reference) + '</strong></p>' : '')
+      + '</div>' + waLine());
+  }
+
+  // An add-on is paid, but this tab has no manage token to rebuild the booking from.
+  function renderAddOnPaidMinimal(reference){
+    paint('<div class="st-wrap"><div class="st-badge ok">&#10003;</div>'
+      + '<h1 class="st-title">Add-on paid</h1>'
+      + '<p class="st-sub">Payment received. Your add-on is confirmed and your receipt is on its way by email.</p>'
       + (reference ? '<p class="st-sub">Booking ref <strong>' + esc(reference) + '</strong></p>' : '')
       + '</div>' + waLine());
   }
@@ -917,6 +1072,12 @@ window.addEventListener('unhandledrejection',function(e){var x=e.reason||{};r(x.
       currency: v.currency || 'USD',
     });
     render(v);
+    // The pay link ends in #add-ons, but the card only exists now: the browser looked for it at load
+    // and found nothing, so take the customer to it.
+    if (location.hash === '#add-ons') {
+      var card = document.getElementById('add-ons');
+      if (card) card.scrollIntoView({ block: 'start' });
+    }
   }).catch(function(e){ errView(e.message); });
 })();
 </script>

@@ -21,10 +21,10 @@ import { PostgresRefundRepo } from './postgresRefundRepo';
 import { PostgresQuoteDiscountRepo } from './postgresQuoteDiscountRepo';
 import { quoteDiscountRepoContract } from './quoteDiscountRepo.test';
 import { digestAccessToken, fingerprintIntent, type WebQuoteIntent } from '../quote/webQuoteV2';
-import { bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
+import { bookingAddOnRequests, bookings as bookingRows, distanceCache, tripRequests, usageCounters } from './schema';
 import { PostgresUsageCounterRepo } from './postgresUsageCounterRepo';
 import { usageCounterRepoContract } from './usageCounterRepo.test';
-import { eq } from 'drizzle-orm';
+import { eq, sql as dsql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { PostgresDistanceCacheRepo } from './postgresDistanceCacheRepo';
 import { distanceCacheRepoContract } from './distanceCacheRepo.test';
@@ -33,8 +33,15 @@ import { promoCodeRepoContract } from './promoCodeRepo.test';
 import { bookingPromoContract } from './bookingPromo.test';
 import { amountDueNowContract } from './bookingAmountDueNow.test';
 import { paymentArrangementContract } from './bookingPaymentArrangement.test';
+import { PostgresAddOnRepo } from './postgresAddOnRepo';
+import { addOnRepoContract } from './addOnRepo.test';
+import { addOnSettlementContract } from './addOnSettlement.test';
+import { AddOnError } from './addOnRepo';
+import { bookingAddOnsListContract } from './bookingAddOnsList.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
+import { PostgresRideOpsLegRepo } from './postgresRideOpsLegRepo';
+import { rideOpsLegRepoContract } from './rideOpsLegRepo.test';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -916,6 +923,31 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect((await ask(3_000, balance.id)).paymentId).toBe(balance.id);
   });
 
+  // Add-ons after booking (spec 2026-11-14 §6.1): trip-money rules ignore an add-on payment, but
+  // the refund ceiling deliberately does not. It asks "what money do we hold on this booking?",
+  // and an add-on payment is money held: it must be refundable, in full, on its own row.
+  it('counts a paid add-on in the refund ceiling and refunds it on its own payment', async () => {
+    const refunds = new PostgresRefundRepo(db);
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 4_000 });
+    const trip = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 4_000,
+      currency: booking.currency, idempotencyKey: `refund-addon-t-${booking.id}`,
+    });
+    const addOn = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-A1`, amount: 500,
+      currency: booking.currency, idempotencyKey: `refund-addon-a-${booking.id}`, purpose: 'add_on',
+    });
+    await payments.markSucceeded(trip.id);
+    await payments.markSucceeded(addOn.id);
+    const ask = (amountCents: number, paymentId: string) =>
+      refunds.request({ bookingId: booking.id, amountCents, currency: 'USD', reason: 'x', requestedBy: 'founder@test', paymentId });
+
+    expect((await ask(4_000, trip.id)).paymentId).toBe(trip.id);
+    // 4_000 + 500 is within what is held only if the add-on's 500 is counted.
+    expect((await ask(500, addOn.id)).paymentId).toBe(addOn.id);
+    await expect(ask(1, addOn.id)).rejects.toMatchObject({ code: 'refund_exceeds_captured' });
+  });
+
   it('atomically records a full-refund transition and rolls both ledgers back on failure', async () => {
     const checkoutRequestId = randomUUID();
     const paidRequestId = randomUUID();
@@ -1260,6 +1292,52 @@ describe.skipIf(!TEST_URL)('Postgres repos (integration)', () => {
     expect(outcome.kind).toBe('balance_settled');
     expect(outcome.payment.status).toBe('succeeded');
     expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
+  // Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own row (purpose
+  // 'add_on'). It is not a capture of the trip, so it must not make the trip's next payment look
+  // like a second capture.
+  async function paidAddOn(booking: { id: string; reference: string; currency: string }, tag: string) {
+    const addOn = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-A1`, amount: 500,
+      currency: booking.currency, idempotencyKey: `${tag}-addon-${booking.id}`, purpose: 'add_on',
+    });
+    await payments.markSucceeded(addOn.id);
+    return addOn;
+  }
+
+  it('settles a balance after its deposit when an add-on was paid in between', async () => {
+    const { booking, settlement, depositEvent } = await depositBooking('bal-addon');
+    await paidAddOn(booking, 'bal-addon');
+    const balance = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: `${booking.reference}-B`, amount: 3_000,
+      currency: booking.currency, idempotencyKey: `bal-addon-${booking.id}`, purpose: 'balance',
+    });
+    const outcome = await settlement.acceptVerifiedEvent({
+      ...depositEvent, orderId: balance.orderId, providerTxnId: `PAY-BAL-${balance.id}`,
+      amountCents: 3_000, payloadSha256: '5'.repeat(64),
+    });
+    expect(outcome.kind).toBe('balance_settled');
+    expect(outcome.payment.status).toBe('succeeded');
+    expect((await bookings.get(booking.id))?.status).toBe('paid');
+  });
+
+  it('settles the first trip payment on a payment_pending booking that already has a paid add-on', async () => {
+    const booking = await bookings.create({ ...sample, total: 4_000, amountDueNow: 4_000 });
+    await bookings.setStatus(booking.id, 'payment_pending');
+    await paidAddOn(booking, 'first-addon');
+    const payment = await payments.create({
+      bookingId: booking.id, provider: 'payhere', orderId: booking.reference, amount: 4_000,
+      currency: booking.currency, idempotencyKey: `first-addon-${booking.id}`,
+    });
+    const outcome = await new PostgresPaymentSettlementRepo(db, bookings).acceptVerifiedEvent({
+      provider: 'payhere', merchantId: '1234567', orderId: payment.orderId, providerTxnId: `PAY-FIRST-${payment.id}`,
+      amountCents: 4_000, currency: payment.currency, status: 'succeeded', providerStatusCode: '2',
+      receivedAt: new Date(), payloadSha256: '9'.repeat(64), sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+    });
+    expect(outcome.kind).toBe('settled');
+    expect(outcome.booking.status).toBe('paid');
+    expect((await bookings.get(booking.id))?.amountDueNow).toBe(4_000);
   });
 
   // The first payment that settles IS what secured the booking: it rewrites amount_due_now, so a
@@ -1779,4 +1857,154 @@ describe.skipIf(!TEST_URL)('Postgres amount_due_now rewrite guard (integration)'
 describe.skipIf(!TEST_URL)('Postgres payment arrangement (integration)', () => {
   const migrated = migratedDbPerDescribe();
   paymentArrangementContract('contract', async () => new PostgresBookingRepo(await migrated()));
+});
+
+describe.skipIf(!TEST_URL)('PostgresAddOnRepo (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  addOnRepoContract('contract', async () => {
+    const db = await migrated();
+    return {
+      repo: new PostgresAddOnRepo(db),
+      bookings: new PostgresBookingRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      // Settlement marks a request paid (a later step); until then the test writes what it will.
+      markPaid: async (requestId, at) => {
+        await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
+      },
+    };
+  });
+
+  // Postgres only: nothing in the codebase removes a leg, so the in-memory repo cannot hold one.
+  it('listLegs leaves out a removed leg', async () => {
+    const db = await migrated();
+    const b = await new PostgresBookingRepo(db).create({
+      mode: 'trip',
+      input: {
+        stops: ['Kandy', 'Ella', 'Galle'], nights: [1, 1, 0], dates: ['2026-12-10', '2026-12-12'], pax: 2,
+        vehicleType: 'car', serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: 'maya@example.com', whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 24000, amountDueNow: 24000, currency: 'USD',
+    });
+    const repo = new PostgresAddOnRepo(db);
+    const [first, second] = await repo.listLegs(b.id);
+    expect([first.to, second.to]).toEqual(['Ella', 'Galle']);
+    await db.execute(dsql`update booking_legs set removed_at = now() where id = ${first.id}`);
+    expect(await repo.listLegs(b.id)).toEqual([second]);
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres add-on settlement (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  addOnSettlementContract('contract', async () => {
+    const db = await migrated();
+    const bookings = new PostgresBookingRepo(db);
+    return {
+      bookings,
+      payments: new PostgresPaymentRepo(db),
+      events: new PostgresPaymentEventRepo(db),
+      addOns: new PostgresAddOnRepo(db),
+      settlement: (failureHook) => new PostgresPaymentSettlementRepo(db, bookings, failureHook),
+    };
+  });
+
+  // Postgres only: a real race between two connections. Whichever takes the request's row lock
+  // first wins, and the loser must see what the winner committed. Run several times so both
+  // orders are likely to occur; every run must end in one of the two allowed states.
+  it('a concurrent cancel and settle end as cancelled + orphaned, or paid + cancel refused, never a mix', async () => {
+    const db = await migrated();
+    const bookings = new PostgresBookingRepo(db);
+    const payments = new PostgresPaymentRepo(db);
+    const addOns = new PostgresAddOnRepo(db);
+    const settlement = new PostgresPaymentSettlementRepo(db, bookings);
+    for (let run = 0; run < 12; run++) {
+      const created = await bookings.create({
+        ...sample,
+        input: { ...sample.input, date: new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10) },
+      } as NewBooking);
+      await bookings.setStatus(created.id, 'payment_pending');
+      await bookings.setStatus(created.id, 'paid');
+      const [leg] = await addOns.listLegs(created.id);
+      const request = await addOns.createRequest({
+        bookingId: created.id, lines: [{ legId: leg.id, code: 'waiting', label: 'Waiting fee — Colombo Airport → Ella', amountCents: 1000 }],
+        currency: 'USD', rateCardVersion: 'card-v1', createdBy: 'ops@ceylonhop.com', now: new Date(), fullyRefundedPaymentIds: [],
+      });
+      const payment = await payments.create({
+        bookingId: created.id, provider: 'payhere', orderId: `${created.reference}-A1`, amount: 1000, currency: 'USD',
+        idempotencyKey: `checkout:${created.id}:addon:${request.id}`, purpose: 'add_on',
+      });
+      await addOns.attachPayment(request.id, payment.id);
+      const settle = () => settlement.acceptVerifiedEvent({
+        provider: 'payhere', merchantId: '1234567', orderId: payment.orderId, providerTxnId: `PAY-RACE-${payment.id}`,
+        amountCents: 1000, currency: 'USD', status: 'succeeded', providerStatusCode: '2', receivedAt: new Date(),
+        payloadSha256: 'e'.repeat(64), sanitizedPayload: { order_id: payment.orderId, status_code: '2' },
+      });
+      // No checkout attempt is recorded on the row, so the in-flight hold never applies here.
+      const cancel = () => addOns.cancel(request.id, { by: 'ops@ceylonhop.com', reason: 'race', now: new Date(), inFlightAfter: new Date(0) })
+        .then(() => 'cancelled' as const, (e: unknown) => e);
+      // Odd runs start the cancel first, even runs the settlement.
+      const cancelling = run % 2 ? cancel() : undefined;
+      const settling = settle();
+      const cancelled = await (cancelling ?? cancel());
+      const outcome = await settling;
+
+      const after = await addOns.get(request.id);
+      expect((await payments.findByOrderId(payment.orderId))?.status).toBe('succeeded');
+      if (cancelled === 'cancelled') {
+        expect(outcome.kind).toBe('add_on_orphaned');
+        expect(after).toMatchObject({ status: 'cancelled', paidAt: null });
+      } else {
+        expect(cancelled).toBeInstanceOf(AddOnError);
+        expect((cancelled as AddOnError).code).toBe('already_paid');
+        expect(outcome.kind).toBe('add_on_settled');
+        expect(after?.status).toBe('paid');
+        expect(after?.cancelledAt).toBeNull();
+      }
+    }
+  });
+});
+
+describe.skipIf(!TEST_URL)('Postgres booking add-ons list (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  bookingAddOnsListContract('contract', async () => {
+    const db = await migrated();
+    return {
+      bookings: new PostgresBookingRepo(db),
+      addOns: new PostgresAddOnRepo(db),
+      payments: new PostgresPaymentRepo(db),
+      refunds: new PostgresRefundRepo(db),
+      // Settlement marks a request paid (the payment step); until then the test writes what it will.
+      markPaid: async (requestId, at) => {
+        await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
+      },
+    };
+  });
+});
+
+describe.skipIf(!TEST_URL)('PostgresRideOpsLegRepo (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  // Three driven legs of one fresh private trip per case, so no case sees another's rows.
+  const tripLegIds = async (db: Db): Promise<[string, string, string]> => {
+    const b = await new PostgresBookingRepo(db).create({
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Mirissa'], nights: [1, 1, 1, 0],
+        dates: ['2026-12-10', '2026-12-12', '2026-12-14'], pax: 2, vehicleType: 'car', serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: `maya+${randomUUID().slice(0, 8)}@example.com`, whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 24000, amountDueNow: 24000, currency: 'USD',
+    });
+    const [a, b2, c] = (await new PostgresAddOnRepo(db).listLegs(b.id)).map((l) => l.id);
+    return [a, b2, c];
+  };
+  rideOpsLegRepoContract('contract', async () => {
+    const db = await migrated();
+    return { repo: new PostgresRideOpsLegRepo(db), legIds: await tripLegIds(db) };
+  });
+
+  // Postgres only: the in-memory repo has no legs table to check against.
+  it('refuses a leg that is not stored', async () => {
+    const repo = new PostgresRideOpsLegRepo(await migrated());
+    await expect(repo.setStatus(randomUUID(), 'vehicle_confirmed')).rejects.toThrow();
+  });
 });

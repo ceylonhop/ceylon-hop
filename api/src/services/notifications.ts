@@ -58,6 +58,8 @@ const trackingDefaults: Record<CustomerCommunicationKind, Pick<CustomerCommunica
   schedule_set: { templateKey: 'booking-schedule-set', source: 'ops', actorType: 'staff' },
   details_reminder_1: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
   details_reminder_2: { templateKey: 'booking-details-reminder', source: 'scheduled_job', actorType: 'scheduler' },
+  add_on_request: { templateKey: 'add-on-request', source: 'ops', actorType: 'staff' },
+  add_on_paid: { templateKey: 'add-on-paid', source: 'payment_webhook', actorType: 'provider' },
 };
 
 function emailTracking(booking: Booking, kind: CustomerCommunicationKind): CustomerCommunicationTracking {
@@ -1302,6 +1304,135 @@ export async function sendScheduleSet(
     html,
     text,
     tracking: emailTracking(booking, 'schedule_set'),
+  });
+}
+
+// ── An add-on to pay (ops added one to a leg after booking) ────────────────
+// Spec 2026-11-14 §7.5. Rendered from a view-model the add-on service builds, so this file needs
+// no knowledge of stored legs. `payBy` is the last day the request can be paid: the day of the
+// earliest leg it touches, null when none of them has a date yet.
+export interface AddOnRequestEmail {
+  requestId: string;
+  totalCents: number;
+  currency: string;
+  lines: { label: string; amountCents: number; travelDate: string | null }[];
+  payBy: string | null;
+  payLink: string;
+}
+
+// The request's lines: what was added and on which leg, the leg's date under it, the price beside.
+function addOnLinesRow(lines: AddOnRequestEmail['lines'], currency: string): string {
+  const rows = lines
+    .map(
+      (l) =>
+        `<tr>
+          <td style="padding:11px 12px 11px 0;border-top:1px solid ${HAIR};color:${INK};font-size:14px;font-weight:600">${esc(l.label)}${l.travelDate ? `<div style="font-size:12px;font-weight:400;color:${FAINT};margin-top:3px">${esc(fmtDate(l.travelDate))}</div>` : ''}</td>
+          <td align="right" valign="top" style="padding:11px 0;border-top:1px solid ${HAIR};color:${INK};font-size:14px;font-weight:600;white-space:nowrap">${esc(money(l.amountCents, currency))}</td>
+        </tr>`,
+    )
+    .join('');
+  return `<tr><td style="padding:20px 34px 0">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${rows}</table>
+  </td></tr>`;
+}
+
+export async function sendAddOnRequest(
+  booking: Booking,
+  request: AddOnRequestEmail,
+  email: EmailAdapter,
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const total = money(request.totalCents, request.currency);
+  const lede = 'You asked us to add this to your trip. Pay online and it’s confirmed. Your driver will be told once it’s paid.';
+  const payBy = request.payBy
+    ? `Please pay by the end of ${fmtDate(request.payBy)}. If it isn’t paid by then, the add-on simply isn’t added and nothing is charged.`
+    : null;
+  // A pay-on-the-day trip is confirmed but not paid yet, so it is not called paid.
+  const covers = booking.paymentArrangement
+    ? 'This only covers the add-on.'
+    : 'Your trip itself is already paid and confirmed. This only covers the add-on.';
+  const note = (text: string) =>
+    `<tr><td style="padding:0 34px 12px;font-size:14px;line-height:1.6;color:${MUTED}">${esc(text)}</td></tr>`;
+  const html = page(
+    brandHeader() +
+      introBlock('Add-on', TEAL_DEEP, `Hi ${first}, your add-on is ready to pay`, lede) +
+      addOnLinesRow(request.lines, request.currency) +
+      totalBlock('To pay', total) +
+      `<tr><td style="padding:14px 0 0;font-size:0;line-height:0">&nbsp;</td></tr>` +
+      ctaRow(request.payLink, `Pay ${total} online`) +
+      (payBy ? note(payBy) : '') +
+      note(covers) +
+      `<tr><td style="padding:6px 34px 0;font-size:13px;line-height:1.6;color:${FAINT}">Booking ${esc(booking.reference)} &middot; Questions? <a href="${WA_URL}" style="color:${TEAL_DEEP}">WhatsApp us</a></td></tr>` +
+      footer(),
+  );
+  const text = textShell('your add-on is ready to pay', lede, booking, [
+    '',
+    ...request.lines.map((l) => `${l.label}${l.travelDate ? ` · ${fmtDate(l.travelDate)}` : ''}: ${money(l.amountCents, request.currency)}`),
+    `To pay: ${total}`,
+    '',
+    `Pay ${total} online: ${request.payLink}`,
+    ...(payBy ? ['', payBy] : []),
+    '',
+    covers,
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: `An add-on for your trip: pay ${total} to confirm · ${booking.reference}`,
+    html,
+    text,
+    // Keyed on the request: a booking can have several, and each email is its own ledger row.
+    tracking: { ...emailTracking(booking, 'add_on_request'), trackingKey: `${booking.id}:add_on_request:${request.requestId}` },
+  });
+}
+
+// ── Add-on confirmed (the request's payment landed) ────────────────────────
+// Spec 2026-11-14 §6.4, §7.5. The receipt for an add-on paid after booking. It lists the add-on
+// lines and what was paid for them, and nothing about the trip's own money: that is unchanged.
+export interface AddOnPaidEmail {
+  requestId: string;
+  totalCents: number;
+  currency: string;
+  lines: AddOnRequestEmail['lines'];
+}
+
+export async function sendAddOnPaid(
+  booking: Booking,
+  paid: AddOnPaidEmail,
+  email: EmailAdapter,
+  links: { manage?: string } = {},
+): Promise<SendOutcome | void> {
+  const first = esc(booking.input.customer.firstName);
+  const total = money(paid.totalCents, paid.currency);
+  const several = paid.lines.length > 1;
+  const lede = 'We’ve received your payment. Our team will tell your driver.';
+  const unchanged = 'Nothing else about your trip has changed.';
+  const html = page(
+    brandHeader() +
+      introBlock(several ? 'Add-ons confirmed' : 'Add-on confirmed', TEAL_DEEP, `Thanks, ${first}. Your ${several ? 'add-ons are' : 'add-on is'} confirmed`, lede) +
+      addOnLinesRow(paid.lines, paid.currency) +
+      totalBlock('Paid', total) +
+      (links.manage ? manageButton(links.manage) : '') +
+      `<tr><td style="padding:14px 34px 0;font-size:14px;line-height:1.6;color:${MUTED}">${esc(unchanged)}</td></tr>` +
+      `<tr><td style="padding:6px 34px 0;font-size:13px;line-height:1.6;color:${FAINT}">Booking ${esc(booking.reference)} &middot; Questions? <a href="${WA_URL}" style="color:${TEAL_DEEP}">WhatsApp us</a></td></tr>` +
+      footer(),
+  );
+  const text = textShell(several ? 'your add-ons are confirmed' : 'your add-on is confirmed', lede, booking, [
+    '',
+    ...paid.lines.map((l) => `${l.label}${l.travelDate ? ` · ${fmtDate(l.travelDate)}` : ''}: ${money(l.amountCents, paid.currency)}`),
+    `Paid: ${total}`,
+    '',
+    unchanged,
+    ...(links.manage ? ['', `View your booking: ${links.manage}`] : []),
+  ]);
+  return email.send({
+    to: booking.input.customer.email,
+    subject: several
+      ? `Add-ons confirmed · ${booking.reference}`
+      : `Add-on confirmed: ${paid.lines[0]?.label ?? 'your add-on'} · ${booking.reference}`,
+    html,
+    text,
+    // Keyed on the request, like the request email: each receipt is its own ledger row.
+    tracking: { ...emailTracking(booking, 'add_on_paid'), trackingKey: `${booking.id}:add_on_paid:${paid.requestId}` },
   });
 }
 

@@ -176,7 +176,7 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     const res = await s.get(q.reference);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      ref: q.reference, quote: { id: q.id, reference: q.reference, status: 'draft' }, booking: null, verdict: null, timeline: [], gaps: [], unavailable: [],
+      ref: q.reference, quote: { id: q.id, reference: q.reference, status: 'draft' }, booking: null, verdict: null, addOnPayments: [], timeline: [], gaps: [], unavailable: [],
       otherBookings: null, // a quote records no email, so there is no person to list
     });
   });
@@ -193,6 +193,39 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     expect(kinds).not.toContain('bookings:created'); // the log's create row already says it
   });
 
+  // Add-ons after booking (spec 2026-11-14 §7.3): PayHere's dashboard shows an add-on payment as
+  // `<ref>-A<n>`. Pasting it must open the booking, and the add-on's money must sit in its own
+  // group rather than turn a once-paid trip into "paid twice".
+  it('finds the booking from an add-on order id and lists the add-on payment apart from the trip', async () => {
+    const s = setup();
+    const b = await paidBooking(s);
+    const addOn = await s.payments.create({
+      bookingId: b.id, provider: 'fake', orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD',
+      idempotencyKey: `checkout:${b.id}:addon:r1`, purpose: 'add_on',
+    });
+    await s.app.request('/webhooks/payments', {
+      method: 'POST', body: s.adapter.simulateWebhook({ orderId: addOn.orderId, amount: 1000, currency: 'USD', providerTxnId: 'txn_addon' }),
+    });
+    for (const ref of [`${b.reference}-A1`, ` ${b.reference.toLowerCase()}-a1 `]) {
+      const res = await s.get(ref);
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.ref).toBe(b.reference);
+      expect(body.booking).toMatchObject({ id: b.id, reference: b.reference });
+      expect(body.verdict).toMatchObject({ kind: 'paid', checkouts: 1, captures: null, warnings: [] });
+      expect(body.addOnPayments).toEqual([{
+        orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD', status: 'succeeded', createdAt: expect.any(String),
+        paidAt: expect.any(String), payherePaymentId: 'txn_addon', method: null, refundedCents: 0,
+      }]);
+    }
+  });
+
+  it('a booking with no add-on payment has an empty add-on group', async () => {
+    const s = setup();
+    const b = await paidBooking(s);
+    expect((await (await s.get(b.reference)).json()).addOnPayments).toEqual([]);
+  });
+
   it('a confirmed pay-on-the-day booking with no payment warns cash is due, not paid-without-payment', async () => {
     const s = setup();
     const b = await s.bookings.create(draft);
@@ -201,6 +234,31 @@ describe('GET /admin/ops/cases/:ref — lookup', () => {
     await s.bookings.setStatus(b.id, 'confirmed');
     const body = await (await s.get(b.reference)).json();
     expect(body.verdict.warnings).toEqual(['cash_due_on_the_day']);
+  });
+
+  it('a pay-on-the-day booking whose only payment is an add-on is not paid in the other-bookings list', async () => {
+    const s = setup();
+    const addOnOnly = async (nb: NewBooking) => {
+      const b = await s.bookings.create(nb);
+      await s.bookings.setStatus(b.id, 'payment_pending');
+      await s.bookings.setPaymentArrangement(b.id, 'on_the_day');
+      await s.bookings.setStatus(b.id, 'confirmed');
+      const p = await s.payments.create({ bookingId: b.id, provider: 'fake', orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `addon:${b.id}`, purpose: 'add_on' });
+      await s.payments.markSucceeded(p.id);
+      return b;
+    };
+    const other = await addOnOnly(draft);
+    const looked = await addOnOnly(draft);
+    const body = await (await s.get(looked.reference)).json();
+    expect(body.otherBookings.rows.find((r: { id: string }) => r.id === other.id)).toMatchObject({ paid: false });
+    // A trip payment beside an add-on still reads paid.
+    const paidOne = await s.bookings.create(draft);
+    const trip = await s.payments.create({ bookingId: paidOne.id, provider: 'payhere', orderId: paidOne.reference, amount: 12100, currency: 'USD', idempotencyKey: `checkout:${paidOne.id}` });
+    await s.payments.markSucceeded(trip.id);
+    const addOn = await s.payments.create({ bookingId: paidOne.id, provider: 'fake', orderId: `${paidOne.reference}-A1`, amount: 1000, currency: 'USD', idempotencyKey: `addon:${paidOne.id}`, purpose: 'add_on' });
+    await s.payments.markSucceeded(addOn.id);
+    const again = await (await s.get(looked.reference)).json();
+    expect(again.otherBookings.rows.find((r: { id: string }) => r.id === paidOne.id)).toMatchObject({ paid: true });
   });
 
   it('never hands out links, tokens or raw payload fingerprints', async () => {

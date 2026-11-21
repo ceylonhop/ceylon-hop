@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { eq } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import * as schema from './schema';
+import type { Db } from './client';
 import { PostgresBookingRepo } from './postgresBookingRepo';
 import { PostgresPaymentRepo } from './postgresPaymentRepo';
 import { PostgresPromoCodeRepo } from './postgresPromoCodeRepo';
+import { PostgresAddOnRepo } from './postgresAddOnRepo';
 import { seedCorridors } from './postgresDepartureRepo';
 import { makePromoCode } from './promoCodeRepo.test';
 import type { NewBooking } from './bookingRepo';
@@ -42,12 +45,13 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
   let bookings: PostgresBookingRepo;
   let payments: PostgresPaymentRepo;
   let promoCodes: PostgresPromoCodeRepo;
+  let db: Db;
 
   beforeAll(async () => {
     // postgres.js runs a one-off pg_catalog type lookup the first time each pooled connection
     // is used; that is per connection, not per booking, so it stays out of the count.
     const sql = postgres(TEST_URL as string, { debug: (_conn, query) => { if (!query.includes('pg_catalog')) statements += 1; } });
-    const db = drizzle(sql, { schema });
+    db = drizzle(sql, { schema });
     await migrate(db, { migrationsFolder: 'drizzle' });
     // The shared fixture's corridor is an FK; seed it so this file passes on a fresh database.
     await seedCorridors(sql);
@@ -71,9 +75,41 @@ describe.skipIf(!TEST_URL)('PostgresBookingRepo.list() query count (integration)
 
     expect(rows.length).toBeGreaterThanOrEqual(6);
     // bookings + customers + one per request table (transfer / trip / shared) + the quotes the
-    // add-ons are read from + the promo codes' names = 7. A fixed count: a per-row lookup would add
-    // 6 or 12. The last five run side by side (Promise.all), so they are not five more round-trips.
-    expect(statements).toBeLessThanOrEqual(7);
+    // add-ons are read from + the promo codes' names + the add-ons paid for after booking = 8. A
+    // fixed count: a per-row lookup would add 6 or 12. The last six run side by side (Promise.all),
+    // so they are not six more round-trips.
+    expect(statements).toBeLessThanOrEqual(8);
+  });
+
+  // Add-ons bought after booking (spec 2026-11-14 §7.6) join booking.addOns on every load. They must
+  // arrive in ONE statement for the whole queue, never one per booking.
+  it('reads 20 bookings with paid add-ons in the same fixed number of statements', async () => {
+    const addOns = new PostgresAddOnRepo(db);
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i++) {
+      const b = await bookings.create(single);
+      const [leg] = await addOns.listLegs(b.id);
+      const request = await addOns.createRequest({
+        bookingId: b.id, lines: [{ legId: leg.id, code: 'waiting', label: `Waiting fee — Colombo Airport → Ella #${i}`, amountCents: 1000 }],
+        currency: 'USD', rateCardVersion: 'card-v1', createdBy: 'ops@ceylonhop.com', now: new Date(), fullyRefundedPaymentIds: [],
+      });
+      const payment = await payments.create({
+        bookingId: b.id, provider: 'fake', orderId: `${b.reference}-A1`, amount: 1000, currency: 'USD',
+        idempotencyKey: `checkout:${b.id}:addon:${request.id}`, purpose: 'add_on',
+      });
+      await addOns.attachPayment(request.id, payment.id);
+      await payments.markSucceeded(payment.id);
+      // Settlement marks a request paid (the payment step); until then the test writes what it will.
+      await db.update(schema.bookingAddOnRequests).set({ status: 'paid', paidAt: new Date() }).where(eq(schema.bookingAddOnRequests.id, request.id));
+      ids.push(b.id);
+    }
+
+    statements = 0;
+    const rows = await bookings.list({ status: ['draft'] });
+
+    expect(statements).toBeLessThanOrEqual(8);
+    const byId = new Map(rows.map((b) => [b.id, b]));
+    expect(ids.map((id) => byId.get(id)?.addOns)).toEqual(ids.map((_, i) => [`Waiting fee — Colombo Airport → Ella #${i}`]));
   });
 
   it('list() assembles the same booking get() does', async () => {

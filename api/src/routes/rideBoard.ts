@@ -465,7 +465,12 @@ export function rideBoardRoutes(deps: RideBoardDeps) {
     const to = c.req.query('to')?.trim() || undefined;
     const whenRaw = c.req.query('when');
     const when: ListFilter['when'] = whenRaw === 'week' || whenRaw === 'fortnight' ? whenRaw : 'all';
-    const lists = await deps.rideLists.listOpen({ from, to, when });
+    // A gathering ride with nobody on it is not an offer. /scratch closes a ride when its last
+    // name leaves, but a ride emptied any other way would still be listed ("3 seats to go" on an
+    // empty van), so the board does not rely on that. Same "on it" rule as /scratch.
+    const lists = (await deps.rideLists.listOpen({ from, to, when })).filter((l) =>
+      l.list.status !== 'gathering'
+      || l.members.some((m) => m.status === 'held' || m.status === 'charged' || m.status === 'preapproval_pending'));
     const viewer = c.get('customer')?.sub;
     return c.json({ lists: lists.map((l) => projectList(l, viewer)) });
   });

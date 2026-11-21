@@ -65,6 +65,24 @@ describe('GET /board', () => {
   });
 });
 
+// The scratch route closes a ride when its last name leaves, but that only covers that one
+// path. A gathering ride emptied any other way (before that fix shipped, by hand, by a future
+// route) must still not be offered: "3 seats to go" on a ride nobody is on.
+describe('GET /board — a gathering ride with nobody on it', () => {
+  it('is left off the board while it is still marked gathering', async () => {
+    const rideLists = new InMemoryRideListRepo();
+    const empty = await rideLists.createList(listArgs());
+    await rideLists.addMember(empty.id, { sub: 'lea-sub', firstName: 'Léa', country: 'FR', email: 'lea@secret.com', seats: 1 });
+    await rideLists.removeMember(empty.id, 'lea-sub');
+    const live = await rideLists.createList(listArgs({ fromPlace: 'Kandy', toPlace: 'Ella', corridorId: 'hill-line' }));
+    await rideLists.addMember(live.id, { sub: 'mia-sub', firstName: 'Mia', country: 'DE', email: 'mia@secret.com', seats: 1 });
+    expect((await rideLists.getById(empty.id))!.list.status).toBe('gathering');
+
+    const body = await (await createApp({ rideLists }).request('/board')).json();
+    expect(body.lists.map((l: { code: string }) => l.code)).toEqual([live.code]);
+  });
+});
+
 describe('GET /board/:code', () => {
   it('returns one list by code', async () => {
     const { app, codeA } = await seededApp();

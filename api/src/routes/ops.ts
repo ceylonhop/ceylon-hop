@@ -9,11 +9,16 @@ import { pricedVehicle } from '../quote/vehicle';
 import type { QuoteRequest } from '../quote/types';
 import type { PaymentRepo } from '../db/paymentRepo';
 import type { RideOpsRepo } from '../db/rideOpsRepo';
+import type { RideOpsLegRepo } from '../db/rideOpsLegRepo';
+import { drivenLegs, isPerLegTrip, legOpsViews, tripMilestone } from '../services/tripLegOps';
 import type { OpsUserProfileRepo } from '../db/opsUserProfileRepo';
 import type { BookingCheckoutEventRepo } from '../db/bookingCheckoutEventRepo';
 import type { PaymentEventRepo } from '../db/paymentEventRepo';
 import type { RefundRepo } from '../db/refundRepo';
 import type { CustomerCommunicationRepo } from '../db/customerCommunicationRepo';
+import type { AddOnRepo } from '../db/addOnRepo';
+import type { ZonesRepo } from '../db/zonesRepo';
+import type { RateRevisionRepo } from '../db/rateRevisionRepo';
 import { ALL_OPS_ACTIONS, assignableOpsUsers, can, displayNameFor, parseOpsUsers, roleForEmail } from '../lib/opsAuth';
 import {
   opsIdentity, opsCsrf, requireCap, issueSessionCookie, devBypassEnabled, OPS_COOKIE,
@@ -29,20 +34,29 @@ import { wasDelivered, type EmailAdapter } from '../adapters/email';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { sendNoShowNotice, sendScheduleSet, manageUrl } from '../services/notifications';
 import { scheduleProblem, SCHEDULE_REASONS } from '../domain/bookingSchedule';
-import { isBalanceOpen, paidCents } from '../domain/balance';
+import { isBalanceOpen, paidCents, tripPayments } from '../domain/balance';
 import { signQuotePayToken } from '../lib/bookingToken';
 import { loadPaymentCase } from '../services/paymentCase';
 import { loadBookingInterests } from '../experiences/bookingInterests';
 import type { ExperienceRepo } from '../db/experienceRepo';
 import type { ExperienceInterestRepo } from '../db/experienceInterestRepo';
 import { isValidBookingTrackingCursor, loadBookingTracking } from '../services/bookingTracking';
+import { addOnRequestViews, cancelAddOnRequest, createAddOnRequest, type AddOnDeps } from '../services/addOns';
+import { liveRateCard } from '../quote/liveCard';
 
 export interface OpsDeps {
   bookings: BookingRepo;
   payments: PaymentRepo;
   rideOps: RideOpsRepo;
+  // Per-leg ops steps (spec 2026-11-19): a private multi-stop trip's legs each have their own row.
+  rideOpsLegs: RideOpsLegRepo;
   opsUserProfiles: OpsUserProfileRepo;
   auth: OpsAuthConfig;
+  // Add-ons after booking (spec 2026-11-14 §7.1): the requests themselves, and the two repos the
+  // live rate card is read from, so an add-on is priced exactly as a new booking's would be.
+  addOns: AddOnRepo;
+  zones: ZonesRepo;
+  rateRevisions: RateRevisionRepo;
   googleVerifier?: JwtVerifier; // test seam — bypasses real Google JWKS
   // Optional so tests that only exercise fulfilment can omit them; when present, the
   // fulfilment milestones fire the matching customer email (once, via notificationLog).
@@ -80,6 +94,16 @@ export interface OpsDeps {
 
 // The drawer shows at most this many attempt-log rows — the latest ones.
 const CHECKOUT_EVENTS_MAX = 50;
+
+// Add-on errors as HTTP statuses, the way the schedule route maps its own: 404 when the thing
+// named is not there, 400 when the body asks for something that does not exist, 409 otherwise
+// (the booking, the leg or the request is not in a state that allows it).
+const ADD_ON_ERROR_STATUS: Partial<Record<string, 400 | 404>> = {
+  leg_not_found: 404,
+  request_not_found: 404,
+  unknown_add_on: 400,
+};
+const addOnErrorStatus = (code: string): 400 | 404 | 409 => ADD_ON_ERROR_STATUS[code] ?? 409;
 
 // Every status a booking can hold once it has left the website's cart. 'draft' and
 // 'awaiting_details' stay out on purpose — those are half-finished web checkouts, not ops work.
@@ -159,6 +183,11 @@ export function opsRoutes(deps: OpsDeps) {
   const csrf = opsCsrf;
   const { auth } = deps;
   const users = parseOpsUsers(auth.opsUsers);
+  const addOnDeps: AddOnDeps = {
+    addOns: deps.addOns, payments: deps.payments, refunds: deps.refunds, email: deps.email,
+    rateCard: () => liveRateCard(deps.zones, deps.rateRevisions),
+    baseUrl: deps.baseUrl, linkSecret: deps.linkSecret,
+  };
 
   // Remember who someone is, by the name Google already knows them by. Deliberately swallows
   // its errors: this is a nicety on the login path, and the prod migration lands by hand AFTER
@@ -256,14 +285,18 @@ export function opsRoutes(deps: OpsDeps) {
     // queue booking, closed ones included. A payments query per booking, awaited in sequence,
     // was a ~100 ms round-trip per row from Render to the database (2026-09-22) — the whole
     // reason the page took many seconds to paint its first row.
-    const [ops, allPayments, waiting] = await Promise.all([
+    const [ops, allPayments, waiting, storedLegs] = await Promise.all([
       deps.rideOps.listByBookingIds(ids),
       deps.payments.findByBookingIds(ids),
       // Batched with the two above for the same reason: one read for the whole queue.
       deps.refunds ? deps.refunds.pendingCentsByBookingIds(ids) : Promise.resolve(new Map<string, number>()),
+      // Per-leg ops steps: the stored legs of every private trip in the queue, one read.
+      deps.addOns.listLegsForBookings(all.filter(isPerLegTrip).map((b) => b.id)),
     ]);
+    // …and their ops rows, one more read for the whole queue (it needs the leg ids).
+    const legRows = await deps.rideOpsLegs.listByLegIds([...storedLegs.values()].flatMap((legs) => drivenLegs(legs).map((l) => l.id)));
     const opsById = new Map(ops.map((o) => [o.bookingId, o]));
-    const paidIds = new Set(allPayments.filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
+    const paidIds = new Set(tripPayments(allPayments).filter((p) => p.status === 'succeeded').map((p) => p.bookingId));
     const paymentsById = new Map<string, typeof allPayments>();
     for (const p of allPayments) paymentsById.set(p.bookingId, [...(paymentsById.get(p.bookingId) ?? []), p]);
     const rows: OpsBookingRow[] = [];
@@ -271,6 +304,7 @@ export function opsRoutes(deps: OpsDeps) {
       const row = toOpsRow(b, {
         rideOps: opsById.get(b.id) ?? null, paid: paidIds.has(b.id), teamEmails: deps.teamEmails,
         payments: paymentsById.get(b.id) ?? [], refundWaitingCents: waiting.get(b.id) ?? 0,
+        legOps: legOpsViews(b, storedLegs.get(b.id) ?? [], legRows),
       });
       if (stage && row.stage !== stage) continue;
       if (date && row.travelDate !== date) continue;
@@ -329,9 +363,12 @@ export function opsRoutes(deps: OpsDeps) {
     // they were a ~94 ms round-trip each from Render to the database (2026-11-05), most of the
     // wait for this sheet to open. The best-effort ones catch their own failure, so losing one
     // costs its block only.
-    const [ops, payments, srcQuote, snapshot, checkoutEventRows, interests, scheduleEvents, notifications] = await Promise.all([
+    // Started here because two of the reads below need the payments: the sheet itself and the
+    // add-on requests. One read, shared.
+    const paymentsRead = deps.payments.findByBookingId(b.id);
+    const [ops, payments, srcQuote, snapshot, checkoutEventRows, interests, scheduleEvents, notifications, addOnViews] = await Promise.all([
       deps.rideOps.getOrCreate(b.id),
-      deps.payments.findByBookingId(b.id),
+      paymentsRead,
       // Partial pay link coverage, the vehicle tier and the refund lines all start from here.
       deps.quotes ? deps.quotes.findByConvertedBookingId(b.id).catch(() => null) : null,
       // A website booking's own pricing snapshot, used below when it did not come from a quote.
@@ -355,6 +392,9 @@ export function opsRoutes(deps: OpsDeps) {
       deps.bookings.listScheduleEvents(b.id),
       // Which details reminders went out (dateless capture Phase 2). Best-effort like checkoutEvents.
       deps.notificationLog ? deps.notificationLog.listByBookingId(b.id).catch(() => []) : [],
+      // Add-ons after booking (spec 2026-11-14 §7.1): the stored legs, each request, and the
+      // catalogue when one can be added.
+      addOnRequestViews(addOnDeps, b, { payments: paymentsRead }),
     ]);
     // The customer's own pay-by-card link, for ops to paste into WhatsApp. A booking converted
     // from a quote gets no email of its own, so before this there was no way to hand a customer
@@ -416,7 +456,12 @@ export function opsRoutes(deps: OpsDeps) {
       confirmationChannel: i.confirmationChannel,
     }));
     const reminders = notifications.filter((r) => r.kind === 'details_reminder_1' || r.kind === 'details_reminder_2');
-    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders });
+    // Per-leg ops steps (spec 2026-11-19): each driven leg's own stage and ticks. One extra read,
+    // for a private trip only — it needs the stored legs' ids, which arrive with the add-on views.
+    const legOps = isPerLegTrip(b)
+      ? legOpsViews(b, addOnViews.legs, await deps.rideOpsLegs.listByLegIds(drivenLegs(addOnViews.legs).map((l) => l.id)))
+      : [];
+    return c.json({ booking: b, ops, payments, payLink, balancePayLink, coverage, vehicle, refundLines, checkoutEvents, experienceInterests, scheduleEvents, reminders, legOps, ...addOnViews });
   });
 
   // The payment lookup (spec 2026-09-26): everything recorded about one booking's payment, by
@@ -454,6 +499,59 @@ export function opsRoutes(deps: OpsDeps) {
     });
     await maybeEmailForStage(deps, id, body.data.to);
     return c.json(updated);
+  });
+
+  // Per-leg ops steps (spec 2026-11-19). Resolves the leg a per-leg route names: the booking must
+  // be a private multi-stop trip that is still going ahead, and the leg one of its driven legs.
+  const CLOSED_FOR_LEGS: readonly BookingStatus[] = ['cancelled', 'refunded', 'no_show'];
+  async function perLegTarget(bookingId: string, legId: string) {
+    const booking = await deps.bookings.get(bookingId);
+    if (!booking) return { error: 'not_found', status: 404 } as const;
+    if (!isPerLegTrip(booking)) return { error: 'not_per_leg', status: 409 } as const;
+    const legs = drivenLegs(await deps.addOns.listLegs(bookingId));
+    if (!legs.some((l) => l.id === legId)) return { error: 'leg_not_found', status: 404 } as const;
+    if (CLOSED_FOR_LEGS.includes(booking.status)) return { error: 'booking_closed', status: 409 } as const;
+    return { booking, legs } as const;
+  }
+
+  // Move ONE leg along. The booking's own status follows the legs: confirmed once the first leg's
+  // vehicle is, in progress from the first pickup, completed only when the last leg is — so
+  // finishing leg 1 no longer closes a trip with legs still to run.
+  r.post('/bookings/:id/legs/:legId/status', requireCap('bookings:operate'), async (c) => {
+    const body = z.object({ to: z.string() }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const id = c.req.param('id');
+    const legId = c.req.param('legId');
+    const target = await perLegTarget(id, legId);
+    if ('error' in target) return c.json({ error: target.error }, target.status);
+    let updated;
+    try {
+      updated = await deps.rideOpsLegs.setStatus(legId, body.data.to as never);
+    } catch {
+      return c.json({ error: 'illegal_transition' }, 400);
+    }
+    // Best-effort, like the booking-level route: the operator's action is the durable fact. Each
+    // milestone up to the one the legs now add up to is offered in order, because the booking
+    // can only move one step at a time and a leg may have been worked ahead of the others.
+    const rows = await deps.rideOpsLegs.listByLegIds(target.legs.map((l) => l.id));
+    const reached = tripMilestone(legOpsViews(target.booking, target.legs, rows).map((l) => l.stage));
+    const ladder: RideStatus[] = ['vehicle_confirmed', 'on_trip', 'completed'];
+    for (const step of reached ? ladder.slice(0, ladder.indexOf(reached) + 1) : []) {
+      await mirrorToBooking(deps, id, step, { actorId: c.get('identity').email, requestId: c.get('requestId') });
+    }
+    return c.json(updated);
+  });
+
+  r.post('/bookings/:id/legs/:legId/flags', requireCap('bookings:operate'), async (c) => {
+    const body = z.object({
+      vehiclePhotoReceived: z.boolean().optional(),
+      customerUpdated: z.boolean().optional(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const legId = c.req.param('legId');
+    const target = await perLegTarget(c.req.param('id'), legId);
+    if ('error' in target) return c.json({ error: target.error }, target.status);
+    return c.json(await deps.rideOpsLegs.setFlags(legId, body.data));
   });
 
   r.post('/bookings/:id/flags', requireCap('bookings:operate'), async (c) => {
@@ -517,6 +615,43 @@ export function opsRoutes(deps: OpsDeps) {
       }
     }
     return c.json({ date, time, emailed, driverNotified });
+  });
+
+  // Send the customer an add-on request (spec 2026-11-14 §7.1): rate-card add-ons on legs of a
+  // private booking that is already booked, to be paid online. The body names legs and codes
+  // only; the service prices and labels every line from the live card.
+  r.post('/bookings/:id/add-ons', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({
+      lines: z.array(z.object({ legId: z.string().uuid(), code: z.string().min(1).max(40) })).min(1).max(24),
+      notifyCustomer: z.boolean(),
+    }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const result = await createAddOnRequest(addOnDeps, booking, {
+      ...body.data, createdBy: c.get('identity').email, now: new Date(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, addOnErrorStatus(result.error));
+    return c.json({ request: result.request, emailed: result.emailed });
+  });
+
+  // Cancel a request the customer has not paid. A reason is required, as for every ops change.
+  r.post('/bookings/:id/add-ons/:requestId/cancel', csrf, requireCap('bookings:operate'), async (c) => {
+    const id = c.req.param('id');
+    if (!z.string().uuid().safeParse(id).success) return c.json({ error: 'not_found' }, 404);
+    const body = z.object({ reason: z.string().trim().min(1).max(300) }).safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json({ error: 'bad_request' }, 400);
+    const booking = await deps.bookings.get(id);
+    if (!booking) return c.json({ error: 'not_found' }, 404);
+    const requestId = c.req.param('requestId');
+    if (!z.string().uuid().safeParse(requestId).success) return c.json({ error: 'request_not_found' }, 404);
+    const result = await cancelAddOnRequest(addOnDeps, booking, requestId, {
+      by: c.get('identity').email, reason: body.data.reason, now: new Date(),
+    });
+    if (!result.ok) return c.json({ error: result.error }, addOnErrorStatus(result.error));
+    return c.json({ request: result.request });
   });
 
   return r;

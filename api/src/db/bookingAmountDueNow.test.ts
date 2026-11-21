@@ -66,6 +66,21 @@ export function amountDueNowContract(name: string, make: () => Promise<AmountDue
       expect((await env.bookings.get(booking.id))!.amountDueNow).toBe(DEPOSIT);
     });
 
+    // Add-ons after booking (spec 2026-11-14 §6.1): the freeze is about the trip's money. An add-on
+    // payment is its own money, so it is not what settles the deposit-or-full choice.
+    it('an add-on payment does not freeze it', async () => {
+      const { env, booking, details } = await setup();
+      await env.bookings.setStatus(booking.id, 'payment_pending');
+      const p = await env.payments.create({
+        bookingId: booking.id, provider: 'fake', orderId: `${booking.reference}-A1`, amount: 1000,
+        currency: 'USD', idempotencyKey: `checkout:${booking.id}:addon:r1`, purpose: 'add_on',
+      });
+      await env.payments.markSucceeded(p.id);
+      const out = await env.bookings.refreshPayerDetails(booking.id, details(TOTAL));
+      expect(out.amountDueNow).toBe(TOTAL);
+      expect((await env.bookings.get(booking.id))!.amountDueNow).toBe(TOTAL);
+    });
+
     it('a failed or pending attempt does not freeze it', async () => {
       const { env, booking, details } = await setup();
       await env.bookings.setStatus(booking.id, 'payment_pending');

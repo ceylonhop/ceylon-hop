@@ -13,6 +13,7 @@ import type { QuoteRequest } from '../quote/types';
 import { signSession } from '../lib/opsAuth';
 import { signQuotePayToken, verifyQuotePayToken } from '../lib/bookingToken';
 import { FakeEmailAdapter } from '../adapters/email';
+import { InMemoryAlertLogRepo } from '../db/alertLogRepo';
 import { InMemoryZonesRepo } from '../db/zonesRepo';
 import { futureIsoDate } from '../testSupport/dates';
 import { depositFor } from '../quote/extrasDeposit';
@@ -1586,6 +1587,42 @@ describe('quote review notifications (awaiting-approval + sent-back)', () => {
     expect(msg).toBeTruthy();
     expect(msg!.subject).toContain('Changes requested');
     expect(msg!.html).toContain('Fix the van rate');
+  });
+
+  // Owner 2026-11-21: a maker who withdraws and resubmits within minutes was mailing every approver
+  // twice (Q-A6XKQ, 45 s apart, 2026-11-18) against a 100-a-day send limit.
+  describe('quiet period on a quick resubmit', () => {
+    const approvalMails = (mail: FakeEmailAdapter) => mail.sent.filter((m) => m.subject.includes('needs your approval'));
+    async function submitWithdrawResubmit(mail: FakeEmailAdapter, gapMs: number) {
+      const app = createApp({ quotes: new InMemoryQuoteRepo(), email: mail, opsBaseUrl: OPS_BASE, alertLog: new InMemoryAlertLogRepo() });
+      const save = await postAs('op@x.com', app, '/admin/quote/save', {
+        vehicle: 'car', passengerCount: 2, luggageCount: 1, requestedService: 'private',
+        legs: [leg({ from: 'Colombo City', to: 'Kandy', distanceKm: 120 }), leg({ from: 'Kandy', to: 'Ella', distanceKm: 140 })],
+      });
+      const id = (await save.json()).id as string;
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(new Date('2026-11-18T05:15:00Z'));
+        expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
+        expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'draft' })).status).toBe(200);
+        vi.setSystemTime(new Date(Date.parse('2026-11-18T05:15:00Z') + gapMs));
+        expect((await patchAs('op@x.com', app, `/admin/quote/${id}`, { status: 'pending_review' })).status).toBe(200);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    it('does not mail approvers again when the same quote is resubmitted within 30 minutes', async () => {
+      const mail = new FakeEmailAdapter();
+      await submitWithdrawResubmit(mail, 45_000);
+      expect(approvalMails(mail).map((m) => m.to)).toEqual(['f@x.com']);
+    });
+
+    it('mails approvers again once 30 minutes have passed', async () => {
+      const mail = new FakeEmailAdapter();
+      await submitWithdrawResubmit(mail, 30 * 60_000);
+      expect(approvalMails(mail).map((m) => m.to)).toEqual(['f@x.com', 'f@x.com']);
+    });
   });
 });
 

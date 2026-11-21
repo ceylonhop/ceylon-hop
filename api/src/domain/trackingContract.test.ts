@@ -26,6 +26,8 @@ describe('Phase A tracking contract', () => {
       'schedule_set',
       'details_reminder_1',
       'details_reminder_2',
+      'add_on_request',
+      'add_on_paid',
     ]);
   });
 

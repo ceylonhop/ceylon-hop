@@ -44,6 +44,7 @@ import { internalQuoteRoutes } from './routes/internalQuote';
 import { clientErrorRoutes } from './routes/clientErrors';
 import { devEmailRoutes } from './routes/devEmails';
 import { InMemoryRideOpsRepo, type RideOpsRepo } from './db/rideOpsRepo';
+import { InMemoryRideOpsLegRepo, type RideOpsLegRepo } from './db/rideOpsLegRepo';
 import { InMemoryOpsUserProfileRepo, type OpsUserProfileRepo } from './db/opsUserProfileRepo';
 import { InMemoryNotificationLogRepo, type NotificationLogRepo } from './db/notificationLogRepo';
 import { InMemoryQuoteRepo, type QuoteRepo } from './db/quoteRepo';
@@ -76,6 +77,7 @@ import { quoteConversionRoutes } from './routes/quoteConversion';
 import { quotePayRoutes } from './routes/quotePay';
 import { quoteViewRoutes } from './routes/quoteView';
 import { InMemoryRefundRepo, type RefundRepo } from './db/refundRepo';
+import { InMemoryAddOnRepo, type AddOnRepo } from './db/addOnRepo';
 import {
   InMemoryCustomerShortLinkRepo,
   type CustomerShortLinkRepo,
@@ -90,6 +92,8 @@ export interface AppDeps {
   bookings?: BookingRepo;
   payments?: PaymentRepo;
   refunds?: RefundRepo;
+  /** Add-ons added after booking (spec 2026-11-14): requests, their lines, and the stored legs. */
+  addOns?: AddOnRepo;
   settlements?: PaymentSettlementRepo;
   // PayHere's stored notices, for the ops payment lookup. The Postgres settlement repo writes the
   // same table itself; the in-memory default settlement writes to this one.
@@ -115,6 +119,8 @@ export interface AppDeps {
   adapter?: PaymentAdapter;
   maps?: MapsAdapter;
   rideOps?: RideOpsRepo;
+  // Per-leg ops steps (spec 2026-11-19): one fulfilment row per driven leg of a private trip.
+  rideOpsLegs?: RideOpsLegRepo;
   opsUserProfiles?: OpsUserProfileRepo;
   notificationLog?: NotificationLogRepo;
   quotes?: QuoteRepo;
@@ -228,6 +234,9 @@ export function createApp(deps: AppDeps = {}) {
     bookings.attachPayments(payments);
   }
   const refunds = deps.refunds ?? new InMemoryRefundRepo(bookings, payments);
+  // Add-ons after booking (spec 2026-11-14). Read and written by the ops routes, the customer's
+  // add-on checkout, and settlement.
+  const addOns = deps.addOns ?? new InMemoryAddOnRepo(bookings, payments);
   // One store of PayHere's notices, written by settlement and read by the ops payment lookup.
   const paymentEvents = deps.paymentEvents ?? new InMemoryPaymentEventRepo();
   const settlements =
@@ -236,6 +245,7 @@ export function createApp(deps: AppDeps = {}) {
       bookings: bookings as InMemoryBookingRepo,
       payments: payments as InMemoryPaymentRepo,
       events: paymentEvents instanceof InMemoryPaymentEventRepo ? paymentEvents : new InMemoryPaymentEventRepo(),
+      ...(addOns instanceof InMemoryAddOnRepo ? { addOns } : {}),
     });
   const conciergeTasks = deps.conciergeTasks ?? new InMemoryConciergeTaskRepo();
   const departures = deps.departures ?? new InMemoryDepartureRepo();
@@ -262,6 +272,7 @@ export function createApp(deps: AppDeps = {}) {
   const adapter = deps.adapter ?? new FakePaymentAdapter();
   const maps = deps.maps ?? new FakeMapsAdapter();
   const rideOps = deps.rideOps ?? new InMemoryRideOpsRepo();
+  const rideOpsLegs = deps.rideOpsLegs ?? new InMemoryRideOpsLegRepo();
   const opsUserProfiles = deps.opsUserProfiles ?? new InMemoryOpsUserProfileRepo();
   const notificationLog = deps.notificationLog ?? new InMemoryNotificationLogRepo();
   // Constructed BEFORE the quote repo so the in-memory pair share one store: the fake quote repo
@@ -272,6 +283,8 @@ export function createApp(deps: AppDeps = {}) {
   // A booking names the add-ons its quote charged; the in-memory repo needs the quotes to see
   // them, exactly as the Postgres load reads them off quotes.converted_booking_id.
   if (bookings instanceof InMemoryBookingRepo) bookings.attachQuotes(quotes);
+  // It also lists the add-ons paid for after booking, as the Postgres load joins them (spec 2026-11-14 §7.6).
+  if (bookings instanceof InMemoryBookingRepo) bookings.attachAddOns({ addOns, payments, refunds });
   const zones = deps.zones ?? new InMemoryZonesRepo();
   // Partner experiences (spec 2026-10-06). The in-memory interest repo reads the booking, quote and
   // experience repos so its leads queue and stats apply the same owner filter the SQL does.
@@ -557,6 +570,8 @@ export function createApp(deps: AppDeps = {}) {
       alerts,
       email,
       opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
+      addOns,
+      refunds,
     }),
   );
   app.route(
@@ -636,6 +651,7 @@ export function createApp(deps: AppDeps = {}) {
       duplicates: { bookings, departures, payments },
       experiences, experienceInterests,
       ...(ga4 ? { ga4 } : {}),
+      addOns,
     }),
   );
   app.route('/quotes/pay', quotePayRoutes({
@@ -666,8 +682,8 @@ export function createApp(deps: AppDeps = {}) {
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
   }));
   app.route('/admin/ops', opsRoutes({
-    bookings, payments, rideOps, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
-    email, notificationLog, rideLists, quotes, paymentEvents, refunds,
+    bookings, payments, rideOps, rideOpsLegs, opsUserProfiles, auth: opsAuthCfg, googleVerifier: deps.googleVerifier,
+    email, notificationLog, rideLists, quotes, paymentEvents, refunds, addOns, zones, rateRevisions,
     baseUrl: payBaseUrl,
     linkSecret: deps.bookingLinkSecret ?? config.BOOKING_LINK_SECRET,
     teamEmails: deps.teamEmails ?? config.TEAM_EMAILS,
@@ -727,6 +743,7 @@ export function createApp(deps: AppDeps = {}) {
     auth: opsAuthCfg,
     allowedOrigins,
     email,
+    alertLog: deps.alertLog,
     opsBaseUrl: deps.opsBaseUrl ?? config.OPS_BASE_URL,
     payBaseUrl, // the shared resolution above — kept in lockstep with the ops drawer's link
     quoteBaseUrl,

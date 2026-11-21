@@ -54,6 +54,13 @@ describe('opsView', () => {
     expect(toOpsRow(base, { paid: false }).paidAt).toBeNull();
   });
 
+  it('an add-on payment is not when the trip was paid', () => {
+    const addOn = { status: 'succeeded', amount: 1000, purpose: 'add_on', settledAt: new Date('2026-06-20T08:00:00Z') };
+    expect(toOpsRow(base, { paid: false, payments: [addOn] }).paidAt).toBeNull();
+    const full = { status: 'succeeded', amount: 12100, purpose: 'full', settledAt: new Date('2026-06-21T08:30:00Z') };
+    expect(toOpsRow(base, { paid: true, payments: [addOn, full] }).paidAt).toBe('2026-06-21T08:30:00.000Z');
+  });
+
   it('marks unpaid bookings', () => {
     expect(toOpsRow({ ...base, status: 'payment_pending' }, { paid: false }).paymentStatus).toBe('unpaid');
   });
@@ -256,5 +263,22 @@ describe('opsView — payment arrangement', () => {
 
   it('an ordinary booking has no arrangement and no cash due', () => {
     expect(toOpsRow(base, { paid: true })).toMatchObject({ paymentArrangement: null, cashDueCents: 0 });
+  });
+});
+
+// Add-ons after booking (spec 2026-11-14 §6.1): an add-on is paid on its own payment row. The
+// row's paid / balance / cash-due figures are the trip's, so that row is left out of all three.
+describe('opsView — add-on money is not trip money', () => {
+  const addOn = { status: 'succeeded', amount: 1000, purpose: 'add_on' };
+
+  it('a deposit booking with a paid add-on shows the deposit as paid and the full balance', () => {
+    const dep = { ...base, total: 21900, amountDueNow: 5000 } as Booking;
+    const deposit = { status: 'succeeded', amount: 5000, purpose: 'deposit' };
+    expect(toOpsRow(dep, { paid: true, payments: [deposit, addOn] })).toMatchObject({ paidCents: 5000, balanceCents: 16900 });
+  });
+
+  it('a pay-on-the-day booking with a paid add-on still has the whole total as cash due', () => {
+    const onTheDay: Booking = { ...base, status: 'confirmed', paymentArrangement: 'on_the_day' } as Booking;
+    expect(toOpsRow(onTheDay, { paid: false, payments: [addOn] })).toMatchObject({ paidCents: 0, balanceCents: 12100, cashDueCents: 12100 });
   });
 });

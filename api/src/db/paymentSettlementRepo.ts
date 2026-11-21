@@ -5,7 +5,8 @@ import { InMemoryPaymentEventRepo } from './paymentEventRepo';
 import type { Payment } from './paymentRepo';
 import { InMemoryPaymentRepo } from './paymentRepo';
 import type { TrackingCorrelation } from '../domain/trackingContract';
-import { SECURED_STATUSES } from '../domain/balance';
+import { SECURED_STATUSES, tripPayments } from '../domain/balance';
+import type { AddOnRequest, InMemoryAddOnRepo } from './addOnRepo';
 
 export type PaymentSettlementOutcome =
   | { kind: 'settled'; payment: Payment; booking: Booking }
@@ -32,6 +33,14 @@ export type PaymentSettlementOutcome =
   // half of ONE sale, not a second sale. The payment is settled; the booking is left exactly where
   // it is (already paid / confirmed / in progress) — the deposit is what secured it.
   | { kind: 'balance_settled'; payment: Payment; booking: Booking }
+  // An add-on request's payment (spec 2026-11-14 §6.3): its own money on a booking that is already
+  // going ahead. The payment is settled and the request is paid; the booking is not touched at all.
+  | { kind: 'add_on_settled'; payment: Payment; booking: Booking; request: AddOnRequest }
+  // Money for an add-on nobody wants any more: the request was cancelled, or its booking is
+  // cancelled, refunded or a no-show. The payment is still recorded as succeeded (the money moved,
+  // and the refund ceiling must see it) and a human refunds it. `request` is null only when no
+  // request is tied to the payment row at all.
+  | { kind: 'add_on_orphaned'; payment: Payment; booking: Booking; request: AddOnRequest | null }
   | { kind: 'unexpected_booking_state'; payment: Payment; booking: Booking };
 
 export interface PaymentSettlementRepo {
@@ -41,7 +50,9 @@ export interface PaymentSettlementRepo {
 export type SettlementFailurePoint =
   | 'after_event_insert'
   | 'after_payment_update'
-  | 'after_booking_update';
+  | 'after_booking_update'
+  // An add-on payment never reaches the booking update: it marks its request paid instead.
+  | 'after_add_on_update';
 
 export type SettlementFailureHook = (point: SettlementFailurePoint) => Promise<void> | void;
 
@@ -89,6 +100,19 @@ export function captureKindWithOthers(
   return SECURED_STATUSES.has(booking.status) ? 'balance_settled' : 'unexpected_booking_state';
 }
 
+/** What a success on an add-on payment is (spec 2026-11-14 §6.3). Settled only while the request
+ *  is still open and the trip is going ahead or just finished (a request sent mid-trip stays
+ *  payable to the end of its leg's day, even once ops has closed the trip). Anything else is money
+ *  for an add-on nobody wants any more. `request` is the row as read under settlement's lock, or
+ *  null when the payment has no request. Shared by both repos so they cannot disagree. */
+export function addOnCaptureKind(
+  request: { status: string } | null,
+  booking: { status: string },
+): 'add_on_settled' | 'add_on_orphaned' {
+  const goingAhead = SECURED_STATUSES.has(booking.status) || booking.status === 'completed';
+  return request?.status === 'open' && goingAhead ? 'add_on_settled' : 'add_on_orphaned';
+}
+
 export class PaymentSettlementError extends Error {
   constructor(
     public readonly code: 'unknown_order' | 'amount_mismatch',
@@ -107,6 +131,9 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       bookings: InMemoryBookingRepo;
       payments: InMemoryPaymentRepo;
       events: InMemoryPaymentEventRepo;
+      // Add-ons after booking. Without it an add-on payment has no request to find, so its money
+      // is kept and reported orphaned rather than guessed at.
+      addOns?: InMemoryAddOnRepo;
     },
     private readonly failureHook?: SettlementFailureHook,
   ) {}
@@ -116,12 +143,14 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       const bookingSnapshot = this.deps.bookings.snapshotForSettlement();
       const paymentSnapshot = this.deps.payments.snapshotForSettlement();
       const eventSnapshot = this.deps.events.snapshotForSettlement();
+      const addOnSnapshot = this.deps.addOns?.snapshotForSettlement();
       try {
         return await this.accept(event, correlation);
       } catch (error) {
         this.deps.bookings.restoreForSettlement(bookingSnapshot);
         this.deps.payments.restoreForSettlement(paymentSnapshot);
         this.deps.events.restoreForSettlement(eventSnapshot);
+        if (addOnSnapshot) this.deps.addOns?.restoreForSettlement(addOnSnapshot);
         throw error;
       }
     });
@@ -192,8 +221,34 @@ export class InMemoryPaymentSettlementRepo implements PaymentSettlementRepo {
       };
     }
 
-    // Read before our own write, so this asks only about OTHER payments on the booking.
-    const otherCaptures = (await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
+    // An add-on payment (spec 2026-11-14 §6.3) is its own money: it stops here, before any rule
+    // about the trip's payments or the booking's status. The request is read AFTER the payment
+    // write and with nothing awaited before the decision, so a cancel that landed while this
+    // settlement was running is seen, and one that comes later finds the request paid.
+    if (paymentRecord.purpose === 'add_on') {
+      this.deps.payments.putForSettlement({
+        ...paymentRecord,
+        status: 'succeeded',
+        gatewayPaymentId: event.providerTxnId,
+        settledAt: event.receivedAt,
+        settlementSource: 'webhook',
+        updatedAt: event.receivedAt,
+      });
+      await this.failureHook?.('after_payment_update');
+      const request = this.deps.addOns?.findByPaymentIdForSettlement(paymentRecord.id) ?? null;
+      if (addOnCaptureKind(request, booking) === 'add_on_orphaned') {
+        return { kind: 'add_on_orphaned', payment: this.requirePayment(event.orderId), booking, request };
+      }
+      this.deps.addOns!.markPaidForSettlement(request!.id, event.receivedAt);
+      const paidRequest = this.deps.addOns!.findByPaymentIdForSettlement(paymentRecord.id)!;
+      await this.failureHook?.('after_add_on_update');
+      return { kind: 'add_on_settled', payment: this.requirePayment(event.orderId), booking, request: paidRequest };
+    }
+
+    // Read before our own write, so this asks only about OTHER payments on the booking. Trip
+    // payments only: an add-on paid earlier is not a capture of the trip, so it must not turn the
+    // balance, or the first trip payment, into a double capture.
+    const otherCaptures = tripPayments(await this.deps.payments.findByBookingId(paymentRecord.bookingId)).filter(
       (p) => p.id !== paymentRecord.id && p.status === 'succeeded',
     );
 

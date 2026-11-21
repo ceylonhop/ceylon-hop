@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto';
 
 export type PaymentStatus = 'pending' | 'succeeded' | 'failed';
 // Deposits (spec 2026-10-07): which part of the sale a payment is. 'full' for every booking that
-// pays once — every row before the deposit feature.
-export type PaymentPurpose = 'full' | 'deposit' | 'balance';
+// pays once — every row before the deposit feature. 'add_on' (spec 2026-11-14) is a payment for
+// add-ons added after booking: its own money, never part of the trip's.
+export type PaymentPurpose = 'full' | 'deposit' | 'balance' | 'add_on';
 
 export interface NewPayment {
   bookingId: string;
