@@ -106,9 +106,18 @@ describe('the place menu never covers its own field', () => {
   });
 
   it('holds for every field position on short screens', async () => {
+    // One page per screen height; the field moves within it. A fresh JSDOM per position
+    // (153 of them) made this the slowest unit test and timed it out under load. Reuse is
+    // safe because paint() re-measures the field on every paint — the side is decided from
+    // the space alone — and the field is cleared (menu closed) before each position.
     for (const height of [220, 300, 360, 430, 470]) {
+      const { window, input, rect } = mountPicker({ viewport: { width: 393, height }, fieldTop: 0 });
       for (let fieldTop = 0; fieldTop <= height - FIELD_H; fieldTop += 10) {
-        const { window, input, rect } = mountPicker({ viewport: { width: 393, height }, fieldTop });
+        input.value = '';
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+        expect(readMenu(window)).toBeNull();
+        rect.top = fieldTop;
+        rect.bottom = fieldTop + FIELD_H;
         const { first, final } = await type(window, input, 'Colo');
         for (const menu of [first, final]) {
           expect(coversField(menu, rect), `height ${height}, field at ${fieldTop}`).toBe(false);
@@ -117,7 +126,9 @@ describe('the place menu never covers its own field', () => {
         }
       }
     }
-  });
+    // 5 mounts + 153 typed positions: ~1.6s alone, but 5.6s inside a loaded full run
+    // (2026-10-07) — past vitest's 5s default with nothing wrong.
+  }, 20_000);
 
   it('still opens below, full height, when there is room (desktop)', async () => {
     const { window, input, rect } = mountPicker({ viewport: { width: 1280, height: 800 }, fieldTop: 200 });
