@@ -86,6 +86,10 @@ export async function sendQuoteAssigned(
   await email.send({ to: assignedTo, subject: `Quote ${q.reference} assigned to you — Ceylon Hop ops`, html, text, audience: 'ops' });
 }
 
+// Alert-ledger kind behind the awaiting-approval mail's quiet period (see internalQuote.ts).
+// Bookkeeping, not an alert: the digest and the Health tab leave it out of their alert counts.
+export const QUOTE_APPROVAL_MAIL_KIND = 'quote_approval_mail';
+
 export async function sendQuoteAwaitingApproval(
   q: AssignedQuote,
   to: string,
