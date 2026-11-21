@@ -28,6 +28,15 @@ export function isPerLegTrip(b: Pick<Booking, 'mode' | 'input'>): boolean {
   return b.mode === 'trip' && !isChauffeurBooking(b);
 }
 
+/**
+ * A trip that was completed with the one booking-level status, before per-leg steps existed. Its
+ * legs have no rows; reading that as "leg 1 still to do" would reopen a finished trip, so it stays
+ * a booking-level booking. (Per-leg steps never write 'completed' to the booking's ride_ops row.)
+ */
+export function closedBeforePerLeg(rideOps: { fulfilmentStatus: RideStatus } | null | undefined): boolean {
+  return rideOps?.fulfilmentStatus === 'completed';
+}
+
 /** The legs we drive, in travel order. A gap is the customer's own travel: never an ops job. */
 export function drivenLegs(legs: readonly StoredLeg[]): StoredLeg[] {
   return legs.filter((l) => l.kind === 'leg');
