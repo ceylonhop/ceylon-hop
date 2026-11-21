@@ -29,6 +29,7 @@ async function harness() {
   await alertLog.shouldSend('watchdog_stuck_pending', 'b1', 0, new Date(NOW.getTime() - 2 * HOUR));
   await alertLog.shouldSend('client_error', 'x', 0, new Date(NOW.getTime() - 3 * 24 * HOUR));
   await alertLog.shouldSend('ops_digest', 'daily', 0, new Date(NOW.getTime() - HOUR)); // bookkeeping, not an alert
+  await alertLog.shouldSend('quote_approval_mail', 'q1', 0, new Date(NOW.getTime() - HOUR)); // quiet-period row, not an alert
   await alertLog.shouldSend(WATCHDOG_TICK.kind, WATCHDOG_TICK.key, 0, new Date(NOW.getTime() - 10 * 60_000));
   await alertLog.shouldSend(NOTIFICATIONS_TICK.kind, NOTIFICATIONS_TICK.key, 0, new Date(NOW.getTime() - 30 * HOUR));
   const repo = new InMemoryUsageCounterRepo();
@@ -69,6 +70,7 @@ describe('collectSystemHealth', () => {
       { kind: 'watchdog_stuck_pending', keys: 1 }, { kind: 'client_error', keys: 1 },
     ]));
     expect(h.alerts!.last7d.map((a) => a.kind)).not.toContain('ops_digest');
+    expect(h.alerts!.last7d.map((a) => a.kind)).not.toContain('quote_approval_mail');
 
     expect(h.carts).toEqual({ paymentPending: 1, paymentPendingLast24h: 1, drafts: 1 });
 

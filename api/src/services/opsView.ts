@@ -7,6 +7,8 @@ import { roadRow } from './notifications';
 import { balanceDueCents, paidCents, tripPayments } from '../domain/balance';
 import type { PaymentArrangement } from '../domain/paymentMethod';
 import { deriveLegsForMode } from '../domain/bookingLegs';
+import type { LegOpsView } from './tripLegOps';
+import { tripLegStage, type LegRideStatus } from '../domain/tripLegStage';
 
 // 'gathering' belongs to the ride board, not the booking machine: a van that is
 // still collecting names has no booking, no payment and nothing for ops to
@@ -67,6 +69,9 @@ export interface OpsBookingRow {
    *  travel day on a chauffeur trip. Empty on every other row. The queue files a trip under its
    *  next leg from these (spec 2026-11-06); `travelDate` stays the START date. */
   legs: Array<{ date: string | null; from: string; to: string }>;
+  /** Per-leg ops steps (spec 2026-11-19): each driven leg of a private multi-stop trip with its own
+   *  stage and ticks. Empty on every other row, and on an older trip with no stored legs. */
+  legOps: LegOpsView[];
   pax: number;
   vehiclePhotoReceived: boolean;
   customerUpdated: boolean;
@@ -120,28 +125,36 @@ function legs(b: Booking): OpsBookingRow['legs'] {
     .map((l) => ({ date: l.travelDate, from: l.fromPlace, to: l.toPlace }));
 }
 
-function stageFor(b: Booking, rideOps: RideOps | null | undefined): OpsStage {
+function stageFor(b: Booking, rideOps: RideOps | null | undefined, legStage?: LegRideStatus): OpsStage {
   // A closed booking outranks whatever the fulfilment row last said: a refund on a ride ops
   // had already marked 'on_trip' is still a refund, and showing it mid-pipeline would invite
   // someone to keep advancing it.
   if (b.status === 'cancelled') return 'cancelled';
   if (b.status === 'refunded') return 'refunded';
   if (b.status === 'payment_pending') return 'awaiting_payment';
+  // Per-leg ops steps (spec 2026-11-19): a private multi-stop trip is as far along as its first
+  // unfinished leg. A no-show still closes the whole trip, and that lives on the booking's row.
+  if (legStage && rideOps?.fulfilmentStatus !== 'no_show') return legStage;
   return rideOps?.fulfilmentStatus ?? 'paid';
 }
 
 export function toOpsRow(
   b: Booking,
-  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number },
+  opts: { rideOps?: RideOps | null; paid: boolean; teamEmails?: ReadonlySet<string>; payments?: Array<{ status: string; amount: number; purpose: string; settledAt?: Date | null }>; refundWaitingCents?: number; legOps?: LegOpsView[] },
 ): OpsBookingRow {
   const ledger = opts.payments ?? [];
   const balance = balanceDueCents(b, ledger);
   const settled = tripPayments(ledger).flatMap((p) => (p.status === 'succeeded' && p.settledAt ? [p.settledAt.getTime()] : []));
   const t = travel(b);
   const c = b.input.customer;
+  // Per-leg ops steps: the row speaks for the leg ops are on — its stage and its ticks. Once every
+  // leg is done that is the last one.
+  const legOps = opts.legOps ?? [];
+  const trip = tripLegStage(legOps.map((l) => l.stage));
+  const currentLeg = trip ? legOps[trip.currentLeg ?? legOps.length - 1] : null;
   return {
     id: b.id, reference: b.reference, mode: b.mode, channel: b.channel,
-    bookingStatus: b.status, stage: stageFor(b, opts.rideOps),
+    bookingStatus: b.status, stage: stageFor(b, opts.rideOps, trip?.stage),
     paymentStatus: opts.paid ? 'paid' : 'unpaid', amount: b.total, currency: b.currency,
     // Paid towards the trip: an add-on paid after booking is its own money.
     paidCents: paidCents(tripPayments(ledger)), balanceCents: balance,
@@ -149,9 +162,9 @@ export function toOpsRow(
     cashDueCents: b.paymentArrangement ? balance : 0,
     customerFirstName: c.firstName, customerName: `${c.firstName} ${c.lastName}`.trim(),
     customerPhone: c.whatsapp?.trim() || null,
-    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, legs: legs(b), pax: pax(b),
-    vehiclePhotoReceived: opts.rideOps?.vehiclePhotoReceived ?? false,
-    customerUpdated: opts.rideOps?.customerUpdated ?? false,
+    route: route(b), road: b.mode === 'trip' ? (roadRow(b)?.[1] ?? null) : roadRow(b) ? 'Local road' : null, travelDate: t.date, travelTime: t.time, legs: legs(b), legOps, pax: pax(b),
+    vehiclePhotoReceived: currentLeg ? currentLeg.vehiclePhotoReceived : (opts.rideOps?.vehiclePhotoReceived ?? false),
+    customerUpdated: currentLeg ? currentLeg.customerUpdated : (opts.rideOps?.customerUpdated ?? false),
     opsNotes: opts.rideOps?.opsNotes ?? null,
     source: 'booking',
     isTest: isTeamEmail(c.email, opts.teamEmails ?? NO_TEAM),

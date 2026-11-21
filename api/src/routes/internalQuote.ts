@@ -25,7 +25,8 @@ import { depositFor } from '../quote/extrasDeposit';
 import { alternativeOf, chauffeurFeasibility, isChauffeurBooking, soldView, type QuoteAlternative } from '../quote/quoteAlternative';
 import { opsIdentity, opsCsrf, requireCap, type OpsAuthConfig } from '../lib/opsMiddleware';
 import { wasDelivered, type EmailAdapter } from '../adapters/email';
-import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack } from '../services/opsNotifications';
+import type { AlertLogRepo } from '../db/alertLogRepo';
+import { sendQuoteAssigned, sendQuoteAwaitingApproval, sendQuoteSentBack, QUOTE_APPROVAL_MAIL_KIND } from '../services/opsNotifications';
 import { sendPayOnDayConfirmed, manageUrl } from '../services/notifications';
 import type { NotificationLogRepo } from '../db/notificationLogRepo';
 import { PAYMENT_ARRANGEMENTS } from '../domain/paymentMethod';
@@ -691,6 +692,8 @@ function payOptionsOf(q: SavedQuote): {
   };
 }
 
+const APPROVAL_MAIL_QUIET_MS = 30 * 60_000;
+
 export function internalQuoteRoutes(deps: {
   maps: MapsAdapter;
   quotes: QuoteRepo;
@@ -736,6 +739,8 @@ export function internalQuoteRoutes(deps: {
   // the origin of the email's manage link. Absent = the booking still confirms, unannounced.
   notificationLog?: NotificationLogRepo;
   manageBaseUrl?: string;
+  // The awaiting-approval mail's quiet period. Absent = every submission mails, as before.
+  alertLog?: AlertLogRepo;
 }) {
   const r = new Hono();
 
@@ -1969,7 +1974,13 @@ export function internalQuoteRoutes(deps: {
     // with nobody told at all. Noise is recoverable; silence is not.
     const submitterCanApproveItself =
       can(c.get('identity').role, 'quote:approve_simple') && canOpsSelfApprove(updated);
-    if (body.status === 'pending_review' && deps.email && !submitterCanApproveItself) {
+    // Quiet period (owner 2026-11-21): a withdraw-and-resubmit minutes later re-mailed every
+    // approver (Q-A6XKQ, 45 s apart) against a 100-a-day send limit. One round of approval mail per
+    // quote per 30 min; the quote still sits in the Quotes tab. No ledger injected ⇒ always mail.
+    const approvalMailDue = async () =>
+      !deps.alertLog
+      || (await deps.alertLog.shouldSend(QUOTE_APPROVAL_MAIL_KIND, updated.id, APPROVAL_MAIL_QUIET_MS, new Date()));
+    if (body.status === 'pending_review' && deps.email && !submitterCanApproveItself && (await approvalMailDue())) {
       for (const u of approverOpsUsers(deps.auth.opsUsers)) {
         if (u.email === actor.toLowerCase()) continue;
         try {

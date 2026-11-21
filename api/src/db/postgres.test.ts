@@ -40,6 +40,8 @@ import { AddOnError } from './addOnRepo';
 import { bookingAddOnsListContract } from './bookingAddOnsList.test';
 import type { BookingTransitionContext } from '../domain/trackingContract';
 import { PostgresCustomerCommunicationRepo } from './postgresCustomerCommunicationRepo';
+import { PostgresRideOpsLegRepo } from './postgresRideOpsLegRepo';
+import { rideOpsLegRepoContract } from './rideOpsLegRepo.test';
 
 const TEST_URL = process.env.DATABASE_URL_TEST;
 
@@ -1976,5 +1978,33 @@ describe.skipIf(!TEST_URL)('Postgres booking add-ons list (integration)', () => 
         await db.update(bookingAddOnRequests).set({ status: 'paid', paidAt: at }).where(eq(bookingAddOnRequests.id, requestId));
       },
     };
+  });
+});
+
+describe.skipIf(!TEST_URL)('PostgresRideOpsLegRepo (integration)', () => {
+  const migrated = migratedDbPerDescribe();
+  // Three driven legs of one fresh private trip per case, so no case sees another's rows.
+  const tripLegIds = async (db: Db): Promise<[string, string, string]> => {
+    const b = await new PostgresBookingRepo(db).create({
+      mode: 'trip',
+      input: {
+        stops: ['Colombo Airport (CMB)', 'Kandy', 'Ella', 'Mirissa'], nights: [1, 1, 1, 0],
+        dates: ['2026-12-10', '2026-12-12', '2026-12-14'], pax: 2, vehicleType: 'car', serviceType: 'private',
+        customer: { firstName: 'Maya', lastName: 'Silva', email: `maya+${randomUUID().slice(0, 8)}@example.com`, whatsapp: '+34600000000', country: 'Spain' },
+      },
+      total: 24000, amountDueNow: 24000, currency: 'USD',
+    });
+    const [a, b2, c] = (await new PostgresAddOnRepo(db).listLegs(b.id)).map((l) => l.id);
+    return [a, b2, c];
+  };
+  rideOpsLegRepoContract('contract', async () => {
+    const db = await migrated();
+    return { repo: new PostgresRideOpsLegRepo(db), legIds: await tripLegIds(db) };
+  });
+
+  // Postgres only: the in-memory repo has no legs table to check against.
+  it('refuses a leg that is not stored', async () => {
+    const repo = new PostgresRideOpsLegRepo(await migrated());
+    await expect(repo.setStatus(randomUUID(), 'vehicle_confirmed')).rejects.toThrow();
   });
 });

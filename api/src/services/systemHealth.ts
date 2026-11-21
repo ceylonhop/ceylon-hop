@@ -4,6 +4,7 @@ import { WATCHDOG_TICK, WATCHDOG_STALE_MS } from './watchdog';
 import { NOTIFICATIONS_TICK, NOTIFICATIONS_STALE_MS } from './scheduler';
 import { utcDay } from './usageMeter';
 import type { UsageSource } from './emailQuota';
+import { QUOTE_APPROVAL_MAIL_KIND } from './opsNotifications';
 
 // The ops Health payload (spec 2026-10-13 §5): what only our own process and database know —
 // heartbeats, alert kinds, abandoned carts, and usage against the free-tier caps. Outage detection
@@ -14,7 +15,7 @@ const HOUR_MS = 3600_000;
 const DAY_MS = 24 * HOUR_MS;
 
 // Ledger rows that are bookkeeping, not alerts anyone received (digest.ts keeps the same set).
-export const BOOKKEEPING_KINDS: ReadonlySet<string> = new Set(['ops_digest', WATCHDOG_TICK.kind, NOTIFICATIONS_TICK.kind]);
+export const BOOKKEEPING_KINDS: ReadonlySet<string> = new Set(['ops_digest', WATCHDOG_TICK.kind, NOTIFICATIONS_TICK.kind, QUOTE_APPROVAL_MAIL_KIND]);
 
 export const VENDOR_LINKS: ReadonlyArray<{ label: string; url: string }> = [
   { label: 'Render — service, logs, instance hours', url: 'https://dashboard.render.com/' },

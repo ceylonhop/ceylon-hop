@@ -557,6 +557,8 @@ window.opsReportError=function(ctx,err){var x=err||{};r((ctx?ctx+' — ':'')+(x.
   .legs .leg-done .r{color:var(--ink-faint);text-decoration:line-through}
   .legs .leg-done .r::before{content:"✓ ";text-decoration:none;display:inline-block;margin-right:4px}
   .legs .leg-next .r{font-weight:700}
+  .legs .lt .legpill{flex:none;margin-left:10px;font-size:.7rem;padding:3px 10px}
+  .legs .leg.leg-now .r::after{content:"Now"}
   .legs .leg-next .r::after{content:"Next";display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;background:var(--cream-deep);color:var(--ink);font-size:.72rem;font-weight:700;vertical-align:1px}
   .legs .lt{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
   .legs .lt .r{min-width:0}
@@ -2222,6 +2224,11 @@ const anchorDate=t=>{
 /* "Leg 3 of 4 · Ella → Yala" on a trip already under way, so the row reads as a trip resuming,
    not a new booking. Nothing before the first leg (the row's date says it) or after the last. */
 const legNote=t=>{
+  /* Per-leg ops steps (spec 2026-11-19): a private multi-stop trip always names the leg ops are
+     on, from what they have recorded — the row's stage and reason are that leg's.
+     Not on the Tomorrow copy of a back-to-back trip (t.at): that row is about tomorrow's leg. */
+  const L=t.legOps||[],ci=t.at||CLOSED.includes(t.stage)?-1:L.findIndex(l=>l.stage!=='completed');
+  if(ci>=0)return `Leg ${ci+1} of ${L.length} · ${L[ci].from} → ${L[ci].to}`;
   const legs=t.legs||[],a=anchorDate(t),i=legs.findIndex(l=>l.date===a);
   if(i<1||a<TODAY||!(t.at||legs.some(l=>l.date&&l.date<TODAY)))return '';
   return `Leg ${i+1} of ${legs.length} · ${legs[i].from} → ${legs[i].to}`;
@@ -2296,6 +2303,16 @@ const NEXT={
   on_trip:{to:'completed',label:'Mark completed',act:'advance'},
   completed:null,
 };
+/* Per-leg ops steps (spec 2026-11-19): the leg ops are on — the first not yet completed — with its
+   1-based number. null on a booking that is not worked leg by leg, and once every leg is done. */
+const curLeg=t=>{
+  const L=(t&&t.legOps)||[],i=L.findIndex(l=>l.stage!=='completed');
+  /* A no-show or cancellation closes the whole trip whichever leg it was on: no leg is current. */
+  return i<0||CLOSED.includes(t.stage)?null:{...L[i],n:i+1,of:L.length};
+};
+/* A trip is under way once any leg is on the road or done: the booking is then in progress until
+   its last leg, and the booking rules do not allow cancelling from there. */
+const tripStarted=t=>((t&&t.legOps)||[]).some(l=>l.stage==='on_trip'||l.stage==='completed');
 const MODE={single:'Transfer',private:'Private',shared:'Shared',trip:'Multi-stop',chauffeur:'Chauffeur',board:'Ride board'};
 
 /* The only surviving template: the payment-reminder copy an ops agent sends to nudge
@@ -2464,6 +2481,10 @@ function rowToTicket(row){
     mode:row.mode, route:row.route, road:row.road||null, date:row.travelDate, time:row.travelTime, guests:row.pax,
     /* A trip's driven legs (date/from/to); [] on a transfer, absent on an older or mocked row. */
     legs:row.legs||[],
+    /* Per-leg ops steps (spec 2026-11-19): each driven leg of a private multi-stop trip with its
+       own stage and ticks; [] on every other row. t.stage/t.photo/t.updated already speak for
+       the leg ops are on (the API sets them from these). */
+    legOps:row.legOps||[],
     amount:row.amount, currency:row.currency, stage:row.stage, paid:row.paymentStatus==='paid',
     /* A deposit booking: what has landed and what is still owed (the ledger's figures, never
        derived here). balance>0 on a paid row means the customer owes the rest. */
@@ -4106,6 +4127,15 @@ function noteParts(line){
 
 /* trip legs (mode 'trip') from the booking input's stops/dates */
 function legsHtmlFor(d){
+  /* A leg's stage as its pill shows it (per-leg ops steps). Same colours as STAGE; a finished leg
+     reads "Done". Kept inside so the leg list stays liftable on its own. */
+  const LEG_STAGE={
+    paid:{label:'Paid',c:'#2f9558',cbg:'#e6f4ec'},
+    vehicle_confirmed:{label:'Vehicle confirmed',c:'#6d4fb8',cbg:'#efeafb'},
+    pickup_confirmed:{label:'Pickup confirmed',c:'#0a8f86',cbg:'#dff3ef'},
+    on_trip:{label:'On trip',c:'#1f6fd0',cbg:'#e6f0fc'},
+    completed:{label:'Done',c:'#7c7a73',cbg:'#eeece4'},
+  };
   const b=d?.booking;
   /* Partial pay link (spec 2026-08-04): same sentence the customer's email carries. */
   const cov=d?.coverage
@@ -4116,15 +4146,25 @@ function legsHtmlFor(d){
   /* One line per leg (spec 2026-11-12): date · short places · road. A leg still to run also
      shows its full addresses, so a whole trip can be briefed to one coordinator in one go; a leg
      that has run (dated before today) shrinks to its struck-out line. */
+  /* Per-leg ops steps (spec 2026-11-19): on a private multi-stop trip each driven leg has its own
+     stage, so done / now come from what ops have recorded, not from the calendar, and each line
+     carries its stage. Matched in travel order; if the stored legs and the itinerary disagree in
+     number the calendar states stay. */
+  const lo=d?.legOps||[],driven=rows.filter(r=>r.kind!=='gap');
+  const perLeg=lo.length>0&&lo.length===driven.length;
+  const tripOpen=!['no_show','cancelled','refunded'].includes(d?.ops?.fulfilmentStatus)&&!['cancelled','refunded','no_show'].includes(b?.status);
+  const nowLeg=lo.findIndex(l=>l.stage!=='completed');
+  driven.forEach((r,i)=>{if(perLeg){r.ops=lo[i];r.done=lo[i].stage==='completed';r.next=tripOpen&&i===nowLeg;}});
   const html=rows.map(r=>{
     const places=`<span title="${esc(r.from)} → ${esc(r.to)}">${esc(shortPlace(r.from))} → ${esc(shortPlace(r.to))}</span>`;
     if(r.kind==='gap')return `<div class="leg leg-gap" data-leg="${r.n}"><div class="lt"><span class="r">${places} · customer’s own travel, not driven by us</span></div></div>`;
     const when=r.date?fmtDate(r.date)+(r.time?' · '+r.time:''):(b.mode==='trip'?`Leg ${r.n}`:'Date not set');
     const via=r.via.length?` <span class="via">via ${r.via.map(v=>esc(shortPlace(v))).join(', ')}</span>`:'';
     const road=r.variant?roadOf(r.variant):null;
-    const st=r.done?' leg-done':r.next?' leg-next':'';
+    const st=(r.done?' leg-done':r.next?' leg-next':'')+(r.ops&&r.next?' leg-now':'');
+    const sg=r.ops&&LEG_STAGE[r.ops.stage],pill=sg?`<span class="pill legpill" data-testid="leg-stage" style="--c:${sg.c};--cbg:${sg.cbg}"><span class="pd"></span>${sg.label}</span>`:'';
     const addr=r.done?'':`<div class="addr"><b>From</b><span>${esc(r.from)}</span><b>To</b><span>${esc(r.to)}</span></div>`;
-    return `<div class="leg${st}" data-leg="${r.n}"><div class="lt"><span class="r">${esc(when)} · ${places}${via}</span>${road?`<span class="${road.cls}" data-testid="leg-road">${road.text}</span>`:''}</div>${addr}</div>`;
+    return `<div class="leg${st}" data-leg="${r.n}"><div class="lt"><span class="r">${esc(when)} · ${places}${via}</span>${road?`<span class="${road.cls}" data-testid="leg-road">${road.text}</span>`:''}${pill}</div>${addr}</div>`;
   }).join('');
   return cov+`<div class="legs">${html}</div>`;
 }
@@ -4340,6 +4380,9 @@ function reverseActionsFor(t, d){
   const g = reverseGate(t, d);
   if(!g.allowed) return '';
   if(!CANCELLABLE.includes(t.stage)) return '';
+  /* Per-leg ops steps: between legs the row is back at "Paid", but the trip is under way and the
+     booking can no longer be cancelled — say so instead of offering a button that would fail. */
+  if(tripStarted(t)) return `<div class="block"><h4>Cancel booking</h4><p class="muted" style="padding:0" data-testid="cancel-started">This trip has started, so it can no longer be cancelled here.</p></div>`;
   const btn = g.blocked
     ? `<button class="btn btn-noshow" disabled title="${esc(g.why)}">Cancel booking</button>`
     : `<button class="btn btn-noshow" data-act="cancelbooking" data-id="${esc(t.id)}" title="Calls the trip off and emails the customer">Cancel booking</button>`;
@@ -4525,7 +4568,9 @@ function sheetSkelHtml(){
 function sheetFootHtml(t,nx){
   if(t.stage==='awaiting_payment')return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="payreminder" data-id="${esc(t.id)}">${ICON.copy} Copy payment reminder</button></div>`;
   if(!nx)return '';
-  return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label} ${ICON.arrow}</button>`
+  /* Per-leg ops steps: the button moves ONE leg, so it says which. */
+  const cl=curLeg(t),on=cl?` · leg ${cl.n}: ${esc(shortPlace(cl.from))} → ${esc(shortPlace(cl.to))}`:'';
+  return `<div class="sheet-foot"><button class="btn btn-go btn-lg" data-act="advance" data-id="${esc(t.id)}">${nx.label}${on} ${ICON.arrow}</button>`
     +`<button class="btn btn-noshow" data-act="noshow" data-id="${esc(t.id)}" title="Customer didn't show — ${t.paymentArrangement&&!t.paid?'emails that nothing was charged':'emails the forfeited-fare notice'}">Mark no-show</button></div>`;
 }
 /* Diff-render the sheet instead of innerHTML-swapping it: a queue refresh after a toggle or
@@ -4843,7 +4888,7 @@ function renderSheet(){
   const exc=sheetException(t,cashDue(t),Date.now());
   const head=sheetHeadHtml(t,{
     ey:`<span class="chan ${chanClass(t.chan)}" style="width:22px;height:22px;border-radius:6px">${chanIcon(t.chan)}</span> ${chanLabel(t.chan)} · ${MODE[t.mode]||esc(t.mode)}`,
-    title:t.cust,pill:stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t,d),pipe:false,idx,
+    title:t.cust,pill:(curLeg(t)?`Leg ${curLeg(t).n} of ${curLeg(t).of} · `:'')+stageLabel(t),pillCls:t.stage==='paid'&&cashDue(t)?' pill-bal':'',stub:bookingStubHtml(t,d),pipe:false,idx,
     action:waDigits.length>=8?`<a class="sh-wa" href="https://wa.me/${waDigits}" target="_blank" rel="noopener" aria-label="Message on WhatsApp" title="Message on WhatsApp">${ICON.wa}</a>`:'',
     alert:exc?`<div class="sh-exc tone-${exc.tone}" data-testid="sheet-exception">${esc(exc.text)}${exc.amount!=null?' · '+esc(money({amount:exc.amount,currency:t.currency})):''}</div>`:''});
   /* Detail still fetching → skeleton body. Rendering the full body with d=null used to
@@ -4969,7 +5014,7 @@ function renderSheet(){
               :!t.paid?`<p style="margin:10px 0 0;font-size:.84rem;color:var(--ink-soft)">Not received yet — it can still arrive through the payment link, or be paid directly and ${recordedBy}.</p>`:''}
               ${canSettle?`<div class="lk-act"><button class="btn" data-act="lookup" data-ref="${esc(t.ref)}">Payment history →</button></div>`:''}
               ${paymentAttemptsHtmlFor(d)}`,exc&&exc.openPayment)}
-            ${fold('pickup','Vehicle &amp; pickup',pickupSum,`
+            ${fold('pickup',curLeg(t)?`Vehicle &amp; pickup · leg ${curLeg(t).n} of ${curLeg(t).of}`:'Vehicle &amp; pickup',pickupSum,`
               <div class="kv"><span class="k">Assigned</span><span class="v">${idx>=STAGES.indexOf('vehicle_confirmed')?'<span style="color:var(--ok);font-weight:700">Vehicle confirmed</span>':'<span style="color:var(--alert);font-weight:700">Not yet</span>'}</span></div>
               <div class="togg"><span>Vehicle photo received</span><button class="switch ${t.photo?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="photo"></button></div>
               <div class="togg"><span>Customer contacted · pickup confirmed</span><button class="switch ${t.updated?'on':''}" data-act="toggle" data-id="${esc(t.id)}" data-k="updated"></button></div>`)}
@@ -5434,9 +5479,9 @@ document.addEventListener('click',async e=>{
       const rows=await api.get('/bookings');tickets=rows.map(rowToTicket);render();
       break;
     }
-    case 'advance':{const n=NEXT[t.stage];if(!n)break;try{await api.post(`/bookings/${id}/status`,{to:n.to});toast(`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
+    case 'advance':{const n=NEXT[t.stage];if(!n)break;const cl=curLeg(t);try{await api.post(cl?`/bookings/${id}/legs/${cl.legId}/status`:`/bookings/${id}/status`,{to:n.to});toast(cl?`Leg ${cl.n} moved to “${STAGE[n.to].label}”`:`Moved to “${STAGE[n.to].label}”`);await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking advance',err);toast('Could not advance','error');}}break;}
     case 'noshow':{if(!confirm(`Mark ${t.ref} as a no-show?\n\n${t.paymentArrangement&&!t.paid?'This emails the customer that nothing was charged.':'This emails the customer that the fare isn’t refundable.'} It can’t be undone here.`))break;try{await api.post(`/bookings/${id}/status`,{to:'no_show'});toast('Marked no-show — customer emailed');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking noshow',err);toast('Could not mark no-show','error');}}break;}
-    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];try{await api.post(`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
+    case 'toggle':{const k=el.dataset.k==='photo'?'vehiclePhotoReceived':'customerUpdated';const val=!t[el.dataset.k];const cl=curLeg(t);try{await api.post(cl?`/bookings/${id}/legs/${cl.legId}/flags`:`/bookings/${id}/flags`,{[k]:val});toast('Updated');await refreshDetail(id);await refreshRow(id);}catch(err){if(err.message!=='auth'){window.opsReportError&&window.opsReportError('booking toggle',err);toast('Update failed','error');}}break;}
     /* clearInput on SUCCESS is load-bearing since the sheet became a diff-render: morphdom
        deliberately preserves a field the operator is still filling in, so a CONSUMED field
        has to be emptied by the code that consumed it. Without it the note stays in the box

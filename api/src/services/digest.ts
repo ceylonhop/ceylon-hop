@@ -8,7 +8,7 @@ import { WATCHDOG_TICK, agoText } from './watchdog';
 import { NOTIFICATIONS_TICK } from './scheduler';
 import { isTeamEmail } from './testBookings';
 import { needsDetails } from './notifications';
-import { bookingDeepLink } from './opsNotifications';
+import { bookingDeepLink, QUOTE_APPROVAL_MAIL_KIND } from './opsNotifications';
 
 // M17 daily ops digest — one compact founder email per day riding the notifications
 // tick: what the business did in the last 24 h and whether the watchdog barked. Pure
@@ -21,7 +21,7 @@ const ALERT_LABELS: Record<string, string> = {
   payment_failed: 'Payment failed',
 };
 // Ledger rows that are bookkeeping, not alerts anyone received.
-const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind, NOTIFICATIONS_TICK.kind]);
+const NOT_ALERTS = new Set(['ops_digest', WATCHDOG_TICK.kind, NOTIFICATIONS_TICK.kind, QUOTE_APPROVAL_MAIL_KIND]);
 const alertLabel = (kind: string): string => ALERT_LABELS[kind] ?? kind;
 // Payments early warning: at least this many checkouts, and fewer than this share paid.
 const PAY_WARN_MIN_STARTED = 3;
